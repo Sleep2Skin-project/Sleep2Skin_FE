@@ -1,0 +1,24 @@
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { useState } from 'react';
+import { useColorScheme } from 'react-native';
+
+import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import AppTabs from '@/components/app-tabs';
+import { OnboardingFlow } from '@/components/onboarding-flow';
+
+SplashScreen.preventAutoHideAsync();
+
+export default function TabLayout() {
+  const colorScheme = useColorScheme();
+  // 온보딩(ONB-01~05)은 탭 밖 진입 플로우이므로 AppTabs(및 웹의 상단 탭 바) 대신 여기서 분기한다.
+  // TODO(ONB-05): 로컬 스토리지에 저장된 온보딩 완료 플래그로 초기값을 결정해 재실행 시 건너뛴다.
+  const [onboarded, setOnboarded] = useState(false);
+
+  return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <AnimatedSplashOverlay />
+      {onboarded ? <AppTabs /> : <OnboardingFlow onComplete={() => setOnboarded(true)} />}
+    </ThemeProvider>
+  );
+}

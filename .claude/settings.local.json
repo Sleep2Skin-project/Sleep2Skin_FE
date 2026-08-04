@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__mcp-registry__search_mcp_registry",
+      "WebFetch(domain:app.notion.com)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__mcp-registry__list_connectors",
+      "Bash(npx expo *)",
+      "Bash(git status *)",
+      "Bash(git checkout *)",
+      "Bash(rm -f eslint.config.js)",
+      "Bash(npx tsc *)",
+      "WebSearch"
+    ]
+  }
+}

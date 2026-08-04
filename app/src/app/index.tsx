@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -173,13 +174,16 @@ function SkinForecastSection() {
   );
 }
 
-function ActionSection({ onOpenSleepDetail }: { onOpenSleepDetail: () => void }) {
+function ActionSection({
+  onOpenSleepDetail,
+  onOpenSelfieVerification,
+}: {
+  onOpenSleepDetail: () => void;
+  onOpenSelfieVerification: () => void;
+}) {
   return (
     <View style={styles.actionSection}>
-      <Pressable
-        // TODO(HOME-05): 카메라 셀피 촬영 플로우로 연결한다.
-        onPress={() => {}}
-        style={({ pressed }) => pressed && styles.pressed}>
+      <Pressable onPress={onOpenSelfieVerification} style={({ pressed }) => pressed && styles.pressed}>
         <ThemedView type="text" style={styles.verifyButton}>
           <ThemedText themeColor="background" style={styles.verifyButtonText}>
             5초 셀피로 오늘 예보 검증하기
@@ -207,6 +211,7 @@ export default function HomeScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
+  const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
 
   const contentPlatformStyle = {
     paddingTop: safeAreaInsets.top + Spacing.three,
@@ -223,11 +228,19 @@ export default function HomeScreen() {
           <SleepSummaryCard onPress={() => router.push('/report')} />
           <CharacterSection />
           <SkinForecastSection />
-          <ActionSection onOpenSleepDetail={() => setSleepModalVisible(true)} />
+          <ActionSection
+            onOpenSleepDetail={() => setSleepModalVisible(true)}
+            onOpenSelfieVerification={() => setSelfieFlowVisible(true)}
+          />
         </View>
       </ScrollView>
 
       <SleepDetailModal visible={sleepModalVisible} onClose={() => setSleepModalVisible(false)} />
+      <SelfieVerificationFlow
+        visible={selfieFlowVisible}
+        onClose={() => setSelfieFlowVisible(false)}
+        onFinish={() => setSelfieFlowVisible(false)}
+      />
     </>
   );
 }

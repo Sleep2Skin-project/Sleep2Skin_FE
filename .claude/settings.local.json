@@ -10,7 +10,13 @@
       "Bash(git checkout *)",
       "Bash(rm -f eslint.config.js)",
       "Bash(npx tsc *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8081)",
+      "Bash(break)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill *)",
+      "Bash(curl -s http://localhost:8081 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:8081/ -o /dev/null -w \"http_code=%{http_code}\\\\n\")"
     ]
   }
 }

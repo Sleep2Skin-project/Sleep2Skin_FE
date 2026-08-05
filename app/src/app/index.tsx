@@ -1,239 +1,166 @@
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/colors';
 
-// HOME (HOME-01~11) — docs/home.png 와이어프레임을 그대로 따른다.
-// 실제 API·에셋이 아직 없어 아래 값은 전부 목업이며, 캐릭터는 회색 Placeholder로 대체한다.
-const SLEEP_SUMMARY = {
-  headline: '깊은 수면이 32분 부족했어요',
-  badges: [
-    { label: '깊은수면', value: '42분' },
-    { label: '각성', value: '2회' },
-    { label: '취침', value: '02:10' },
-  ],
-} as const;
+// HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
+// 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것. 실제 API가 아직 없어 데이터는 목업이다.
+// 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
+const CANVAS_WIDTH = 402;
+const CANVAS_HEIGHT = 874;
 
-const CHARACTER = {
-  level: 3,
-  progress: 0.45,
-} as const;
+const TODAY_LABEL = '8월 6일 목요일';
+const GREETING = '좋은 아침이에요';
+
+const CHARACTER_LEVEL = 3;
+// 레벨 트랙(w:95.4) 대비 진행 바(w:34) 폭 비율 — Figma 원본 px 값을 그대로 사용.
+const LEVEL_TRACK_WIDTH = 95.4;
+const LEVEL_FILL_WIDTH = 34;
+
+const SLEEP_TOOLTIP_LINE1 = '깊은 수면이';
+const SLEEP_TOOLTIP_LINE2 = '32분 부족했어요';
 
 const SKIN_FORECAST = [
-  { key: 'oil', label: '유분', value: 62, color: '#F5A623' },
-  { key: 'darkCircle', label: '다크서클', value: 58, color: '#5E5CE6' },
-  { key: 'dullness', label: '칙칙함', value: 45, color: '#8E8E93' },
-  { key: 'redness', label: '붉은기', value: 30, color: '#FF3B30' },
+  { key: 'oil', label: '유분', value: 78, status: '과다', statusColor: Colors.warning },
+  { key: 'darkCircle', label: '다크서클', value: 41, status: '위험', statusColor: Colors.danger },
+  { key: 'dullness', label: '칙칙함', value: 55, status: '보통', statusColor: Colors.success },
 ] as const;
 
-const FORECAST_DISCLAIMER =
-  '예보는 확정이 아닌 위험 지수입니다. 실제 피부 상태는 셀피 검증으로 확인해 주세요.';
+const FORECAST_TITLE = '오늘의 피부 예보';
+const FORECAST_DISCLAIMER = '예보는 확정이 아닌 위험 지수입니다. 식단·날씨·스킨케어도 함께 작용해요.';
 
-const VERIFICATION_SUMMARY = '예보 적중률 82% · 연속 검증 5일째';
-
-// 수면 요약 카드는 '어젯밤'을 상징하는 밤하늘 배경으로 고정한다 (라이트/다크 모드 무관).
-const NIGHT_SKY_STARS = [
-  { top: '14%', left: '12%', size: 3, opacity: 0.9 },
-  { top: '22%', left: '78%', size: 2, opacity: 0.6 },
-  { top: '58%', left: '18%', size: 2, opacity: 0.5 },
-  { top: '16%', left: '48%', size: 2, opacity: 0.75 },
-  { top: '68%', left: '70%', size: 3, opacity: 0.7 },
-  { top: '78%', left: '32%', size: 2, opacity: 0.5 },
-  { top: '40%', left: '60%', size: 2, opacity: 0.85 },
-  { top: '52%', left: '42%', size: 2, opacity: 0.4 },
-  { top: '32%', left: '30%', size: 2, opacity: 0.6 },
-  { top: '82%', left: '55%', size: 2, opacity: 0.55 },
-] as const;
-
-function NightSkyBackground() {
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={styles.nightGlow} />
-      {NIGHT_SKY_STARS.map((star, index) => (
-        <View
-          key={index}
-          style={[
-            styles.star,
-            {
-              top: star.top,
-              left: star.left,
-              width: star.size,
-              height: star.size,
-              borderRadius: star.size / 2,
-              opacity: star.opacity,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-function SleepSummaryCard({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}>
-      <View style={styles.summaryCard}>
-        <NightSkyBackground />
-        <View style={styles.summaryHeaderRow}>
-          <ThemedText style={styles.summaryHeadline}>{SLEEP_SUMMARY.headline}</ThemedText>
-          <ThemedText style={styles.summaryMoonIcon}>🌙</ThemedText>
-        </View>
-        <View style={styles.badgeRow}>
-          {SLEEP_SUMMARY.badges.map((badge) => (
-            <View key={badge.label} style={styles.badge}>
-              <ThemedText style={styles.badgeText}>
-                {badge.label} {badge.value}
-              </ThemedText>
-            </View>
-          ))}
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function CharacterSection() {
-  const theme = useTheme();
-
-  return (
-    <ThemedView type="backgroundElement" style={styles.characterCard}>
-      <View style={styles.levelRow}>
-        <ThemedText type="smallBold">Level. {CHARACTER.level}</ThemedText>
-        <View style={[styles.levelTrack, { backgroundColor: theme.backgroundSelected }]}>
-          <View
-            style={[
-              styles.levelFill,
-              { width: `${CHARACTER.progress * 100}%`, backgroundColor: theme.text },
-            ]}
-          />
-        </View>
-      </View>
-
-      {/* 캐릭터 에셋 미정 — 준비 중 문구가 담긴 회색 Placeholder로 대체한다. */}
-      <View style={[styles.characterPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-        <ThemedText type="small" themeColor="textSecondary">
-          본인 캐릭터 (준비 중)
-        </ThemedText>
-      </View>
-    </ThemedView>
-  );
-}
+const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
+const VERIFICATION_SUMMARY = '어제 예보 적중률 84% · 8일 연속 검증 중';
 
 function ForecastGaugeRow({
   label,
   value,
-  color,
+  status,
+  statusColor,
 }: {
   label: string;
   value: number;
-  color: string;
+  status: string;
+  statusColor: string;
 }) {
-  const theme = useTheme();
-
   return (
     <View style={styles.gaugeRow}>
       <ThemedText style={styles.gaugeLabel}>{label}</ThemedText>
-      <View style={[styles.gaugeTrack, { backgroundColor: theme.backgroundSelected }]}>
-        <View style={[styles.gaugeFill, { width: `${value}%`, backgroundColor: color }]} />
-        {/* 조정 불가한 시각용 핸들 — 채워진 구간의 시작(0%)과 끝(value%)을 동그라미로 강조한다. */}
-        <View style={[styles.gaugeHandle, { left: 0, backgroundColor: color }]} />
-        <View style={[styles.gaugeHandle, { left: `${value}%`, backgroundColor: color }]} />
+      <View style={styles.gaugeTrack}>
+        <View style={[styles.gaugeFill, { width: `${value}%` }]} />
       </View>
-      <View style={styles.gaugeScaleRow}>
-        <ThemedText style={styles.gaugeScaleText} themeColor="textSecondary">
-          0%
-        </ThemedText>
-        <ThemedText style={styles.gaugeScaleText} themeColor="textSecondary">
-          {value}%
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
-
-function SkinForecastSection() {
-  return (
-    <View style={styles.forecastSection}>
-      <ThemedText style={styles.forecastTitle}>오늘의 피부 예보</ThemedText>
-      <View style={styles.gaugeList}>
-        {SKIN_FORECAST.map((item) => (
-          <ForecastGaugeRow key={item.key} label={item.label} value={item.value} color={item.color} />
-        ))}
-      </View>
-      <ThemedText style={styles.forecastDisclaimer} themeColor="textSecondary">
-        {FORECAST_DISCLAIMER}
+      <ThemedText style={styles.gaugeValue}>
+        {value} · <ThemedText style={[styles.gaugeStatus, { color: statusColor }]}>{status}</ThemedText>
       </ThemedText>
-    </View>
-  );
-}
-
-function ActionSection({
-  onOpenSleepDetail,
-  onOpenSelfieVerification,
-}: {
-  onOpenSleepDetail: () => void;
-  onOpenSelfieVerification: () => void;
-}) {
-  return (
-    <View style={styles.actionSection}>
-      <Pressable onPress={onOpenSelfieVerification} style={({ pressed }) => pressed && styles.pressed}>
-        <ThemedView type="text" style={styles.verifyButton}>
-          <ThemedText themeColor="background" style={styles.verifyButtonText}>
-            5초 셀피로 오늘 예보 검증하기
-          </ThemedText>
-        </ThemedView>
-      </Pressable>
-
-      <Pressable
-        onPress={onOpenSleepDetail}
-        hitSlop={12}
-        style={({ pressed }) => [styles.verificationTrigger, pressed && styles.pressed]}>
-        <ThemedText type="small" themeColor="textSecondary">
-          {VERIFICATION_SUMMARY}
-        </ThemedText>
-        <ThemedText themeColor="textSecondary" style={styles.chevronUp}>
-          ⌃
-        </ThemedText>
-      </Pressable>
     </View>
   );
 }
 
 export default function HomeScreen() {
   const router = useRouter();
-  const theme = useTheme();
-  const safeAreaInsets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
 
-  const contentPlatformStyle = {
-    paddingTop: safeAreaInsets.top + Spacing.three,
-    paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-
   return (
     <>
-      <ScrollView
-        style={[styles.scrollView, { backgroundColor: theme.background }]}
-        contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.container}>
-          <SleepSummaryCard onPress={() => router.push('/report')} />
-          <CharacterSection />
-          <SkinForecastSection />
-          <ActionSection
-            onOpenSleepDetail={() => setSleepModalVisible(true)}
-            onOpenSelfieVerification={() => setSelfieFlowVisible(true)}
+      <View style={styles.screen}>
+        <View style={[styles.canvas, { marginTop: insets.top }]}>
+          {/* 배경 (fill #DFEAFF) */}
+          <View style={StyleSheet.absoluteFill} />
+
+          {/* 상단 안내 문구 (날짜 + 인사말) */}
+          <View style={styles.dateGreetingBlock}>
+            <ThemedText style={styles.dateText}>{TODAY_LABEL}</ThemedText>
+            <View style={styles.greetingRow}>
+              <Image source={require('@/assets/images/figma-icon-sun.png')} style={styles.sunIcon} contentFit="contain" />
+              <ThemedText style={styles.greetingText}>{GREETING}</ThemedText>
+            </View>
+          </View>
+          <Pressable onPress={() => router.push('/report')} hitSlop={10} style={styles.shareIconWrap}>
+            <Image source={require('@/assets/images/figma-icon-share.png')} style={styles.shareIcon} contentFit="contain" />
+          </Pressable>
+
+          {/* 캐릭터 레벨 */}
+          <ThemedText style={styles.levelText}>LEVEL. {CHARACTER_LEVEL}</ThemedText>
+          <View style={styles.levelTrack}>
+            <View style={[styles.levelFill, { width: `${(LEVEL_FILL_WIDTH / LEVEL_TRACK_WIDTH) * 100}%` }]} />
+          </View>
+
+          {/* 캐릭터 */}
+          <Image
+            source={require('@/assets/images/figma-character.png')}
+            style={styles.characterImage}
+            contentFit="contain"
           />
+
+          {/* 수면 요약 툴팁 카드 */}
+          <Pressable onPress={() => setSleepModalVisible(true)} style={({ pressed }) => [pressed && styles.pressed]}>
+            <LinearGradient
+              style={styles.tooltipCard}
+              colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.22)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}>
+              <View style={styles.tooltipIconSlot} />
+              <View>
+                <ThemedText style={styles.tooltipText}>{SLEEP_TOOLTIP_LINE1}</ThemedText>
+                <ThemedText style={styles.tooltipText}>{SLEEP_TOOLTIP_LINE2}</ThemedText>
+              </View>
+            </LinearGradient>
+          </Pressable>
+          <Image source={require('@/assets/images/figma-icon-bed.png')} style={styles.tooltipIcon} contentFit="contain" />
+
+          {/* 오늘의 피부 예보 카드 */}
+          <View style={styles.forecastCard}>
+            <View style={styles.forecastTitleRow}>
+              <Image
+                source={require('@/assets/images/figma-icon-barchart.png')}
+                style={styles.forecastTitleIcon}
+                contentFit="contain"
+              />
+              <ThemedText style={styles.forecastTitle}>{FORECAST_TITLE}</ThemedText>
+            </View>
+            <View style={styles.gaugeList}>
+              {SKIN_FORECAST.map((item) => (
+                <ForecastGaugeRow
+                  key={item.key}
+                  label={item.label}
+                  value={item.value}
+                  status={item.status}
+                  statusColor={item.statusColor}
+                />
+              ))}
+            </View>
+            <ThemedText style={styles.forecastDisclaimer}>{FORECAST_DISCLAIMER}</ThemedText>
+          </View>
+
+          {/* 검증 버튼 + 트리거 */}
+          <Pressable onPress={() => setSelfieFlowVisible(true)} style={({ pressed }) => [styles.verifyButton, pressed && styles.pressed]}>
+            <ThemedText style={styles.verifyButtonText}>{VERIFY_BUTTON_LABEL}</ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setSleepModalVisible(true)}
+            hitSlop={12}
+            style={({ pressed }) => [styles.verificationTrigger, pressed && styles.pressed]}>
+            <ThemedText style={styles.verificationSummary}>{VERIFICATION_SUMMARY}</ThemedText>
+          </Pressable>
+          <Image
+            source={require('@/assets/images/figma-icon-chevron-up.png')}
+            style={styles.chevronIcon}
+            contentFit="contain"
+          />
+
+          <View style={styles.divider} />
         </View>
-      </ScrollView>
+      </View>
 
       <SleepDetailModal visible={sleepModalVisible} onClose={() => setSleepModalVisible(false)} />
       <SelfieVerificationFlow
@@ -246,182 +173,265 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  screen: {
     flex: 1,
-  },
-  contentContainer: {
-    flexGrow: 1,
     alignItems: 'center',
+    backgroundColor: Colors.bgSoftBlue,
   },
-  container: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    // 화면 높이만큼 채우고, 캐릭터 카드(flex: 1)가 남는 세로 공간을 흡수해
-    // 아래 예보·버튼 영역을 화면 하단까지 밀어낸다.
-    flexGrow: 1,
-    gap: 22,
-    paddingHorizontal: Spacing.three,
+  // 프레임(node 187:2673): 402x874, fill #DFEAFF
+  canvas: {
+    width: CANVAS_WIDTH,
+    height: CANVAS_HEIGHT,
+    backgroundColor: Colors.bgSoftBlue,
+    overflow: 'hidden',
   },
   pressed: {
     opacity: 0.7,
   },
-  summaryCard: {
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-    marginHorizontal: Spacing.half,
-    backgroundColor: '#10163A',
-    overflow: 'hidden',
-  },
-  nightGlow: {
+
+  // "8월 6일 목요일 좋은 아침이에요" (node 187:2710, x:31 y:55 w:195 h:68) — 혼합 스타일 텍스트 런
+  dateGreetingBlock: {
     position: 'absolute',
-    top: -40,
-    right: -30,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(120, 144, 220, 0.28)',
+    left: 31,
+    top: 55,
   },
-  star: {
-    position: 'absolute',
-    backgroundColor: '#FFFFFF',
+  dateText: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: '#646464',
   },
-  summaryHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-  },
-  summaryHeadline: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  summaryMoonIcon: {
-    fontSize: 16,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.one,
-  },
-  badge: {
-    paddingVertical: Spacing.half,
-    paddingHorizontal: Spacing.two,
-    borderRadius: Spacing.four,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
-  },
-  badgeText: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: 'rgba(255, 255, 255, 0.85)',
-  },
-  characterCard: {
-    flex: 1,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    gap: Spacing.two,
-  },
-  levelRow: {
+  greetingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: Spacing.two,
+    marginTop: 2,
   },
+  sunIcon: {
+    width: 24,
+    height: 24,
+  },
+  greetingText: {
+    marginLeft: 8,
+    fontSize: 25,
+    lineHeight: 35,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  // Vector (node 187:2707, x:359 y:101 w:19 h:19)
+  shareIconWrap: {
+    position: 'absolute',
+    left: 359,
+    top: 101,
+  },
+  shareIcon: {
+    width: 19,
+    height: 19,
+  },
+
+  // "LEVEL. 3" (node 187:2703, x:37 y:134 w:103.35 h:17.06)
+  levelText: {
+    position: 'absolute',
+    left: 37,
+    top: 134,
+    fontSize: 15,
+    lineHeight: 17,
+    fontWeight: '700',
+    color: Colors.primaryDark,
+  },
+  // 레벨 트랙 배경 value (node 187:2704, x:107.17 y:140.02 w:95.4 h:6.98, radius:5.82)
   levelTrack: {
-    width: 80,
-    height: 5,
-    borderRadius: Spacing.half,
+    position: 'absolute',
+    left: 107,
+    top: 140,
+    width: LEVEL_TRACK_WIDTH,
+    height: 7,
+    borderRadius: 6,
+    backgroundColor: Colors.mutedGray,
     overflow: 'hidden',
   },
+  // 레벨 트랙 채움 value (node 187:2705, x:107 y:140 w:34 h:7, radius:5.82)
   levelFill: {
     height: '100%',
-    borderRadius: Spacing.half,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryDark,
   },
-  characterPlaceholder: {
-    flex: 1,
-    minHeight: 240,
-    borderRadius: Spacing.two,
+
+  // ghost3-nobg-shadow (1) 1 (node 187:2678, x:-17 y:162 w:367 h:296)
+  characterImage: {
+    position: 'absolute',
+    left: -17,
+    top: 162,
+    width: 367,
+    height: 296,
+  },
+
+  // "div" 수면 요약 툴팁 카드 (node 187:2679, x:181 y:158 w:199 h:78, radius:25.3)
+  tooltipCard: {
+    position: 'absolute',
+    left: 181,
+    top: 158,
+    width: 199,
+    height: 78,
+    borderRadius: 25,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 26,
+    paddingVertical: 21,
+    gap: 11,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.75)',
+    shadowColor: '#5A6EA0',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 4,
   },
-  forecastSection: {
-    gap: Spacing.two,
+  // "span" 아이콘 슬롯 (node 187:2680, w:19 h:24) — 실제 아이콘은 Person In Bed 레이어로 위에 겹쳐 그린다.
+  tooltipIconSlot: {
+    width: 19,
+    height: 24,
+  },
+  tooltipText: {
+    fontSize: 16,
+    lineHeight: 27,
+    fontWeight: '700',
+    color: '#1C2430',
+  },
+  // Person In Bed (node 187:2702, x:198 y:186 w:27 h:27) — 프레임 루트의 독립 레이어(플로팅)
+  tooltipIcon: {
+    position: 'absolute',
+    left: 198,
+    top: 186,
+    width: 27,
+    height: 27,
+  },
+
+  // "오늘의 피부 예보" 카드 (node 187:2683, x:22 y:481 w:358 h:185.77, radius:16.6)
+  forecastCard: {
+    position: 'absolute',
+    left: 22,
+    top: 481,
+    width: 358,
+    height: 186,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
+    borderWidth: 1,
+    borderColor: '#DCDCDC',
+    padding: 19,
+    gap: 12,
+  },
+  forecastTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  forecastTitleIcon: {
+    width: 22,
+    height: 22,
   },
   forecastTitle: {
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 17,
+    lineHeight: 21,
     fontWeight: '700',
+    color: '#1A1A1A',
   },
   gaugeList: {
-    gap: Spacing.two,
+    gap: 12,
   },
   gaugeRow: {
-    gap: Spacing.half,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   gaugeLabel: {
+    width: 58,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: '#6B6B6B',
   },
   gaugeTrack: {
-    height: 6,
-    borderRadius: 3,
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(181, 194, 207, 0.75)',
+    overflow: 'hidden',
   },
   gaugeFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
+    backgroundColor: Colors.primaryDark,
   },
-  gaugeHandle: {
-    position: 'absolute',
-    top: '50%',
-    width: 12,
-    height: 12,
-    marginTop: -6,
-    marginLeft: -6,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+  gaugeValue: {
+    width: 86,
+    textAlign: 'right',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: '#1A1A1A',
   },
-  gaugeScaleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  gaugeScaleText: {
-    fontSize: 10,
-    lineHeight: 13,
+  gaugeStatus: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
   },
   forecastDisclaimer: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '400',
+    color: '#9E9E9E',
   },
-  actionSection: {
-    gap: Spacing.half,
-    paddingBottom: Spacing.four,
-  },
+
+  // Button 인스턴스 (node 187:2675, x:29 y:686 w:345 h:52, radius:10)
   verifyButton: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 351,
-    height: 53,
-    borderRadius: 13,
+    position: 'absolute',
+    left: 29,
+    top: 686,
+    width: 345,
+    height: 52,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: Colors.primaryDark,
   },
   verifyButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: Colors.white,
   },
+
+  // "어제 예보 적중률..." (node 187:2677, x:30 y:750 w:345 h:17)
   verificationTrigger: {
+    position: 'absolute',
+    left: 30,
+    top: 750,
+    width: 345,
     alignItems: 'center',
-    gap: Spacing.one,
-    paddingVertical: Spacing.two,
   },
-  chevronUp: {
-    fontSize: 34,
-    lineHeight: 34,
-    fontWeight: '600',
+  verificationSummary: {
+    fontSize: 11,
+    lineHeight: 17,
+    fontWeight: '400',
+    color: '#9E9E9E',
+    textAlign: 'center',
+  },
+  // Vector 쉐브론 (node 187:2706, x:190 y:774 w:23 h:13)
+  chevronIcon: {
+    position: 'absolute',
+    left: 190,
+    top: 774,
+    width: 23,
+    height: 13,
+  },
+
+  // Line 1 (node 187:2674, x:-12 y:800 w:440 h:0, stroke #C7C7C7)
+  divider: {
+    position: 'absolute',
+    left: -12,
+    top: 800,
+    width: 440,
+    height: 1,
+    backgroundColor: '#C7C7C7',
   },
 });

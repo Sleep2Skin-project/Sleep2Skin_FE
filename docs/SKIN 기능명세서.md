@@ -5,14 +5,13 @@
 탭 분류
 
 - 하단 네비게이션
-    
-    ```java
-    [HOME] [TODO] [REPORT] [MY]
-    
-    ※ 도메인 분리: home / todo / report / mypage
-    ※ 온보딩(ONB-01~05)은 탭 밖 진입 플로우
-    ※ 피그마 Tab Bar 컴포넌트는 현재 [홈][스캔][리포트][설정] → 명칭 동기화 필요
-    ```
+  ```java
+  [HOME] [TODO] [REPORT] [MY]
+
+  ※ 도메인 분리: home / todo / report / mypage
+  ※ 온보딩(ONB-01~05)은 탭 밖 진입 플로우
+  ※ 피그마 Tab Bar 컴포넌트는 현재 [홈][스캔][리포트][설정] → 명칭 동기화 필요
+  ```
 
 HOME
 
@@ -35,13 +34,14 @@ TODO
 
 ```java
 TODO  (TODO-01 ~ 07)
- ├ 날짜 및 요약 멘트                              TODO-01
+ ├ 날짜 및 제목                              TODO-01
  ├ 리포트 기반 행동 추천 (추천 엔진)              TODO-02
- │   ├ 오늘은 피하세요                           TODO-03
- │   └ 오늘은 이렇게                             TODO-04
+ │   ├ '오늘은 피하세요' 리스트                      TODO-03
+ │   └ '오늘 밤 체크리스트' 리스트                    TODO-04
  ├ TODO 리스트 체크·완료 처리                     TODO-05
- ├ TODO 추가항목 선택   [와이어프레임 없음]       TODO-06
- └ 저녁 수면 가이드 (취침 목표·시나리오 비교)     TODO-07
+ ├ TODO 추가항목 선택                           TODO-06
+ ├ TODO 진행도 표시 바                         TODO-07
+ └ 저녁 수면 가이드 (취침 목표 · 취침 알림 설정)     TODO-08
 ```
 
 REPORT
@@ -76,14 +76,13 @@ ONBOARDING  (ONB-01 ~ 05) — 탭 밖
  시작 화면 -> 개인정보 동의 -(no)-> 앱 종료
               └(yes)-> 수면 데이터 연결 -> 랜딩(HOME)
 ```
-		
 
-[0. 온보딩 (공통) (1)](0%20%EC%98%A8%EB%B3%B4%EB%94%A9%20(%EA%B3%B5%ED%86%B5)%20(1)%203b296caaf6058090ad0bee3d62113374.csv)
+[0. 온보딩 (공통) (1)](<0%20%EC%98%A8%EB%B3%B4%EB%94%A9%20(%EA%B3%B5%ED%86%B5)%20(1)%203b296caaf6058090ad0bee3d62113374.csv>)
 
-[1. HOME (1)](1%20HOME%20(1)%203b296caaf60580f0a53fd8ff7e9f17de.csv)
+[1. HOME (1)](<1%20HOME%20(1)%203b296caaf60580f0a53fd8ff7e9f17de.csv>)
 
-[2. TODO (1)](2%20TODO%20(1)%203b296caaf60580cab87bd1f840f2875d.csv)
+[2. TODO (1)](<2%20TODO%20(1)%203b296caaf60580cab87bd1f840f2875d.csv>)
 
-[3. REPORT (1)](3%20REPORT%20(1)%203b296caaf605802cbface3b999c5e4fd.csv)
+[3. REPORT (1)](<3%20REPORT%20(1)%203b296caaf605802cbface3b999c5e4fd.csv>)
 
-[4. MY PAGE (1)](4%20MY%20PAGE%20(1)%203b296caaf605801dab47d16167b0f5bc.csv)
+[4. MY PAGE (1)](<4%20MY%20PAGE%20(1)%203b296caaf605801dab47d16167b0f5bc.csv>)

@@ -1,0 +1,2 @@
+# Local MCP server config (contains secrets, e.g. Figma personal access token)
+.mcp.json

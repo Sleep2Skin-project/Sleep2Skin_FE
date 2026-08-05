@@ -23,7 +23,14 @@
       "Bash(xargs -I{} basename {})",
       "Bash(echo \"DONE-$?\")",
       "Bash(curl -s -o /tmp/index.html -w \"%{http_code}\\\\n\" http://localhost:8098/)",
-      "Bash(pkill -f \"expo start --web --port 8098\")"
+      "Bash(pkill -f \"expo start --web --port 8098\")",
+      "Bash(lsof -ti:4173 -sTCP:LISTEN)",
+      "Bash(xargs -r kill)",
+      "Bash(git stash *)",
+      "Bash(echo \"tsc exit:$?\")",
+      "Bash(git restore *)",
+      "Bash(node -e \"const m=require\\('expo-router'\\); console.log\\(Object.keys\\(m\\).filter\\(k=>/tab/i.test\\(k\\)\\)\\)\")",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

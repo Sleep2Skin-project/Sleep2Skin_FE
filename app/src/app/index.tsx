@@ -239,7 +239,10 @@ export default function HomeScreen() {
       <SelfieVerificationFlow
         visible={selfieFlowVisible}
         onClose={() => setSelfieFlowVisible(false)}
-        onFinish={() => setSelfieFlowVisible(false)}
+        onFinish={() => {
+          setSelfieFlowVisible(false);
+          router.push('/todo');
+        }}
       />
     </>
   );

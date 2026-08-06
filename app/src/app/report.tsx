@@ -1,35 +1,34 @@
-import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
+import { DailyReport } from '@/components/report/daily-report';
+import { MonthlyReport } from '@/components/report/monthly-report';
+import { OverallReport } from '@/components/report/overall-report';
+import { type Period, PeriodTabs } from '@/components/report/report-ui';
+import { WeeklyReport } from '@/components/report/weekly-report';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 
-// REPORT 탭 '일간' 화면(REP-01~05)의 임시 자리 표시자.
-// HOME-02 수면 요약 카드 탭 시 이동하는 목적지만 우선 연결해둔다.
+// REPORT 탭(REP-01~11) — 일간·주간·월간·종합 리포트.
+// docs/report.png 와이어프레임 구조를 그대로 따르되, 실제 API가 없어 각 섹션 컴포넌트 내부의
+// 목업 데이터로 렌더링한다(docs/3 REPORT.csv 기준).
 export default function ReportScreen() {
-  const router = useRouter();
+  const [period, setPeriod] = useState<Period>('daily');
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={12}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-            <ThemedText style={styles.backChevron}>‹</ThemedText>
-          </Pressable>
-          <ThemedText type="smallBold">일간 리포트</ThemedText>
-          <View style={styles.backButton} />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <View style={styles.tabsWrap}>
+          <PeriodTabs selected={period} onSelect={setPeriod} />
         </View>
 
-        <View style={styles.body}>
-          <ThemedText themeColor="textSecondary" style={styles.placeholderText}>
-            일간 수면/피부 리포트 🛠️{'\n'}디자인 준비 중입니다.
-          </ThemedText>
-        </View>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {period === 'daily' && <DailyReport />}
+          {period === 'weekly' && <WeeklyReport />}
+          {period === 'monthly' && <MonthlyReport />}
+          {period === 'overall' && <OverallReport />}
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -47,31 +46,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  tabsWrap: {
+    paddingBottom: Spacing.three,
   },
-  backButton: {
-    width: Spacing.five,
-    height: Spacing.five,
-    justifyContent: 'center',
-  },
-  backChevron: {
-    fontSize: 28,
-    lineHeight: 28,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderText: {
-    textAlign: 'center',
-    fontSize: 16,
-    lineHeight: 24,
+  scrollContent: {
+    paddingBottom: BottomTabInset + Spacing.four,
   },
 });

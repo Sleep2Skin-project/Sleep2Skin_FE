@@ -102,7 +102,7 @@ export default function HomeScreen() {
           />
 
           {/* 수면 요약 툴팁 카드 */}
-          <Pressable onPress={() => setSleepModalVisible(true)} style={({ pressed }) => [pressed && styles.pressed]}>
+          <Pressable onPress={() => router.push('/report')} style={({ pressed }) => [pressed && styles.pressed]}>
             <LinearGradient
               style={styles.tooltipCard}
               colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.22)']}
@@ -146,17 +146,19 @@ export default function HomeScreen() {
             <ThemedText style={styles.verifyButtonText}>{VERIFY_BUTTON_LABEL}</ThemedText>
           </Pressable>
 
+          <View style={styles.verificationTrigger}>
+            <ThemedText style={styles.verificationSummary}>{VERIFICATION_SUMMARY}</ThemedText>
+          </View>
           <Pressable
             onPress={() => setSleepModalVisible(true)}
             hitSlop={12}
-            style={({ pressed }) => [styles.verificationTrigger, pressed && styles.pressed]}>
-            <ThemedText style={styles.verificationSummary}>{VERIFICATION_SUMMARY}</ThemedText>
+            style={({ pressed }) => [styles.chevronIcon, pressed && styles.pressed]}>
+            <Image
+              source={require('@/assets/images/figma-icon-chevron-up.png')}
+              style={styles.chevronImage}
+              contentFit="contain"
+            />
           </Pressable>
-          <Image
-            source={require('@/assets/images/figma-icon-chevron-up.png')}
-            style={styles.chevronIcon}
-            contentFit="contain"
-          />
 
           <View style={styles.divider} />
         </View>
@@ -426,6 +428,10 @@ const styles = StyleSheet.create({
     top: 774,
     width: 23,
     height: 13,
+  },
+  chevronImage: {
+    width: '100%',
+    height: '100%',
   },
 
   // Line 1 (node 187:2674, x:-12 y:800 w:440 h:0, stroke #C7C7C7)

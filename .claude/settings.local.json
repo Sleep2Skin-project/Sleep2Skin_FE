@@ -36,7 +36,13 @@
       "Bash(npx eslint *)",
       "Bash(pkill -f \"expo start --web --port 8099\")",
       "Bash(lsof -ti:8099)",
-      "Bash(xargs kill -9)"
+      "Bash(xargs kill -9)",
+      "Bash(claude mcp *)",
+      "Bash(npx -y @modelcontextprotocol/server-figma)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "figma"
+  ]
 }

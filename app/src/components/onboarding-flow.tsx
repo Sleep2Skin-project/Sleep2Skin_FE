@@ -1,46 +1,59 @@
+import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Colors } from '@/constants/colors';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// ONB-01~05 온보딩 (공통) 흐름 — docs/onboarding.png 와이어프레임 4장을 그대로 따른다.
-// 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서 AppTabs 대신 렌더된다.
+// ONB-01~05 온보딩(공통) 흐름 — 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서
+// AppTabs 대신 렌더된다.
+// 전체 캔버스는 HOME(index.tsx, node 187:2673)과 동일한 402x874 고정 컨테이너 규격을 따른다.
+// ONB-01(값 제안)은 Figma 데이터가 없어 기존 카피·구조·테마 컬러를 그대로 둔 채 이 고정 캔버스
+// 안에만 배치했다 — 실제 UI/로직은 변경하지 않았다.
+// ONB-02("온보딩 2", node 256:573)·ONB-03("온보딩 3", node 260:643)은 Figma REST API로
+// 좌표·색상·타이포를 그대로 옮겼고, 부모 테마(다크모드)와 무관하게 항상 Figma 지정 배경(#FFFFFF)으로
+// 렌더한다. 두 화면 모두 본문(제목/리스트/CTA 등)이 프레임의 자식 레이어가 아니라 같은 Figma 캔버스
+// 위에 프레임과 겹쳐 배치된 loose 오브젝트라, 프레임 원점을 기준으로 좌표를 역산해 옮겼다.
+const CANVAS_WIDTH = 402;
+const CANVAS_HEIGHT = 874;
 const STEP_COUNT = 3;
+
+const SLEEP_TEXT_TITLE = '#050505';
+const SLEEP_TEXT_BODY = '#1A2B4C';
+const SLEEP_TEXT_MUTED = '#5C6B7A';
+const SLEEP_TEXT_BACK_LABEL = '#6B6B6B';
+
+const HEALTH_TEXT_TITLE = '#1A1A1A';
+const HEALTH_TEXT_SUBTITLE = '#6B6B6B';
+const HEALTH_TEXT_HINT = '#9E9E9E';
+const HEALTH_CARD_BG = '#F4F4F4';
+const HEALTH_CHECKBOX_BG = '#DEDEDE';
 
 type HealthKitStatus = 'idle' | 'connected' | 'skipped';
 
+// "온보딩 2"(node 256:573) 지표 리스트 문구·순서 그대로. 아이콘은 4항목 모두 동일한 흰 체크
+// (componentId 243:638, app/assets/images/figma-icon-onboarding-check.png)라 icon/iconColor는
+// HealthAccessModal(Figma 데이터 없는 별도 화면) 표시용으로만 쓰인다.
 const SLEEP_METRICS = [
-  {
-    label: '깊은 수면·REM·코어',
-    hint: '장벽 재생/콜라겐 지표',
-    icon: '🌙',
-    iconColor: '#5E5CE6',
-  },
-  {
-    label: '취침·기상 시각',
-    hint: '수면 규칙성',
-    icon: '🛏️',
-    iconColor: '#0A84FF',
-  },
-  {
-    label: '야간 각성 횟수',
-    hint: '다크서클 예측 핵심 변수',
-    icon: '👁️',
-    iconColor: '#FF9F0A',
-  },
-  {
-    label: 'HRV/안정시 심박',
-    hint: '스트레스성 트러블 신호',
-    icon: '❤️',
-    iconColor: '#FF2D55',
-  },
+  { label: '야간 각성 횟수', icon: '👁️', iconColor: '#FF9F0A' },
+  { label: '깊은 수면·REM·코어', icon: '🌙', iconColor: '#5E5CE6' },
+  { label: 'HRV·안정시 심박', icon: '❤️', iconColor: '#FF2D55' },
+  { label: '취침·기상 시각(수면 규칙성)', icon: '🛏️', iconColor: '#0A84FF' },
 ] as const;
 
-const PRIVACY_POINTS = ['원본 이미지 즉시 폐기', '숫자 지표만 저장', '언제든 전체 삭제'] as const;
+// "온보딩 3"(node 260:643) > "읽어올 데이터" 카드(node 261:678) 4개 항목 문구·순서 그대로.
+const HEALTH_DATA_ITEMS = [
+  { title: '깊은 수면 · REM · 코어', subtitle: '장벽 재생과 콜라겐 합성 지표' },
+  { title: '취침 · 기상 시각', subtitle: '수면 규칙성 계산' },
+  { title: '야간 각성 횟수', subtitle: '다크서클 예측의 핵심 변수' },
+  { title: 'HRV · 안정시 심박', subtitle: '스트레스성 트러블 신호' },
+] as const;
 
+// ── ONB-01 전용 크롬 (원본 그대로: 테마 반응형 ThemedView/ThemedText) ──────────────────
 function ProgressBar({ current, total }: { current: number; total: number }) {
   return (
     <View style={styles.progressRow}>
@@ -107,25 +120,6 @@ function IllustrationPlaceholder() {
   return <ThemedView type="backgroundElement" style={styles.illustrationPlaceholder} />;
 }
 
-function WatchIcon() {
-  const theme = useTheme();
-  return (
-    <View style={[styles.watchFace, { borderColor: theme.text }]}>
-      <View style={[styles.watchCrown, { backgroundColor: theme.text }]} />
-    </View>
-  );
-}
-
-function LockIcon() {
-  const theme = useTheme();
-  return (
-    <View style={styles.lockIcon}>
-      <View style={[styles.lockShackle, { borderColor: theme.text }]} />
-      <View style={[styles.lockBody, { backgroundColor: theme.text }]} />
-    </View>
-  );
-}
-
 // ONB-01: 앱 최초 실행 시 서비스 가치를 전달한다.
 function ValueStep({ onNext }: { onNext: () => void }) {
   return (
@@ -148,7 +142,40 @@ function ValueStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-// ONB-03: HealthKit 수면 데이터 읽기 권한을 요청한다.
+// ── ONB-02/03 공용 크롬 — Figma 노드 값을 그대로 옮긴 화면들 전용 ─────────────────────
+// 부모(캔버스)가 다크모드로 렌더돼 있어도 이 화면들만은 항상 Figma가 지정한 흰 배경으로 그린다.
+// Vector(node 256:574 / 260:644, x:26 y:43 w:13 h:23) + 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6)
+// — ONB-02/03 모두 동일한 좌표.
+function FigmaStepHeader({ onBack, filledSegments }: { onBack: () => void; filledSegments: number }) {
+  return (
+    <>
+      <Pressable
+        onPress={onBack}
+        hitSlop={16}
+        style={({ pressed }) => [styles.figmaBackButton, pressed && styles.pressed]}>
+        <Image
+          source={require('@/assets/images/figma-icon-onboarding-back.png')}
+          style={styles.figmaBackIcon}
+          contentFit="contain"
+        />
+      </Pressable>
+      <View style={styles.figmaProgressRow}>
+        {Array.from({ length: STEP_COUNT }).map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.figmaProgressSegment,
+              { backgroundColor: index < filledSegments ? Colors.primaryDark : Colors.mutedGray },
+            ]}
+          />
+        ))}
+      </View>
+    </>
+  );
+}
+
+// ONB-02("온보딩 2", node 256:573): HealthKit 수면 데이터 읽기 권한을 요청한다.
+// 텍스트/색상/좌표/에셋은 모두 Figma 노드 값을 그대로 옮겼다.
 function SleepStep({
   status,
   onOpenHealthAccess,
@@ -159,82 +186,116 @@ function SleepStep({
   onBack: () => void;
 }) {
   const connectLabel = status === 'connected' ? '연결됨' : '연동하기';
+  const connected = status === 'connected';
 
   return (
-    <View style={styles.stepBody}>
-      <View style={styles.contentCenter}>
-        <View style={styles.heroBlock}>
-          <WatchIcon />
-          <ThemedText type="subtitle" style={styles.centerText}>
-            수면 데이터를{'\n'}연결해주세요.
-          </ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.centerText}>
-            Apple Health 데이터를 연동해요
-          </ThemedText>
-        </View>
+    <View style={styles.figmaCanvas}>
+      <FigmaStepHeader onBack={onBack} filledSegments={2} />
 
-        <View style={styles.featureList}>
-          {SLEEP_METRICS.map((metric) => (
-            <ThemedView key={metric.label} type="backgroundElement" style={styles.featureRow}>
-              <ThemedView type="text" style={styles.featureBullet} />
-              <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
-                {metric.label}
-                {'('}
-                {metric.hint}
-                {')'}
-              </ThemedText>
-            </ThemedView>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.sleepFooterRow}>
-        <Pressable
-          onPress={onBack}
-          hitSlop={8}
-          style={({ pressed }) => pressed && styles.pressed}>
-          <ThemedText type="link" themeColor="textSecondary">
-            이전
-          </ThemedText>
-        </Pressable>
-        <PrimaryButton
-          label={connectLabel}
-          onPress={onOpenHealthAccess}
-          disabled={status === 'connected'}
-          fullWidth={false}
+      {/* "image 38" (node 256:617) — 프레임의 자식 레이어는 아니지만 같은 캔버스에서 프레임과
+          겹쳐 배치된 애플워치 아이콘. 화면 폭 기준 수평 중앙 정렬. */}
+      <View style={styles.sleepWatchIconWrap}>
+        <Image
+          source={require('@/assets/images/figma-icon-onboarding-watch.png')}
+          style={styles.sleepWatchIcon}
+          contentFit="contain"
         />
       </View>
+
+      {/* "지난 기록을 알면, 다음 기록을 바꿀 수 있어요" (node 256:619, x:57 y:287 w:270 h:65) */}
+      <Text style={styles.sleepTitle}>
+        지난 기록을 알면,{'\n'}다음 기록을 바꿀 수 있어요
+      </Text>
+      {/* "Apple Health 데이터를 연동해요" (node 258:620, x:95 y:362 w:183 h:17) */}
+      <Text style={styles.sleepSubtitle}>Apple Health 데이터를 연동해요</Text>
+
+      {/* 4개 지표 리스트 (node 259:622/628/633/623, y:410~524, 행 간격 17).
+          체크 아이콘은 텍스트 길이와 무관하게 항상 프레임 기준 x:98에서 시작하고(세로 일직선),
+          텍스트는 항상 아이콘 기준 +34px(아이콘 21 + 여백 13)에서 시작한다 — 4항목 모두 동일. */}
+      <View style={styles.sleepFeatureList}>
+        {SLEEP_METRICS.map((metric) => (
+          <View key={metric.label} style={styles.sleepFeatureRow}>
+            <View style={styles.sleepFeatureIconBadge}>
+              <Image
+                source={require('@/assets/images/figma-icon-onboarding-check.png')}
+                style={styles.sleepFeatureIconGlyph}
+                contentFit="contain"
+              />
+            </View>
+            <Text style={styles.sleepFeatureLabel}>{metric.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* 개인정보 고지 (node 260:638, x:82 y:569 w:219 h:28) */}
+      <Text style={styles.sleepPrivacyNote}>
+        수면 데이터는 AI 코칭(open ai)에 활용됩니다.{'\n'}이름/ 이메일 등 개인정보는 전송되지 않습니다.
+      </Text>
+
+      {/* "이전" (node 260:642, x:66 y:722) */}
+      <Pressable
+        onPress={onBack}
+        hitSlop={8}
+        style={({ pressed }) => [styles.sleepBackLabelWrap, pressed && styles.pressed]}>
+        <Text style={styles.sleepBackLabel}>이전</Text>
+      </Pressable>
+
+      {/* "연동하기" 버튼 (node 260:640, x:231 y:707 w:127 h:50, radius:26.5) */}
+      <Pressable
+        onPress={onOpenHealthAccess}
+        disabled={connected}
+        style={({ pressed }) => [
+          styles.sleepConnectButton,
+          connected && styles.buttonDisabled,
+          pressed && !connected && styles.pressed,
+        ]}>
+        <Text style={styles.sleepConnectButtonText}>{connectLabel}</Text>
+      </Pressable>
     </View>
   );
 }
 
-// ONB-04: 셀피 원본 미저장 정책을 3항목으로 고지한다.
-function PrivacyStep({ onFinish }: { onFinish: () => void }) {
+// ONB-03("온보딩 3", node 260:643): HealthKit 권한 상세 확인 + 최종 CTA.
+// 본문(제목·설명·"읽어올 데이터" 카드·CTA)은 프레임의 자식이 아니라 같은 캔버스에서 프레임과
+// 겹쳐 배치된 loose 오브젝트(node 261:676/677/678/699)였다 — 프레임 원점 기준 좌표로 역산해 옮겼다.
+function HealthConnectStep({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
   return (
-    <View style={styles.stepBody}>
-      <View>
-        <View style={styles.heroBlock}>
-          <LockIcon />
-          <ThemedText type="subtitle" style={styles.centerText}>
-            셀피는 저장하지 않습니다
-          </ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.centerText}>
-            촬영한 셀피는 가장 민감한 데이터예요.{'\n'}SkinCast는 필요한 최소한만 다뤄요.
-          </ThemedText>
-        </View>
+    <View style={styles.figmaCanvas}>
+      <FigmaStepHeader onBack={onBack} filledSegments={3} />
 
-        <View style={styles.privacyList}>
-          {PRIVACY_POINTS.map((label) => (
-            <ThemedView key={label} type="backgroundElement" style={styles.privacyRow}>
-              <ThemedView type="text" style={styles.featureBullet} />
-              <ThemedText type="smallBold">{label}</ThemedText>
-            </ThemedView>
-          ))}
-        </View>
+      {/* "수면 데이터를 연결해주세요" (node 261:676, x:28 y:157 w:345 h:35) */}
+      <Text style={styles.healthTitle}>수면 데이터를 연결해주세요</Text>
+      {/* 설명 (node 261:677, x:28 y:205 w:345 h:44) */}
+      <Text style={styles.healthSubtitle}>
+        SkinCast는 애플 건강 앱의 수면 기록만 읽습니다. 쓰기 권한은 요청하지 않으며, 언제든 해제할 수 있어요.
+      </Text>
+
+      {/* "읽어올 데이터" 카드 (node 261:678, x:28 y:265 w:345, fill #F4F4F4, radius:12) */}
+      <View style={styles.healthCard}>
+        {HEALTH_DATA_ITEMS.map((item) => (
+          <View key={item.title} style={styles.healthCardRow}>
+            <View style={styles.healthCardCheckbox} />
+            <View style={styles.healthCardTextGroup}>
+              <Text style={styles.healthCardItemTitle}>{item.title}</Text>
+              <Text style={styles.healthCardItemSubtitle}>{item.subtitle}</Text>
+            </View>
+          </View>
+        ))}
       </View>
 
-      <View style={styles.footer}>
-        <PrimaryButton label="시작하기" onPress={onFinish} />
+      {/* CTA (node 261:699, x:28 y:705 w:345, gap:8) — 연결/스킵 모두 온보딩을 완료시킨다
+          (ONB-02 HealthAccessModal의 허용/거부 수렴 패턴과 동일). */}
+      <View style={styles.healthCta}>
+        <Pressable
+          onPress={onFinish}
+          style={({ pressed }) => [styles.healthPrimaryButton, pressed && styles.pressed]}>
+          <Text style={styles.healthPrimaryButtonText}>건강 앱 연결하기</Text>
+        </Pressable>
+        <Pressable
+          onPress={onFinish}
+          style={({ pressed }) => [styles.healthGhostButton, pressed && styles.pressed]}>
+          <Text style={styles.healthGhostButtonText}>나중에 할게요</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -347,30 +408,35 @@ function HealthAccessModal({
 }
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [healthStatus, setHealthStatus] = useState<HealthKitStatus>('idle');
   const [healthModalVisible, setHealthModalVisible] = useState(false);
 
   const handleAllowHealthAccess = () => {
-    // TODO(ONB-03): 실제 HealthKit 읽기 권한 요청(react-native-health 등)으로 교체한다.
+    // TODO(ONB-02): 실제 HealthKit 읽기 권한 요청(react-native-health 등)으로 교체한다.
     setHealthStatus('connected');
     setHealthModalVisible(false);
     setStep(2);
   };
 
   const handleDenyHealthAccess = () => {
-    // 연결(yes)·미연결(no) 모두 다음 단계로 수렴한다 (docs ONB-03 비고).
+    // 연결(yes)·미연결(no) 모두 다음 단계로 수렴한다 (docs ONB-02 비고).
     setHealthStatus('skipped');
     setHealthModalVisible(false);
     setStep(2);
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.safeArea}>
-        <OnboardingHeader step={step} onBack={step > 0 ? () => setStep((s) => s - 1) : undefined} />
-
-        {step === 0 && <ValueStep onNext={() => setStep(1)} />}
+    <View style={styles.screen}>
+      {/* HOME(node 187:2673)과 동일한 402x874 고정 캔버스. */}
+      <ThemedView style={[styles.canvas, { marginTop: insets.top }]}>
+        {step === 0 && (
+          <View style={styles.safeArea}>
+            <OnboardingHeader step={0} />
+            <ValueStep onNext={() => setStep(1)} />
+          </View>
+        )}
         {step === 1 && (
           <SleepStep
             status={healthStatus}
@@ -378,21 +444,28 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             onBack={() => setStep(0)}
           />
         )}
-        {step === 2 && <PrivacyStep onFinish={onComplete} />}
-      </View>
+        {step === 2 && <HealthConnectStep onBack={() => setStep(1)} onFinish={onComplete} />}
+      </ThemedView>
 
       <HealthAccessModal
         visible={healthModalVisible}
         onAllow={handleAllowHealthAccess}
         onDeny={handleDenyHealthAccess}
       />
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
+    alignItems: 'center',
+  },
+  // HOME(index.tsx)과 동일한 고정 프레임 규격.
+  canvas: {
+    width: CANVAS_WIDTH,
+    height: CANVAS_HEIGHT,
+    overflow: 'hidden',
   },
   safeArea: {
     flex: 1,
@@ -435,15 +508,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
-  heroBlock: {
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  contentCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: Spacing.four,
-  },
   illustrationPlaceholder: {
     width: '100%',
     height: 56,
@@ -469,77 +533,253 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.4,
   },
-  watchFace: {
-    width: 44,
-    height: 52,
-    borderWidth: 2.5,
-    borderRadius: 14,
-  },
-  watchCrown: {
+
+  // ── ONB-02/03 공용 — 항상 고정 라이트 팔레트, 부모 테마 영향 없음 ──────────────────────
+  figmaCanvas: {
     position: 'absolute',
-    right: -6,
-    top: '38%',
-    width: 6,
-    height: 12,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.white,
+  },
+  // Vector(node 256:574 / 260:644, x:26 y:43 w:13 h:23)
+  figmaBackButton: {
+    position: 'absolute',
+    left: 26,
+    top: 43,
+    width: 13,
+    height: 23,
+  },
+  figmaBackIcon: {
+    width: '100%',
+    height: '100%',
+  },
+  // 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6) — ONB-02/03 공통
+  figmaProgressRow: {
+    position: 'absolute',
+    left: 24,
+    top: 89,
+    width: 354,
+    height: 4,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  figmaProgressSegment: {
+    flex: 1,
+    height: 4,
     borderRadius: 2,
   },
-  featureList: {
+
+  // ── ONB-02 "온보딩 2"(node 256:573) 전용 ────────────────────────────────────────
+  // "image 38"(node 256:617, 프레임 원점 기준 x:152 y:193 w:65 h:80) — 애플워치 아이콘
+  sleepWatchIconWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 193,
     alignItems: 'center',
-    gap: Spacing.three,
   },
-  featureRow: {
-    width: '100%',
+  sleepWatchIcon: {
+    width: 65,
+    height: 80,
+  },
+  // "지난 기록을 알면, 다음 기록을 바꿀 수 있어요" (node 256:619, x:57 y:287 w:270 h:65)
+  sleepTitle: {
+    position: 'absolute',
+    left: 0,
+    top: 287,
+    width: CANVAS_WIDTH,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 32,
+    letterSpacing: 0.72,
+    color: SLEEP_TEXT_TITLE,
+  },
+  // "Apple Health 데이터를 연동해요" (node 258:620, x:95 y:362 w:183 h:17)
+  sleepSubtitle: {
+    position: 'absolute',
+    left: 0,
+    top: 362,
+    width: CANVAS_WIDTH,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '300',
+    color: SLEEP_TEXT_MUTED,
+  },
+  // 지표 리스트 (node 259:622/628/633/623, y:410 시작, 행 간격 17)
+  // left:98 — 프레임 원점 기준, 4항목 모두 동일(글씨 길이와 무관하게 아이콘이 세로로 일직선).
+  sleepFeatureList: {
+    position: 'absolute',
+    left: 98,
+    top: 410,
+    alignItems: 'flex-start',
+    gap: 17,
+  },
+  sleepFeatureRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+  },
+  // 아이콘 배지(21x21, radius:10.5, fill #031949) + 체크(componentId 243:638, 흰색, PNG 에셋)
+  sleepFeatureIconBadge: {
+    width: 21,
+    height: 21,
+    borderRadius: 10.5,
+    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
   },
-  featureBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  sleepFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: Spacing.three,
-  },
-  lockIcon: {
-    alignItems: 'center',
-  },
-  lockShackle: {
+  sleepFeatureIconGlyph: {
     width: 14,
-    height: 12,
-    borderWidth: 2.5,
-    borderBottomWidth: 0,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    marginBottom: -2,
+    height: 18,
   },
-  lockBody: {
-    width: 22,
-    height: 16,
-    borderRadius: 4,
+  sleepFeatureLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: SLEEP_TEXT_BODY,
   },
-  privacyList: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    marginTop: Spacing.four,
+  // 개인정보 고지 (node 260:638, x:82 y:569 w:219 h:28)
+  sleepPrivacyNote: {
+    position: 'absolute',
+    left: 0,
+    top: 569,
+    width: CANVAS_WIDTH,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '300',
+    lineHeight: 14,
+    color: SLEEP_TEXT_MUTED,
   },
-  privacyRow: {
-    width: '100%',
-    flexDirection: 'row',
+  // "이전" (node 260:642, x:66 y:722)
+  sleepBackLabelWrap: {
+    position: 'absolute',
+    left: 66,
+    top: 722,
+  },
+  sleepBackLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: SLEEP_TEXT_BACK_LABEL,
+  },
+  // "연동하기" 버튼 (node 260:640, x:231 y:707 w:127 h:50, radius:26.5)
+  sleepConnectButton: {
+    position: 'absolute',
+    left: 231,
+    top: 707,
+    width: 127,
+    height: 50,
+    borderRadius: 26.5,
+    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
   },
+  sleepConnectButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.white,
+  },
+
+  // ── ONB-03 "온보딩 3"(node 260:643) 전용 ────────────────────────────────────────
+  // 본문 좌측 여백 28px(≈ 프레임 폭 402 - 콘텐츠 폭 345, 좌우 대칭) — 4개 블록 공통.
+  // "수면 데이터를 연결해주세요" (node 261:676, x:28 y:157 w:345 h:35)
+  healthTitle: {
+    position: 'absolute',
+    left: 28,
+    top: 157,
+    width: 345,
+    fontSize: 26,
+    fontWeight: '700',
+    lineHeight: 35,
+    color: HEALTH_TEXT_TITLE,
+  },
+  // 설명 (node 261:677, x:28 y:205 w:345 h:44)
+  healthSubtitle: {
+    position: 'absolute',
+    left: 28,
+    top: 205,
+    width: 345,
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 22,
+    color: HEALTH_TEXT_SUBTITLE,
+  },
+  // "읽어올 데이터" 카드 (node 261:678, x:28 y:265 w:345, fill #F4F4F4, radius:12, padding:4px 16px)
+  healthCard: {
+    position: 'absolute',
+    left: 28,
+    top: 265,
+    width: 345,
+    backgroundColor: HEALTH_CARD_BG,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  // 카드 행 (node 261:679 등, padding: 12px 0px, gap:12)
+  healthCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  // 체크박스 자리(node 261:680 등, 20x20, radius:5, fill #DEDEDE)
+  healthCardCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    backgroundColor: HEALTH_CHECKBOX_BG,
+  },
+  healthCardTextGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  healthCardItemTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    lineHeight: 23,
+    color: HEALTH_TEXT_TITLE,
+  },
+  healthCardItemSubtitle: {
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 17,
+    color: HEALTH_TEXT_HINT,
+  },
+  // CTA (node 261:699, x:28 y:705 w:345, gap:8)
+  healthCta: {
+    position: 'absolute',
+    left: 28,
+    top: 705,
+    width: 345,
+    gap: 8,
+  },
+  // "건강 앱 연결하기" 버튼 (node 261:700, height:52, fill #031949, radius:10)
+  healthPrimaryButton: {
+    height: 52,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  healthPrimaryButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.white,
+  },
+  // "나중에 할게요" 버튼 (node 261:701, height:52, radius:10, 배경 없음)
+  healthGhostButton: {
+    height: 52,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  healthGhostButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: HEALTH_TEXT_SUBTITLE,
+  },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',

@@ -4,31 +4,16 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
+import { TODO_SUMMARY_MOCK, type ChecklistItemResponse } from '@/constants/mockData';
 
 // TODO — Figma 'Ui - 복사' 파일 노드 176:1165("iPhone 17 - 12")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 176:1165) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
-// 실제 추천 엔진·자체 DB가 아직 없어 목록 값은 전부 목업이다.
+// 실제 추천 엔진·자체 DB가 아직 없어 목록 값은 src/constants/mockData.ts의 TODO_SUMMARY_MOCK을 사용한다.
 //
 // 참고: Figma 프레임 안에는 "오늘 밤 체크리스트" 3개 항목이 위치만 다르게 통째로 한 번 더
 // 중복 배치되어 있었다(디자이너 작업 중 남은 복제본으로 보임, node 187:2527). 실제 앱에서
 // 같은 항목을 두 번 보여줄 수 없으므로 중복본은 제외하고 한 세트만 반영했다.
-const AVOID_LIST = [
-  { id: 'exfoliation', title: '강한 각질 제거', reason: '스크럽·AHA는 장벽이 회복된 뒤에' },
-  { id: 'new-product', title: '새 제품 첫 사용', reason: '오늘은 반응을 예측하기 어려워요' },
-] as const;
-
-type ChecklistItem = {
-  id: string;
-  title: string;
-  defaultChecked: boolean;
-};
-
-const CHECKLIST_ITEMS: ChecklistItem[] = [
-  { id: 'caffeine-cutoff', title: '카페인 컷오프 15:00', defaultChecked: false },
-  { id: 'screen-off', title: '취침 30분 전 화면 끄기', defaultChecked: false },
-  { id: 'room-temp', title: '침실 온도 19–21°C', defaultChecked: false },
-];
 
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
@@ -38,7 +23,7 @@ function ChecklistRow({
   checked,
   onToggle,
 }: {
-  item: ChecklistItem;
+  item: ChecklistItemResponse;
   checked: boolean;
   onToggle: () => void;
 }) {
@@ -60,11 +45,11 @@ function ChecklistRow({
 
 export default function TodoScreen() {
   const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(CHECKLIST_ITEMS.map((item) => [item.id, item.defaultChecked])),
+    Object.fromEntries(TODO_SUMMARY_MOCK.checklist.map((item) => [item.id, item.checked])),
   );
 
   const completed = useMemo(() => Object.values(checkedMap).filter(Boolean).length, [checkedMap]);
-  const total = CHECKLIST_ITEMS.length;
+  const total = TODO_SUMMARY_MOCK.checklist.length;
   const progress = total === 0 ? 0 : completed / total;
 
   const handleToggle = (id: string) => {
@@ -105,7 +90,7 @@ export default function TodoScreen() {
         <View style={styles.avoidCard}>
           <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
           <View style={styles.avoidList}>
-            {AVOID_LIST.map((item) => (
+            {TODO_SUMMARY_MOCK.avoidList.map((item) => (
               <View key={item.id} style={styles.avoidItem}>
                 <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
                 <ThemedText style={styles.avoidItemReason}>{item.reason}</ThemedText>
@@ -120,7 +105,7 @@ export default function TodoScreen() {
         {/* "오늘 밤 체크리스트" 섹션 (node 176:1166, x:21 y:359 w:363 h:216) */}
         <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
         <View style={styles.checklistList}>
-          {CHECKLIST_ITEMS.map((item) => (
+          {TODO_SUMMARY_MOCK.checklist.map((item) => (
             <ChecklistRow
               key={item.id}
               item={item}

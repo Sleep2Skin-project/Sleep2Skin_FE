@@ -21,17 +21,13 @@ const AVOID_LIST = [
 type ChecklistItem = {
   id: string;
   title: string;
-  status: string;
-  // 상태 라벨 색상 — 체크 여부가 아니라 상태 내용 자체에 따라 결정된다(Figma 원본 기준).
-  // "미확인"처럼 아직 값을 알 수 없는 상태만 muted 회색, 그 외(통과/알림 시각)는 포인트 블루.
-  statusMuted: boolean;
   defaultChecked: boolean;
 };
 
 const CHECKLIST_ITEMS: ChecklistItem[] = [
-  { id: 'caffeine-cutoff', title: '카페인 컷오프 15:00', status: '통과', statusMuted: false, defaultChecked: false },
-  { id: 'screen-off', title: '취침 30분 전 화면 끄기', status: '22:40 알림', statusMuted: false, defaultChecked: false },
-  { id: 'room-temp', title: '침실 온도 19–21°C', status: '미확인', statusMuted: true, defaultChecked: false },
+  { id: 'caffeine-cutoff', title: '카페인 컷오프 15:00', defaultChecked: false },
+  { id: 'screen-off', title: '취침 30분 전 화면 끄기', defaultChecked: false },
+  { id: 'room-temp', title: '침실 온도 19–21°C', defaultChecked: false },
 ];
 
 const CANVAS_WIDTH = 402;
@@ -58,9 +54,6 @@ function ChecklistRow({
         {checked && <ThemedText style={styles.checkmark}>✓</ThemedText>}
       </View>
       <ThemedText style={styles.checklistItemTitle}>{item.title}</ThemedText>
-      <ThemedText style={[styles.checklistItemStatus, item.statusMuted && styles.checklistItemStatusMuted]}>
-        {item.status}
-      </ThemedText>
     </Pressable>
   );
 }
@@ -347,15 +340,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700',
     color: '#171717',
-  },
-  // 상태 라벨 (node 176:1176/1182/1188, fontSize:12 lh:15)
-  checklistItemStatus: {
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '700',
-    color: '#3366FF',
-  },
-  checklistItemStatusMuted: {
-    color: 'rgba(55, 56, 60, 0.28)',
   },
 });

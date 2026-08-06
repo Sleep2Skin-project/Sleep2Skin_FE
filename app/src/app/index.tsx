@@ -9,35 +9,25 @@ import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
+import { HOME_SUMMARY_MOCK, type SkinRiskLevel } from '@/constants/mockData';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
-// 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것. 실제 API가 아직 없어 데이터는 목업이다.
+// 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것. 실제 API가 아직 없어 데이터는
+// src/constants/mockData.ts의 HOME_SUMMARY_MOCK을 사용한다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
-const TODAY_LABEL = '8월 6일 목요일';
-const GREETING = '좋은 아침이에요';
-
-const CHARACTER_LEVEL = 3;
-// 레벨 트랙(w:95.4) 대비 진행 바(w:34) 폭 비율 — Figma 원본 px 값을 그대로 사용.
+// 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 mock의 progressPercent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
-const LEVEL_FILL_WIDTH = 34;
 
-const SLEEP_TOOLTIP_LINE1 = '깊은 수면이';
-const SLEEP_TOOLTIP_LINE2 = '32분 부족했어요';
-
-const SKIN_FORECAST = [
-  { key: 'oil', label: '유분', value: 78, status: '과다', statusColor: Colors.warning },
-  { key: 'darkCircle', label: '다크서클', value: 41, status: '위험', statusColor: Colors.danger },
-  { key: 'dullness', label: '칙칙함', value: 55, status: '보통', statusColor: Colors.success },
-] as const;
-
-const FORECAST_TITLE = '오늘의 피부 예보';
-const FORECAST_DISCLAIMER = '예보는 확정이 아닌 위험 지수입니다. 식단·날씨·스킨케어도 함께 작용해요.';
+const RISK_LEVEL_COLOR: Record<SkinRiskLevel, string> = {
+  danger: Colors.danger,
+  warning: Colors.warning,
+  success: Colors.success,
+};
 
 const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
-const VERIFICATION_SUMMARY = '어제 예보 적중률 84% · 8일 연속 검증 중';
 
 function ForecastGaugeRow({
   label,
@@ -78,10 +68,10 @@ export default function HomeScreen() {
 
           {/* 상단 안내 문구 (날짜 + 인사말) */}
           <View style={styles.dateGreetingBlock}>
-            <ThemedText style={styles.dateText}>{TODAY_LABEL}</ThemedText>
+            <ThemedText style={styles.dateText}>{HOME_SUMMARY_MOCK.date.label}</ThemedText>
             <View style={styles.greetingRow}>
               <Image source={require('@/assets/images/figma-icon-sun.png')} style={styles.sunIcon} contentFit="contain" />
-              <ThemedText style={styles.greetingText}>{GREETING}</ThemedText>
+              <ThemedText style={styles.greetingText}>{HOME_SUMMARY_MOCK.greeting.message}</ThemedText>
             </View>
           </View>
           <Pressable onPress={() => router.push('/report')} hitSlop={10} style={styles.shareIconWrap}>
@@ -89,9 +79,9 @@ export default function HomeScreen() {
           </Pressable>
 
           {/* 캐릭터 레벨 */}
-          <ThemedText style={styles.levelText}>LEVEL. {CHARACTER_LEVEL}</ThemedText>
+          <ThemedText style={styles.levelText}>LEVEL. {HOME_SUMMARY_MOCK.level.current}</ThemedText>
           <View style={styles.levelTrack}>
-            <View style={[styles.levelFill, { width: `${(LEVEL_FILL_WIDTH / LEVEL_TRACK_WIDTH) * 100}%` }]} />
+            <View style={[styles.levelFill, { width: `${HOME_SUMMARY_MOCK.level.progressPercent}%` }]} />
           </View>
 
           {/* 캐릭터 */}
@@ -110,8 +100,11 @@ export default function HomeScreen() {
               end={{ x: 1, y: 1 }}>
               <View style={styles.tooltipIconSlot} />
               <View>
-                <ThemedText style={styles.tooltipText}>{SLEEP_TOOLTIP_LINE1}</ThemedText>
-                <ThemedText style={styles.tooltipText}>{SLEEP_TOOLTIP_LINE2}</ThemedText>
+                {HOME_SUMMARY_MOCK.sleepSummary.tooltipLines.map((line, index) => (
+                  <ThemedText key={index} style={styles.tooltipText}>
+                    {line}
+                  </ThemedText>
+                ))}
               </View>
             </LinearGradient>
           </Pressable>
@@ -125,20 +118,20 @@ export default function HomeScreen() {
                 style={styles.forecastTitleIcon}
                 contentFit="contain"
               />
-              <ThemedText style={styles.forecastTitle}>{FORECAST_TITLE}</ThemedText>
+              <ThemedText style={styles.forecastTitle}>{HOME_SUMMARY_MOCK.skinForecast.title}</ThemedText>
             </View>
             <View style={styles.gaugeList}>
-              {SKIN_FORECAST.map((item) => (
+              {HOME_SUMMARY_MOCK.skinForecast.items.map((item) => (
                 <ForecastGaugeRow
                   key={item.key}
                   label={item.label}
                   value={item.value}
                   status={item.status}
-                  statusColor={item.statusColor}
+                  statusColor={RISK_LEVEL_COLOR[item.riskLevel]}
                 />
               ))}
             </View>
-            <ThemedText style={styles.forecastDisclaimer}>{FORECAST_DISCLAIMER}</ThemedText>
+            <ThemedText style={styles.forecastDisclaimer}>{HOME_SUMMARY_MOCK.skinForecast.disclaimer}</ThemedText>
           </View>
 
           {/* 검증 버튼 + 트리거 */}
@@ -147,7 +140,7 @@ export default function HomeScreen() {
           </Pressable>
 
           <View style={styles.verificationTrigger}>
-            <ThemedText style={styles.verificationSummary}>{VERIFICATION_SUMMARY}</ThemedText>
+            <ThemedText style={styles.verificationSummary}>{HOME_SUMMARY_MOCK.verification.summaryText}</ThemedText>
           </View>
           <Pressable
             onPress={() => setSleepModalVisible(true)}

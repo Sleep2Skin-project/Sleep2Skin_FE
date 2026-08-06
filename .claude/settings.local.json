@@ -30,7 +30,13 @@
       "Bash(echo \"tsc exit:$?\")",
       "Bash(git restore *)",
       "Bash(node -e \"const m=require\\('expo-router'\\); console.log\\(Object.keys\\(m\\).filter\\(k=>/tab/i.test\\(k\\)\\)\\)\")",
-      "Bash(echo \"exit:$?\")"
+      "Bash(echo \"exit:$?\")",
+      "Bash(disown)",
+      "Read(//private/tmp/**)",
+      "Bash(npx eslint *)",
+      "Bash(pkill -f \"expo start --web --port 8099\")",
+      "Bash(lsof -ti:8099)",
+      "Bash(xargs kill -9)"
     ]
   }
 }

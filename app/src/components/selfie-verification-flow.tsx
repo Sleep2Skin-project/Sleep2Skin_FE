@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,13 +12,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useColorScheme,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
 // 1단계(촬영, node 176:816 "셀피 화면")·2단계(분석 중, node 176:961 "셀피 로딩 화면")는
@@ -545,35 +547,26 @@ function ComparisonRow({
   );
 }
 
-// 홈(index.tsx)/투두(todo.tsx) 화면이 속한 실제 하단 탭 내비게이션(app-tabs.tsx의 NativeTabs)과
-// 동일한 4개 탭·아이콘·라벨을 그대로 옮겼다. NativeTabs는 라우터에 종속된 네이티브 탭바라 모달
-// 안에서 그대로 재사용할 수 없어, 같은 아이콘/색상/구성으로 정적으로 재현하고 탭을 누르면
-// 모달을 닫은 뒤 해당 라우트로 실제 이동시킨다.
-const REPORT_NAV_TABS = [
-  { key: 'index', label: 'HOME', icon: 'home', iconOutline: 'home-outline' },
-  { key: 'todo', label: 'TODO', icon: 'checkbox', iconOutline: 'checkbox-outline' },
-  { key: 'report', label: 'REPORT', icon: 'bar-chart', iconOutline: 'bar-chart-outline' },
-  { key: 'my', label: 'MY', icon: 'person-circle', iconOutline: 'person-circle-outline' },
-] as const;
-
-function ReportTabBar({ onNavigate }: { onNavigate: (routeKey: (typeof REPORT_NAV_TABS)[number]['key']) => void }) {
-  const colorScheme = useColorScheme();
-  const themeColors = Colors[colorScheme === 'unspecified' ? 'light' : (colorScheme ?? 'light')];
+// 홈(index.tsx)/투두(todo.tsx) 화면이 속한 실제 메인 탭바(app-tabs.tsx의 NativeTabs, 웹의
+// app-tabs.web.tsx)와 동일한 TAB_ITEMS·아이콘(SymbolView)·라벨(ThemedText)·레이아웃(tabBarStyles)을
+// 그대로 재사용한다. NativeTabs는 라우터에 종속된 네이티브 탭바라 모달 안에서 그대로 마운트할 수
+// 없어, 같은 소스에서 파생된 구성으로 정적으로 재현하고 탭을 누르면 모달을 닫은 뒤 해당 라우트로
+// 실제 이동시킨다.
+function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
+  const theme = useTheme();
 
   return (
-    <View
-      style={[
-        styles.reportTabBar,
-        { backgroundColor: themeColors.background, borderTopColor: themeColors.backgroundElement },
-      ]}>
-      {REPORT_NAV_TABS.map((tab) => {
+    <View style={[tabBarStyles.bar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
+      {TAB_ITEMS.map((item) => {
         // 이 모달은 HOME에서만 열리므로 HOME이 실제 활성 탭이다.
-        const active = tab.key === 'index';
-        const color = active ? themeColors.text : themeColors.textSecondary;
+        const active = item.name === 'index';
+        const themeColor = active ? 'text' : 'textSecondary';
         return (
-          <Pressable key={tab.key} onPress={() => onNavigate(tab.key)} hitSlop={8} style={styles.reportTabItem}>
-            <Ionicons name={active ? tab.icon : tab.iconOutline} size={24} color={color} />
-            <Text style={[styles.reportTabLabel, { color }]}>{tab.label}</Text>
+          <Pressable key={item.name} onPress={() => onNavigate(item)} hitSlop={8} style={tabBarStyles.item}>
+            <SymbolView name={{ ios: item.sf, android: item.android, web: item.android }} tintColor={theme[themeColor]} size={22} />
+            <ThemedText type="small" themeColor={themeColor} style={tabBarStyles.label}>
+              {item.label}
+            </ThemedText>
           </Pressable>
         );
       })}
@@ -595,9 +588,9 @@ function ReportStep({ onClose, onFinish }: { onClose: () => void; onFinish: () =
     return `${formatted} · 셀피 검증`;
   }, []);
 
-  const handleTabNavigate = (routeKey: (typeof REPORT_NAV_TABS)[number]['key']) => {
+  const handleTabNavigate = (item: TabItem) => {
     onClose();
-    if (routeKey !== 'index') router.push(`/${routeKey}`);
+    if (item.name !== 'index') router.push(item.href);
   };
 
   return (
@@ -1604,21 +1597,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#FFFFFF',
-  },
-  // 홈/투두 화면의 실제 하단 탭(app-tabs.tsx NativeTabs)과 동일한 배치 재현.
-  reportTabBar: {
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: Spacing.two,
-    paddingBottom: Spacing.four,
-  },
-  reportTabItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  reportTabLabel: {
-    fontSize: 10,
-    fontWeight: '500',
   },
 });

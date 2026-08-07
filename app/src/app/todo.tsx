@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
@@ -35,8 +35,10 @@ function ChecklistRow({
         checked ? styles.checklistItemChecked : styles.checklistItemUnchecked,
         pressed && styles.pressed,
       ]}>
-      <View style={[styles.checkbox, checked ? styles.checkboxChecked : styles.checkboxUnchecked]}>
-        {checked && <ThemedText style={styles.checkmark}>✓</ThemedText>}
+      <View style={styles.checkboxSlot}>
+        <View style={[styles.checkbox, checked ? styles.checkboxChecked : styles.checkboxUnchecked]}>
+          {checked && <ThemedText style={styles.checkmark}>✓</ThemedText>}
+        </View>
       </View>
       <ThemedText style={styles.checklistItemTitle}>{item.title}</ThemedText>
     </Pressable>
@@ -57,7 +59,10 @@ export default function TodoScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}>
       <View style={styles.canvas}>
         {/* 배경 (fill #DFEAFF) */}
         <View style={StyleSheet.absoluteFill} />
@@ -115,15 +120,20 @@ export default function TodoScreen() {
           ))}
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    alignItems: 'center',
     backgroundColor: Colors.bgSoftBlue,
+  },
+  // 체크리스트 6개로 확장되며 캔버스가 화면(및 하단 탭 바) 높이를 넘어설 수 있어
+  // 스크롤 가능하도록 처리 — 캔버스 자체의 크기·스타일은 그대로 유지한다.
+  scrollContent: {
+    alignItems: 'center',
+    paddingBottom: 24,
   },
   // 프레임(node 176:1165): 402x874, fill #DFEAFF — 홈 화면(index.tsx)과 동일한 고정 해상도
   canvas: {
@@ -294,6 +304,14 @@ const styles = StyleSheet.create({
   checklistItemUnchecked: {
     backgroundColor: '#FFFFFF',
     borderColor: 'rgba(112, 115, 124, 0.22)',
+  },
+  // 체크 여부와 무관하게 항상 24x24 자리(unchecked 크기 기준)를 차지해, 체크박스가
+  // 20x20으로 작아져도 카드(행) 높이가 함께 줄어들지 않도록 고정한다.
+  checkboxSlot: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // 체크박스 (node 176:1171 체크됨 w:20 h:20 radius:6 / 176:1178,1184 미체크 w:24 h:24 radius:6)
   checkbox: {

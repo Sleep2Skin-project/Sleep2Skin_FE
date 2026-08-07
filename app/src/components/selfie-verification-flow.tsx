@@ -1,13 +1,17 @@
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -113,6 +117,18 @@ const REPORT_HEADER_LABEL = 'rgba(55, 56, 60, 0.28)'; // Tuna 28%
 const REPORT_VALUE_MUTED = 'rgba(55, 56, 60, 0.61)'; // Tuna 61%
 const REPORT_SPARKLE_BG = 'rgba(0, 102, 255, 0.1)'; // Blue Ribbon 10%
 
+// 백엔드 연동 지점 — 지금은 목업이라 아무 요청도 보내지 않는다. 실제 업로드/분석 API가
+// 준비되면 이 함수 내부만 교체하면 되도록(홈/투두의 Mock 데이터 교체 방식과 동일하게)
+// handleImageSelected에서 이 함수 하나만 호출한다.
+async function uploadImageToServer(uri: string): Promise<void> {
+  // TODO(backend): 예) await fetch('<API_BASE_URL>/selfie', { method: 'POST', body: buildFormData(uri) });
+  void uri;
+}
+
+// 개발자용 프리패스(Bypass) — 웹 브라우저는 실기기 카메라/갤러리가 온전히 동작하지 않을 수
+// 있어, 화면 전환 흐름만 먼저 검증할 수 있도록 실패 시 이 더미 이미지로 강제 진행한다.
+const DEV_BYPASS_DUMMY_URI = 'https://dummyimage.com/600x400/000/fff&text=Mock+Selfie';
+
 function getVerdict(forecast: number, actual: number) {
   const diff = Math.abs(forecast - actual);
   if (diff <= 4) return { label: '적중', icon: '◎', color: SUCCESS };
@@ -130,9 +146,15 @@ function CornerBracket({ position }: { position: 'topLeft' | 'topRight' | 'botto
 function CapturePreview({
   scanning,
   scanTranslateY,
+  cameraRef,
+  cameraReady,
+  permissionChecked,
 }: {
   scanning: boolean;
   scanTranslateY: Animated.AnimatedInterpolation<number>;
+  cameraRef: RefObject<CameraView | null>;
+  cameraReady: boolean;
+  permissionChecked: boolean;
 }) {
   return (
     <View style={styles.previewWrap}>
@@ -148,17 +170,22 @@ function CapturePreview({
       <View style={styles.ovalGuideDotC} />
 
       <View style={styles.oval}>
+        {cameraReady && <CameraView ref={cameraRef} style={styles.cameraFill} facing="front" />}
         <View style={styles.ovalGray8Overlay} />
         <View style={styles.ovalDashedRing} />
 
-        <View style={styles.ovalPlaceholderContent}>
-          <Image
-            source={require('@/assets/images/figma-icon-selfie-preview-placeholder.png')}
-            style={styles.ovalPlaceholderGlyph}
-            contentFit="contain"
-          />
-          <Text style={styles.ovalPlaceholderText}>카메라 미리보기 (사용자 얼굴)</Text>
-        </View>
+        {!cameraReady && (
+          <View style={styles.ovalPlaceholderContent}>
+            <Image
+              source={require('@/assets/images/figma-icon-selfie-preview-placeholder.png')}
+              style={styles.ovalPlaceholderGlyph}
+              contentFit="contain"
+            />
+            <Text style={styles.ovalPlaceholderText}>
+              {permissionChecked ? '카메라 접근 권한이 필요해요' : '카메라 미리보기 (사용자 얼굴)'}
+            </Text>
+          </View>
+        )}
 
         {scanning && (
           <Animated.View
@@ -178,12 +205,94 @@ function CaptureStep({
   onCaptured,
 }: {
   onClose: () => void;
-  onCaptured: () => void;
+  onCaptured: (imageUri: string) => void;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(AUTO_CAPTURE_SECONDS);
   const [scanning, setScanning] = useState(false);
   const [scanAnim] = useState(() => new Animated.Value(0));
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cameraRef = useRef<CameraView | null>(null);
+
+  const isWeb = Platform.OS === 'web';
+
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [libraryPermission, requestLibraryPermission] = ImagePicker.useMediaLibraryPermissions();
+  // 웹은 브라우저 카메라 권한 팝업(getUserMedia)을 유도하지 않고 항상 더미로 우회한다.
+  const cameraReady = !isWeb && cameraPermission?.granted === true;
+
+  // 최초 진입 시 카메라·앨범 권한을 한 번 확인하고, 아직 받지 않았다면(그리고 다시 물어볼 수
+  // 있다면) 요청한다. 이미 허용/영구 거부된 상태라면 재요청하지 않는다. 웹에서는 어차피
+  // 카메라를 쓰지 않으므로 카메라 권한은 요청하지 않는다.
+  useEffect(() => {
+    if (!isWeb && cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
+      requestCameraPermission();
+    }
+    if (libraryPermission && !libraryPermission.granted && libraryPermission.canAskAgain) {
+      requestLibraryPermission();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraPermission?.granted, cameraPermission?.canAskAgain, libraryPermission?.granted, libraryPermission?.canAskAgain]);
+
+  // 카메라 촬영과 갤러리 선택 결과(uri)를 동일하게 처리하는 공통 진입점. 실제 백엔드 연동
+  // 시에는 uploadImageToServer 내부만 채우면 되고, 이 함수는 그대로 둘 수 있다. uri가 실제
+  // 촬영본이든 개발자 프리패스로 만든 더미든 상관없이 항상 다음 화면(step 2, AnalyzingStep
+  // = "셀피 로딩 화면")으로 넘어간다.
+  const handleImageSelected = async (uri: string) => {
+    await uploadImageToServer(uri);
+    onCaptured(uri);
+  };
+
+  // 개발자용 프리패스 — 실기기 촬영/갤러리 선택이 실패하거나 웹 환경이라 애초에 시도할 수
+  // 없을 때, 화면 전환 흐름 테스트가 막히지 않도록 더미 이미지로 강제 진행한다.
+  const bypassWithDummyImage = async (reason: string) => {
+    Alert.alert('개발자 프리패스', `${reason} 더미 이미지로 다음 화면까지 진행할게요.`);
+    await handleImageSelected(DEV_BYPASS_DUMMY_URI);
+  };
+
+  const capturePhoto = async () => {
+    if (isWeb || !cameraReady) {
+      await bypassWithDummyImage(isWeb ? '웹 환경에서는 카메라를 사용할 수 없어' : '카메라 권한이 없어');
+      return;
+    }
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
+      if (photo?.uri) {
+        await handleImageSelected(photo.uri);
+      } else {
+        await bypassWithDummyImage('촬영된 사진을 가져오지 못해');
+      }
+    } catch {
+      await bypassWithDummyImage('촬영에 실패해');
+    }
+  };
+
+  const openGallery = async () => {
+    if (isWeb) {
+      await bypassWithDummyImage('웹 환경에서는 갤러리 접근 대신');
+      return;
+    }
+    try {
+      let permission = libraryPermission;
+      if (!permission?.granted) {
+        permission = await requestLibraryPermission();
+      }
+      if (!permission?.granted) {
+        await bypassWithDummyImage('앨범 접근 권한이 없어');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+      // 사용자가 스스로 취소한 경우는 실패가 아니므로 우회하지 않고 그대로 화면에 머문다.
+      if (!result.canceled && result.assets[0]?.uri) {
+        await handleImageSelected(result.assets[0].uri);
+      }
+    } catch {
+      await bypassWithDummyImage('갤러리에서 이미지를 가져오지 못해');
+    }
+  };
 
   const startCapture = () => {
     if (countdownRef.current) {
@@ -198,7 +307,7 @@ function CaptureStep({
       easing: Easing.linear,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) onCaptured();
+      if (finished) capturePhoto();
     });
   };
 
@@ -246,7 +355,13 @@ function CaptureStep({
           <Text style={styles.captureSubtitle}>얼굴이 가이드에 맞춰지면 자동으로 촬영돼요</Text>
         </View>
 
-        <CapturePreview scanning={scanning} scanTranslateY={scanTranslateY} />
+        <CapturePreview
+          scanning={scanning}
+          scanTranslateY={scanTranslateY}
+          cameraRef={cameraRef}
+          cameraReady={cameraReady}
+          permissionChecked={!isWeb && cameraPermission != null}
+        />
 
         {/* 상태 배지 (node 176:859/864, 단일 pill) */}
         <View style={styles.statusPill}>
@@ -259,18 +374,36 @@ function CaptureStep({
         <Text style={styles.autoCaptureText}>
           {scanning ? '촬영 중…' : `${secondsLeft}초 후 자동 촬영`}
         </Text>
-        {/* 셔터 버튼 (node 176:873, 72x72) — 흰 원(176:874) + 링 에셋(176:875) 오버레이 */}
-        <Pressable
-          onPress={startCapture}
-          disabled={scanning}
-          style={({ pressed }) => [styles.shutterButton, (pressed || scanning) && styles.pressed]}>
-          <View style={styles.shutterInner} />
-          <Image
-            source={require('@/assets/images/figma-icon-selfie-shutter-ring.png')}
-            style={styles.shutterRing}
-            contentFit="contain"
-          />
-        </Pressable>
+        <View style={styles.captureControlsRow}>
+          {/* 갤러리(앨범) 백업 버튼 — 촬영 대신 기존 사진을 선택해 동일한 handleImageSelected로 넘긴다. */}
+          <Pressable
+            onPress={openGallery}
+            disabled={scanning}
+            hitSlop={12}
+            style={({ pressed }) => [styles.galleryButton, pressed && styles.pressed]}>
+            <Image
+              source={require('@/assets/images/figma-icon-selfie-preview-placeholder.png')}
+              style={styles.galleryButtonIcon}
+              contentFit="contain"
+            />
+          </Pressable>
+
+          {/* 셔터 버튼 (node 176:873, 72x72) — 흰 원(176:874) + 링 에셋(176:875) 오버레이 */}
+          <Pressable
+            onPress={startCapture}
+            disabled={scanning}
+            style={({ pressed }) => [styles.shutterButton, (pressed || scanning) && styles.pressed]}>
+            <View style={styles.shutterInner} />
+            <Image
+              source={require('@/assets/images/figma-icon-selfie-shutter-ring.png')}
+              style={styles.shutterRing}
+              contentFit="contain"
+            />
+          </Pressable>
+
+          {/* 셔터 버튼을 시각적으로 중앙에 두기 위한 갤러리 버튼과 동일 크기의 스페이서. */}
+          <View style={styles.captureControlsSpacer} />
+        </View>
         <Text style={styles.captureDisclaimer}>촬영 원본은 저장되지 않습니다</Text>
       </View>
     </View>
@@ -355,7 +488,10 @@ function MetricStatusBadge({ status }: { status: MetricStatus }) {
 }
 
 // node 176:961 "셀피 로딩 화면" — 부모 테마와 무관하게 항상 Figma 지정 흰 배경으로 렌더한다.
-function AnalyzingStep({ onDone }: { onDone: () => void }) {
+// imageUri는 CaptureStep에서 촬영/선택한 사진 경로로, 실제 분석 API 연동 시 이 값을 그대로
+// 요청 본문에 실어 보내면 된다(현재는 목업 타이머만 돌리므로 사용하지 않는다).
+function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: () => void }) {
+  void imageUri; // TODO(backend): 분석 API 연동 시 이 uri로 요청을 보낸다.
   const [statuses, setStatuses] = useState<MetricStatus[]>(() => METRIC_ITEMS.map(() => 'pending'));
   const [secondsLeft, setSecondsLeft] = useState(3);
   const [rotateAnim] = useState(() => new Animated.Value(0));
@@ -696,6 +832,7 @@ type SelfieFlowStepsProps = {
 // 작게 렌더돼, 텍스트 등 개별 수치는 Figma와 정확히 일치해도 전체 비율이 달라 보인다.
 function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   if (step === 1) {
@@ -704,7 +841,13 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
         <LinearGradient
           colors={[CAPTURE_BG_TOP, CAPTURE_BG_BOTTOM]}
           style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <CaptureStep onClose={onClose} onCaptured={() => setStep(2)} />
+          <CaptureStep
+            onClose={onClose}
+            onCaptured={(uri) => {
+              setImageUri(uri);
+              setStep(2);
+            }}
+          />
         </LinearGradient>
       </View>
     );
@@ -714,7 +857,7 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
     return (
       <View style={styles.screen}>
         <ThemedView style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <AnalyzingStep onDone={() => setStep(3)} />
+          <AnalyzingStep imageUri={imageUri} onDone={() => setStep(3)} />
         </ThemedView>
       </View>
     );
@@ -884,6 +1027,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  // 실기기 카메라 프리뷰(CameraView) — 오벌(overflow:hidden) 안을 가득 채우는 기본 레이어.
+  cameraFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   // "div::part(frame).frame" (node 176:837, fill: Gray 8%)
   ovalGray8Overlay: {
     position: 'absolute',
@@ -1026,6 +1177,30 @@ const styles = StyleSheet.create({
   autoCaptureText: {
     color: 'rgba(255, 255, 255, 0.5)',
     fontSize: 12,
+  },
+  // 갤러리 버튼 + 셔터 버튼 + 대칭용 스페이서를 한 줄에 배치 — 셔터가 항상 중앙에 오도록 고정폭.
+  captureControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: 280,
+  },
+  // 갤러리(앨범) 백업 버튼 (44x44, White 14% 필)
+  galleryButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  galleryButtonIcon: {
+    width: 22,
+    height: 22,
+  },
+  captureControlsSpacer: {
+    width: 44,
+    height: 44,
   },
   // 셔터 버튼 (node 176:873, 72x72)
   shutterButton: {

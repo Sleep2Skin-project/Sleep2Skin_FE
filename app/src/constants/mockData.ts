@@ -84,5 +84,8 @@ export const TODO_SUMMARY_MOCK: TodoSummaryResponse = {
     { id: 'caffeine-cutoff', title: '카페인 컷오프 15:00', checked: false },
     { id: 'screen-off', title: '취침 30분 전 화면 끄기', checked: false },
     { id: 'room-temp', title: '침실 온도 19–21°C', checked: false },
+    { id: 'lukewarm-cleanse', title: '미온수로 가벼운 세안', checked: false },
+    { id: 'night-moisturizer', title: '취침 전 수분 크림 도포', checked: false },
+    { id: 'dim-lights', title: '암막 커튼 및 조도 낮추기', checked: false },
   ],
 };

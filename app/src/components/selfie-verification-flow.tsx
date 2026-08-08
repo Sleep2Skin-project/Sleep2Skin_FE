@@ -3,7 +3,6 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
@@ -22,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TabSymbol } from '@/components/ui/tab-symbol';
 import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -699,7 +699,7 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
         const themeColor = active ? 'text' : 'textSecondary';
         return (
           <Pressable key={item.name} onPress={() => onNavigate(item)} hitSlop={8} style={tabBarStyles.item}>
-            <SymbolView name={{ ios: item.sf, android: item.android, web: item.android }} tintColor={theme[themeColor]} size={22} />
+            <TabSymbol sf={item.sf} android={item.android} tintColor={theme[themeColor]} size={22} />
             <ThemedText type="small" themeColor={themeColor} style={tabBarStyles.label}>
               {item.label}
             </ThemedText>

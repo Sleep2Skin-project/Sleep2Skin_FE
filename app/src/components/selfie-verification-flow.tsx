@@ -64,9 +64,9 @@ const ANALYZING_CARD_BORDER = 'rgba(112, 115, 124, 0.22)'; // Pale Sky 22%
 const ANALYZING_ROW_DIVIDER = 'rgba(112, 115, 124, 0.08)'; // Pale Sky 8%
 const ANALYZING_AVATAR_BG = '#F7F7F8'; // Athens Gray
 
-const METRIC_STEP_DURATION_MS = 800;
+const METRIC_STEP_DURATION_MS = 1250;
 const REPORT_TRANSITION_DELAY_MS = 400;
-const ANALYSIS_TOTAL_MS = METRIC_STEP_DURATION_MS * 4;
+const ANALYSIS_TOTAL_MS = METRIC_STEP_DURATION_MS * 4; // 5000ms — 기존 3초(800ms*4)를 5초로 비율 유지하며 연장.
 
 type MetricStatus = 'pending' | 'active' | 'done';
 
@@ -411,7 +411,10 @@ function CaptureStep({
 }
 
 // node 176:963("div", 132x132) — 아바타 원(176:964) + 바깥 회전 링 에셋(176:977) + 트래킹 도트 3개(176:978/980/982).
-function RotatingSelfieBadge({ rotateAnim }: { rotateAnim: Animated.Value }) {
+// imageUri가 있으면(촬영/갤러리로 얻은 실제 사진) 원 안에 그 사진을 채우고, 없으면(예: 웹 환경
+// 프리패스 등) 기존 회색 아이콘 + "촬영된 셀피" 텍스트 Fallback UI를 그대로 보여준다. 바깥 점선
+// 회전 링(selfieRotatingRingWrap)은 이 조건과 무관하게 항상 그대로 렌더된다.
+function RotatingSelfieBadge({ rotateAnim, imageUri }: { rotateAnim: Animated.Value; imageUri: string | null }) {
   const rotate = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
@@ -420,14 +423,18 @@ function RotatingSelfieBadge({ rotateAnim }: { rotateAnim: Animated.Value }) {
       <View style={styles.selfieAvatarCircle}>
         <View style={styles.selfieAvatarOverlay} />
         <View style={styles.selfieAvatarDashedRing} />
-        <View style={styles.selfieAvatarContent}>
-          <Image
-            source={require('@/assets/images/figma-icon-analyzing-preview-placeholder.png')}
-            style={styles.selfieAvatarGlyph}
-            contentFit="contain"
-          />
-          <Text style={styles.selfieAvatarText}>촬영된 셀피</Text>
-        </View>
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.selfieAvatarPhoto} contentFit="cover" />
+        ) : (
+          <View style={styles.selfieAvatarContent}>
+            <Image
+              source={require('@/assets/images/figma-icon-analyzing-preview-placeholder.png')}
+              style={styles.selfieAvatarGlyph}
+              contentFit="contain"
+            />
+            <Text style={styles.selfieAvatarText}>촬영된 셀피</Text>
+          </View>
+        )}
       </View>
 
       {/* 바깥 회전 링 에셋 (node 176:977, 132x132) */}
@@ -488,12 +495,12 @@ function MetricStatusBadge({ status }: { status: MetricStatus }) {
 }
 
 // node 176:961 "셀피 로딩 화면" — 부모 테마와 무관하게 항상 Figma 지정 흰 배경으로 렌더한다.
-// imageUri는 CaptureStep에서 촬영/선택한 사진 경로로, 실제 분석 API 연동 시 이 값을 그대로
-// 요청 본문에 실어 보내면 된다(현재는 목업 타이머만 돌리므로 사용하지 않는다).
+// imageUri는 CaptureStep에서 촬영/선택한 사진 경로로, 중앙 원형 배지 미리보기에 쓰인다. 실제 분석
+// API 연동 시에는 이 값을 그대로 요청 본문에 실어 보내면 된다(현재는 목업 타이머만 돌린다).
 function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: () => void }) {
-  void imageUri; // TODO(backend): 분석 API 연동 시 이 uri로 요청을 보낸다.
+  // TODO(backend): 분석 API 연동 시 이 uri로 요청을 보낸다.
   const [statuses, setStatuses] = useState<MetricStatus[]>(() => METRIC_ITEMS.map(() => 'pending'));
-  const [secondsLeft, setSecondsLeft] = useState(3);
+  const [secondsLeft, setSecondsLeft] = useState(5);
   const [rotateAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -549,7 +556,7 @@ function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: 
     <View style={styles.analyzingContainer}>
       {/* "div"(node 176:962, padding:56px 24px 0px, gap:20) — 배지/제목그룹/카드를 세로 중앙 정렬. */}
       <View style={styles.analyzingCenterGroup}>
-        <RotatingSelfieBadge rotateAnim={rotateAnim} />
+        <RotatingSelfieBadge rotateAnim={rotateAnim} imageUri={imageUri} />
 
         {/* "div"(node 176:984, gap:5) */}
         <View style={styles.analyzingTitleGroup}>
@@ -1298,6 +1305,16 @@ const styles = StyleSheet.create({
   selfieAvatarGlyph: {
     width: 28,
     height: 28,
+  },
+  // 촬영/선택된 사진 — 아바타 원(radius:60) 안을 꽉 채우고, 원 밖으로 삐져나오지 않도록
+  // 원과 동일한 radius를 한 번 더 적용한다(selfieAvatarCircle의 overflow:hidden과 이중 안전장치).
+  selfieAvatarPhoto: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 60,
   },
   // "촬영된 셀피" (node 176:970, Inter Medium 13px, Black 75%)
   selfieAvatarText: {

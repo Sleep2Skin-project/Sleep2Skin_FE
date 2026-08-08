@@ -1,9 +1,9 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabSlot, TabTrigger } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
 import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { TabSymbol } from '@/components/ui/tab-symbol';
 import { TAB_ITEMS, tabBarStyles } from '@/constants/tabs';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -26,7 +26,7 @@ export default function AppTabs() {
 
           return (
             <TabTrigger key={item.name} name={item.name} href={item.href} style={tabBarStyles.item}>
-              <SymbolView name={{ web: item.android }} tintColor={theme[themeColor]} size={22} />
+              <TabSymbol sf={item.sf} android={item.android} tintColor={theme[themeColor]} size={22} />
               <ThemedText type="small" themeColor={themeColor} style={tabBarStyles.label}>
                 {item.label}
               </ThemedText>

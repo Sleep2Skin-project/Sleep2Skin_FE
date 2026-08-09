@@ -6,6 +6,7 @@
     "@expo/ui": "~0.2.0-beta.9",
     "@expo/vector-icons": "^15.0.2",
     "@react-navigation/native": "^7.3.16",
+    "axios": "^1.19.0",
     "expo": "~54.0.0",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",

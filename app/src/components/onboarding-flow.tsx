@@ -12,12 +12,11 @@ import { useTheme } from '@/hooks/use-theme';
 // ONB-01~05 온보딩(공통) 흐름 — 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서
 // AppTabs 대신 렌더된다.
 // 전체 캔버스는 HOME(index.tsx, node 187:2673)과 동일한 402x874 고정 컨테이너 규격을 따른다.
-// ONB-01(값 제안)은 Figma 데이터가 없어 기존 카피·구조·테마 컬러를 그대로 둔 채 이 고정 캔버스
-// 안에만 배치했다 — 실제 UI/로직은 변경하지 않았다.
-// ONB-02("온보딩 2", node 256:573)·ONB-03("온보딩 3", node 260:643)은 Figma REST API로
-// 좌표·색상·타이포를 그대로 옮겼고, 부모 테마(다크모드)와 무관하게 항상 Figma 지정 배경(#FFFFFF)으로
-// 렌더한다. 두 화면 모두 본문(제목/리스트/CTA 등)이 프레임의 자식 레이어가 아니라 같은 Figma 캔버스
-// 위에 프레임과 겹쳐 배치된 loose 오브젝트라, 프레임 원점을 기준으로 좌표를 역산해 옮겼다.
+// ONB-01("온보딩 1", node 252:139)·ONB-02("온보딩 2", node 256:573)·ONB-03("온보딩 3", node 260:643)
+// 모두 Figma REST API로 좌표·색상·타이포를 그대로 옮겼고, 부모 테마(다크모드)와 무관하게 항상
+// Figma 지정 배경(#FFFFFF)으로 렌더한다. 세 화면 모두 본문(제목/리스트/CTA 등)이 프레임의 자식
+// 레이어가 아니라 같은 Figma 캔버스 위에 프레임과 겹쳐 배치된 loose 오브젝트라, 프레임 원점을
+// 기준으로 좌표를 역산해 옮겼다.
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 const STEP_COUNT = 3;
@@ -53,36 +52,6 @@ const HEALTH_DATA_ITEMS = [
   { title: 'HRV · 안정시 심박', subtitle: '스트레스성 트러블 신호' },
 ] as const;
 
-// ── ONB-01 전용 크롬 (원본 그대로: 테마 반응형 ThemedView/ThemedText) ──────────────────
-function ProgressBar({ current, total }: { current: number; total: number }) {
-  return (
-    <View style={styles.progressRow}>
-      {Array.from({ length: total }).map((_, index) => (
-        <ThemedView
-          key={index}
-          type={index <= current ? 'text' : 'backgroundElement'}
-          style={styles.progressSegment}
-        />
-      ))}
-    </View>
-  );
-}
-
-function OnboardingHeader({ step, onBack }: { step: number; onBack?: () => void }) {
-  return (
-    <View style={styles.header}>
-      <Pressable
-        onPress={onBack}
-        disabled={!onBack}
-        hitSlop={12}
-        style={({ pressed }) => [styles.backButton, pressed && onBack && styles.pressed]}>
-        {onBack && <ThemedText style={styles.backChevron}>‹</ThemedText>}
-      </Pressable>
-      <ProgressBar current={step} total={STEP_COUNT} />
-    </View>
-  );
-}
-
 function PrimaryButton({
   label,
   onPress,
@@ -114,38 +83,42 @@ function PrimaryButton({
   );
 }
 
-// 와이어프레임 01: 일러스트 에셋이 아직 미정이라(docs 명세 참고) 실제 그림 대신
-// 자리만 잡아두는 빈 플레이스홀더를 그대로 재현한다. 임의의 카피를 채워 넣지 않는다.
-function IllustrationPlaceholder() {
-  return <ThemedView type="backgroundElement" style={styles.illustrationPlaceholder} />;
-}
-
-// ONB-01: 앱 최초 실행 시 서비스 가치를 전달한다.
+// ONB-01("온보딩 1", node 252:139): 앱 최초 실행 시 서비스 가치를 전달한다.
+// 텍스트/색상/좌표는 모두 Figma 노드 값을 그대로 옮겼고, 부모 테마와 무관하게 항상
+// Figma 지정 배경(#FFFFFF)으로 렌더한다(ONB-02/03과 동일 방식).
 function ValueStep({ onNext }: { onNext: () => void }) {
   return (
-    <View style={styles.stepBody}>
-      <View>
-        <ThemedText type="title">
-          당신의{'\n'}피부 예보
-        </ThemedText>
-        <IllustrationPlaceholder />
-      </View>
+    <View style={styles.figmaCanvas}>
+      <FigmaStepHeader onBack={() => {}} filledSegments={1} />
 
-      <View style={styles.footer}>
-        <PrimaryButton label="시작하기" onPress={onNext} />
-        {/* TODO: 기존 계정 로그인 플로우가 생기면 아래 텍스트에 연결한다. */}
-        <ThemedText type="link" themeColor="textSecondary" style={styles.centerText}>
-          이미 계정이 있어요
-        </ThemedText>
-      </View>
+      {/* "당신의 \n피부 예보" (node 255:561, x:26 y:200 w:156 h:81) */}
+      <Text style={styles.valueTitle}>{'당신의 \n피부 예보'}</Text>
+
+      {/* 설명 (node 256:562, x:26 y:305 w:360 h:48) */}
+      <Text style={styles.valueBody}>
+        애플워치가 기록한 어젯밤 수면을 피부 언어로 번역합니다.{'\n'}오늘 당신의 피부가 어떨지, 아침 5초면 알 수 있어요.
+      </Text>
+
+      {/* "시작하기" 버튼 (node 256:563, x:25 y:706 w:351 h:53, radius:13) */}
+      <Pressable
+        onPress={onNext}
+        style={({ pressed }) => [styles.valuePrimaryButton, pressed && styles.pressed]}>
+        <Text style={styles.valuePrimaryButtonText}>시작하기</Text>
+      </Pressable>
+
+      {/* "이미 계정이 있어요" (node 256:565, x:125 y:781 w:157 h:17) */}
+      {/* TODO: 기존 계정 로그인 플로우가 생기면 아래 버튼에 연결한다. */}
+      <Pressable hitSlop={8} style={({ pressed }) => [styles.valueSecondaryButton, pressed && styles.pressed]}>
+        <Text style={styles.valueSecondaryButtonText}>이미 계정이 있어요</Text>
+      </Pressable>
     </View>
   );
 }
 
-// ── ONB-02/03 공용 크롬 — Figma 노드 값을 그대로 옮긴 화면들 전용 ─────────────────────
+// ── ONB-01/02/03 공용 크롬 — Figma 노드 값을 그대로 옮긴 화면들 전용 ───────────────────
 // 부모(캔버스)가 다크모드로 렌더돼 있어도 이 화면들만은 항상 Figma가 지정한 흰 배경으로 그린다.
-// Vector(node 256:574 / 260:644, x:26 y:43 w:13 h:23) + 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6)
-// — ONB-02/03 모두 동일한 좌표.
+// Vector(node 253:958 / 256:574 / 260:644, x:26 y:43 w:13 h:23) + 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6)
+// — 세 화면 모두 동일한 좌표. ONB-01은 이전 단계가 없어 뒤로가기 버튼을 시각적으로만 노출한다(no-op).
 function FigmaStepHeader({ onBack, filledSegments }: { onBack: () => void; filledSegments: number }) {
   return (
     <>
@@ -431,12 +404,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     <View style={styles.screen}>
       {/* HOME(node 187:2673)과 동일한 402x874 고정 캔버스. */}
       <ThemedView style={[styles.canvas, { marginTop: insets.top }]}>
-        {step === 0 && (
-          <View style={styles.safeArea}>
-            <OnboardingHeader step={0} />
-            <ValueStep onNext={() => setStep(1)} />
-          </View>
-        )}
+        {step === 0 && <ValueStep onNext={() => setStep(1)} />}
         {step === 1 && (
           <SleepStep
             status={healthStatus}
@@ -467,56 +435,11 @@ const styles = StyleSheet.create({
     height: CANVAS_HEIGHT,
     overflow: 'hidden',
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.six,
-    paddingBottom: Spacing.four,
-  },
   centerText: {
     textAlign: 'center',
   },
   pressed: {
     opacity: 0.7,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    marginBottom: Spacing.four,
-  },
-  backButton: {
-    width: Spacing.four,
-    height: Spacing.four,
-    justifyContent: 'center',
-  },
-  backChevron: {
-    fontSize: 26,
-    lineHeight: 26,
-  },
-  progressRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  progressSegment: {
-    flex: 1,
-    height: 4,
-    borderRadius: Spacing.half,
-  },
-  stepBody: {
-    flex: 1,
-    justifyContent: 'space-between',
-  },
-  illustrationPlaceholder: {
-    width: '100%',
-    height: 56,
-    marginTop: Spacing.three,
-    borderRadius: Spacing.two,
-  },
-  footer: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.three,
   },
   primaryButton: {
     paddingVertical: Spacing.three,
@@ -534,7 +457,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
 
-  // ── ONB-02/03 공용 — 항상 고정 라이트 팔레트, 부모 테마 영향 없음 ──────────────────────
+  // ── ONB-01/02/03 공용 — 항상 고정 라이트 팔레트, 부모 테마 영향 없음 ──────────────────
   figmaCanvas: {
     position: 'absolute',
     top: 0,
@@ -543,7 +466,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: Colors.white,
   },
-  // Vector(node 256:574 / 260:644, x:26 y:43 w:13 h:23)
+  // Vector(node 253:958 / 256:574 / 260:644, x:26 y:43 w:13 h:23)
   figmaBackButton: {
     position: 'absolute',
     left: 26,
@@ -555,7 +478,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  // 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6) — ONB-02/03 공통
+  // 진행 바 트랙(x:24 y:89 w:354 h:4, gap:6) — ONB-01/02/03 공통
   figmaProgressRow: {
     position: 'absolute',
     left: 24,
@@ -569,6 +492,60 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 4,
     borderRadius: 2,
+  },
+
+  // ── ONB-01 "온보딩 1"(node 252:139) 전용 ────────────────────────────────────────
+  // "당신의 \n피부 예보" (node 255:561, x:26 y:200 w:156 h:81)
+  valueTitle: {
+    position: 'absolute',
+    left: 26,
+    top: 200,
+    width: 156,
+    fontSize: 38,
+    fontWeight: '700',
+    lineHeight: 42,
+    color: '#000000',
+  },
+  // 설명 (node 256:562, x:26 y:305 w:360 h:48)
+  valueBody: {
+    position: 'absolute',
+    left: 26,
+    top: 305,
+    width: 360,
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 24,
+    color: '#3F3F3F',
+  },
+  // "시작하기" 버튼 (node 256:563, x:25 y:706 w:351 h:53, radius:13)
+  valuePrimaryButton: {
+    position: 'absolute',
+    left: 25,
+    top: 706,
+    width: 351,
+    height: 53,
+    borderRadius: 13,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valuePrimaryButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  // "이미 계정이 있어요" (node 256:565, x:125 y:781 w:157 h:17) — 프레임 폭 기준 중앙 정렬
+  valueSecondaryButton: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 781,
+    alignItems: 'center',
+  },
+  valueSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#5E5E5E',
   },
 
   // ── ONB-02 "온보딩 2"(node 256:573) 전용 ────────────────────────────────────────

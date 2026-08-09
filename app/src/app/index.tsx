@@ -1,29 +1,15 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getSkinForecast } from '@/api/skin';
-import { getSleepInterpretation, uploadSleepSession, type UploadSleepSessionRequest } from '@/api/sleep';
-import { completeUserOnboarding, saveUserConsent } from '@/api/user';
 import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { HOME_SUMMARY_MOCK, type SkinRiskLevel } from '@/constants/mockData';
-
-// TODO: 통신 테스트용 더미 데이터. 실제 수면 세션 업로드 플로우가 붙으면 제거한다.
-const DUMMY_SLEEP_SESSION: UploadSleepSessionRequest = {
-  segments: [
-    { stage: 'AWAKE', startTime: '2026-08-06T23:35:00+09:00', endTime: '2026-08-06T23:40:00+09:00' },
-    { stage: 'UNSPECIFIED', startTime: '2026-08-06T23:40:00+09:00', endTime: '2026-08-07T00:55:00+09:00' },
-    { stage: 'DEEP', startTime: '2026-08-07T00:55:00+09:00', endTime: '2026-08-07T01:32:00+09:00' },
-  ],
-  hrv: 41.2,
-  restingHeartRate: 63,
-};
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
 // 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것. 실제 API가 아직 없어 데이터는
@@ -73,67 +59,6 @@ export default function HomeScreen() {
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
 
-  useEffect(() => {
-    uploadSleepSession(DUMMY_SLEEP_SESSION, 1)
-      .then(({ data }) => {
-        const barrierScore = data.forecast.barrier?.score ?? '산출 불가';
-        console.log(`✅ 수면 데이터 업로드 성공! 오늘의 장벽 점수: ${barrierScore}`);
-      })
-      .catch((error) => {
-        console.error('❌ 수면 데이터 업로드 실패:', error.message);
-      });
-  }, []);
-
-  useEffect(() => {
-    getSkinForecast('2026-08-09', 1)
-      .then(({ data }) => {
-        if (data.status === 'AVAILABLE') {
-          console.log(`✅ 피부 예보 조회 성공: ${data.forecast.darkCircle.score}`);
-        } else {
-          console.log(`✅ 수면 데이터 없음: ${data.message}`);
-        }
-      })
-      .catch((error) => {
-        console.error('❌ 피부 예보 조회 실패:', error.message);
-      });
-  }, []);
-
-  useEffect(() => {
-    getSleepInterpretation('2026-08-09', 1)
-      .then(({ data }) => {
-        if (data.status === 'AVAILABLE') {
-          console.log(`✅ 수면 통역 조회 성공: ${data.interpretation.headline}`);
-        } else {
-          console.log(`✅ 수면 통역 없음: ${data.message}`);
-        }
-      })
-      .catch((error) => {
-        console.error('❌ 수면 통역 조회 실패:', error.message);
-      });
-  }, []);
-
-  useEffect(() => {
-    saveUserConsent(1)
-      .then(({ data }) => {
-        console.log(`✅ 약관 동의 성공: 버전 ${data.termsVersion} (신규동의 여부: ${data.newlyAgreed})`);
-      })
-      .catch((error) => {
-        console.error('❌ 약관 동의 실패:', error.message);
-      });
-  }, []);
-
-  useEffect(() => {
-    completeUserOnboarding(1)
-      .then(({ data }) => {
-        console.log(
-          `✅ 온보딩 완료 처리 성공: 완료 상태 ${data.onboardingCompleted} (신규처리 여부: ${data.newlyCompleted})`
-        );
-      })
-      .catch((error) => {
-        console.error('❌ 온보딩 완료 처리 실패:', error.message);
-      });
-  }, []);
-
   return (
     <>
       <View style={styles.screen}>
@@ -149,9 +74,6 @@ export default function HomeScreen() {
               <ThemedText style={styles.greetingText}>{HOME_SUMMARY_MOCK.greeting.message}</ThemedText>
             </View>
           </View>
-          <Pressable onPress={() => router.push('/report')} hitSlop={10} style={styles.shareIconWrap}>
-            <Image source={require('@/assets/images/figma-icon-share.png')} style={styles.shareIcon} contentFit="contain" />
-          </Pressable>
 
           {/* 캐릭터 레벨 */}
           <ThemedText style={styles.levelText}>LEVEL. {HOME_SUMMARY_MOCK.level.current}</ThemedText>
@@ -290,17 +212,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#000000',
   },
-  // Vector (node 187:2707, x:359 y:101 w:19 h:19)
-  shareIconWrap: {
-    position: 'absolute',
-    left: 359,
-    top: 101,
-  },
-  shareIcon: {
-    width: 19,
-    height: 19,
-  },
-
   // "LEVEL. 3" (node 187:2703, x:37 y:134 w:103.35 h:17.06)
   levelText: {
     position: 'absolute',

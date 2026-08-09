@@ -27,10 +27,10 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
-// 1단계(촬영, node 176:816 "셀피 화면")·2단계(분석 중, node 176:961 "셀피 로딩 화면")는
-// Figma REST API로 좌표·색상·타이포·에셋을 그대로 옮겼고, 부모 테마와 무관하게 항상 Figma가
-// 지정한 배경(1단계 다크 그라디언트 / 2단계 흰 배경)으로 렌더한다. 3단계(리포트)는 Figma 데이터가
-// 없어 기존 로직/스타일을 그대로 둔다. 실제 카메라/LLM Vision 연동 전이라 촬영 화면은 플레이스홀더
+// 1단계(촬영, node 176:816 "셀피 화면")·2단계(분석 중, node 176:961 "셀피 로딩 화면")·3단계(리포트,
+// node 241:604 "iPhone 17 - 14")는 모두 Figma REST API로 좌표·색상·타이포·에셋을 그대로 옮겼고,
+// 부모 테마와 무관하게 항상 Figma가 지정한 배경(1단계 다크 그라디언트 / 2단계 흰 배경 / 3단계
+// 연한 파란 배경)으로 렌더한다. 실제 카메라/LLM Vision 연동 전이라 촬영 화면은 플레이스홀더
 // 프리뷰를 쓰고, 분석·리포트 값은 목업이다.
 
 const ACCENT = '#3C87F7';
@@ -43,6 +43,8 @@ const CAPTURE_BG_BOTTOM = '#0C0D15';
 // "얼굴 위치를 프레임에 맞춥니다" 상태 배지·트래킹 도트·아웃라인에 쓰이는 시안 포인트 컬러.
 const CAPTURE_CYAN = '#7EE6FF';
 const CAPTURE_CYAN_BORDER = 'rgba(126, 230, 255, 0.9)';
+// 트래킹 도트(node 176:853/855/857) 글로우 — Figma boxShadow 값 그대로.
+const CAPTURE_DOT_GLOW = '0px 0px 6px 1px rgba(126, 230, 255, 1)';
 
 const AUTO_CAPTURE_SECONDS = 5;
 const SCAN_DURATION_MS = 1500;
@@ -103,6 +105,9 @@ const STREAK_BADGE_DAYS = ['3일', '4일', '5일', '6일', '7일'] as const;
 // node 241:604 "iPhone 17 - 14 (검증 리포트)" 전용 색상.
 const REPORT_BG = '#DFEAFF';
 const REPORT_TEXT_DARK = '#1A1A1A';
+// 비교 테이블 라벨·실측값, 인사이트 타이틀 전용 (Figma "Cod Gray (105:423)") — 헤더/메인 타이틀의
+// Cod Gray(#1A1A1A)와는 미세하게 다른 별도 토큰이라 구분해서 쓴다.
+const REPORT_TEXT_DARKEST = '#171717';
 const REPORT_TEXT_MUTED = '#8B8B93'; // Manatee
 const REPORT_BLUE = '#3366FF';
 const REPORT_NAVY = '#031949';
@@ -165,10 +170,6 @@ function CapturePreview({
       <CornerBracket position="bottomLeft" />
       <CornerBracket position="bottomRight" />
 
-      <View style={styles.ovalGuideDotA} />
-      <View style={styles.ovalGuideDotB} />
-      <View style={styles.ovalGuideDotC} />
-
       <View style={styles.oval}>
         {cameraReady && <CameraView ref={cameraRef} style={styles.cameraFill} facing="front" />}
         <View style={styles.ovalGray8Overlay} />
@@ -196,6 +197,13 @@ function CapturePreview({
           </Animated.View>
         )}
       </View>
+
+      {/* 트래킹 도트 3개(node 176:853/855/857) — Figma 레이어 순서상 오벌보다 위(가장 앞)라
+          카메라 프리뷰 위에 떠 보여야 한다. 오벌(불투명 배경) 뒤에 두면 완전히 가려지므로
+          previewWrap의 마지막 자식으로 그려야 한다. */}
+      <View pointerEvents="none" style={styles.ovalGuideDotA} />
+      <View pointerEvents="none" style={styles.ovalGuideDotB} />
+      <View pointerEvents="none" style={styles.ovalGuideDotC} />
     </View>
   );
 }
@@ -639,7 +647,7 @@ function AccuracyCard() {
                   contentFit="contain"
                 />
               </View>
-              <Text style={styles.accuracyStreakBadgeLabel}>오늘</Text>
+              <Text style={[styles.accuracyStreakBadgeLabel, styles.accuracyStreakBadgeLabelToday]}>오늘</Text>
             </View>
           </View>
         </View>
@@ -1066,7 +1074,9 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: 'rgba(255, 255, 255, 0.35)',
   },
-  // 트래킹 도트 3개 (node 176:853/855/857, 6x6, fill:#7EE6FF + 글로우 섀도) — previewWrap 기준 절대좌표.
+  // 트래킹 도트 3개 (node 176:853/855/857, 6x6, fill:#7EE6FF + 글로우) — previewWrap 기준 절대좌표.
+  // 글로우는 Figma의 boxShadow(0px 0px 6px 1px rgba(126,230,255,1))를 그대로 옮긴 것 — spread(1px)까지
+  // 정확히 재현하려면 spread 개념이 없는 구 shadow*/elevation 대신 RN의 CSS boxShadow 스타일을 쓴다.
   ovalGuideDotA: {
     position: 'absolute',
     left: 38,
@@ -1075,11 +1085,7 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: CAPTURE_CYAN,
-    shadowColor: CAPTURE_CYAN,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 4,
+    boxShadow: CAPTURE_DOT_GLOW,
   },
   ovalGuideDotB: {
     position: 'absolute',
@@ -1089,11 +1095,7 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: CAPTURE_CYAN,
-    shadowColor: CAPTURE_CYAN,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 4,
+    boxShadow: CAPTURE_DOT_GLOW,
   },
   ovalGuideDotC: {
     position: 'absolute',
@@ -1103,11 +1105,7 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: CAPTURE_CYAN,
-    shadowColor: CAPTURE_CYAN,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 4,
+    boxShadow: CAPTURE_DOT_GLOW,
   },
   // "div::part(empty).empty" (node 176:838, padding:12, gap:5)
   ovalPlaceholderContent: {
@@ -1484,15 +1482,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: REPORT_BG,
   },
-  // "div"(node 243:1383/1385) — 뒤로가기 + 타이틀.
+  // "div"(node 243:1383, x:13 y:63 32x32) + "div"(node 243:1385, x:118 y:63) — 뒤로가기 + 타이틀.
+  // 뒤로가기는 32x32 정사각형이라 행 높이(32)에 영향을 주지 않도록 절대 배치하고, 타이틀은 버튼
+  // 유무와 무관하게 캔버스 폭 전체 기준으로 중앙 정렬한다(Figma 타이틀 박스 중심이 버튼을 제외한
+  // 나머지 영역의 중앙이 아니라 캔버스 중앙에 훨씬 가깝다).
   reportHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 31,
-    paddingBottom: 8,
-    paddingHorizontal: 13,
+    marginTop: 63,
+    height: 32,
+    justifyContent: 'center',
   },
   reportBackButton: {
+    position: 'absolute',
+    left: 13,
+    top: 0,
     width: 32,
     height: 32,
     alignItems: 'center',
@@ -1504,7 +1506,7 @@ const styles = StyleSheet.create({
   },
   // "검증 리포트" (node 243:1386, Inter Bold 17px, Cod Gray)
   reportHeaderTitle: {
-    flex: 1,
+    width: '100%',
     textAlign: 'center',
     fontSize: 17,
     fontWeight: '700',
@@ -1513,10 +1515,13 @@ const styles = StyleSheet.create({
   reportScroll: {
     flex: 1,
   },
+  // "div"(node 243:1387, padding: 16px 20px 0px) — 헤더 바로 아래 첫 콘텐츠(날짜/타이틀)의 상단
+  // 여백. 이후 섹션 간 간격은 Figma 절대좌표 델타값 그대로 각 요소의 marginTop으로 준다(균일
+  // gap이 아니라 9~18px로 제각각이라 ScrollView의 단일 gap으로는 표현할 수 없다).
   reportScrollContent: {
-    paddingHorizontal: Spacing.four,
+    paddingTop: 16,
+    paddingHorizontal: 20,
     paddingBottom: Spacing.four,
-    gap: Spacing.three,
   },
   // "div"(node 243:1388, gap:6)
   reportDateRow: {
@@ -1535,7 +1540,9 @@ const styles = StyleSheet.create({
     color: REPORT_TEXT_MUTED,
   },
   // "어제 예보, 이만큼 맞았어요!" (node 243:1393, Inter ExtraBold 25px, lineHeight:30.36px)
+  // 날짜 행과의 간격(node 243:1387의 gap:9.18px).
   reportTitle: {
+    marginTop: 9,
     fontSize: 25,
     lineHeight: 30.36,
     fontWeight: '800',
@@ -1546,7 +1553,9 @@ const styles = StyleSheet.create({
     color: REPORT_BLUE,
   },
   // 적중률 카드 (node 243:1507, padding: 20px 18px, fill: #F4F0FD, radius:20)
+  // 타이틀과의 간격(y:221 - 타이틀 블록 하단 ≈15px).
   accuracyCard: {
+    marginTop: 15,
     borderRadius: 20,
     paddingVertical: 20,
     paddingHorizontal: 18,
@@ -1662,8 +1671,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: REPORT_TEXT_MUTED,
   },
+  // "오늘" 라벨만 Inter SemiBold(600) — 나머지 요일 라벨은 Bold(700) (node 243:1553 vs 243:1528 등)
+  accuracyStreakBadgeLabelToday: {
+    fontWeight: '600',
+  },
   // 비교 테이블 (node 243:1683, w:362, padding: 7px 17px 5px, border: Pale Sky 22%, radius:16)
+  // 적중률 카드와의 간격(y:385 - 카드 하단 ≈6px, 카드 바로 아래 붙는 좁은 간격).
   comparisonSection: {
+    marginTop: 6,
     backgroundColor: REPORT_BG,
     borderWidth: 1,
     borderColor: REPORT_TABLE_BORDER,
@@ -1710,12 +1725,12 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: REPORT_TABLE_DIVIDER,
   },
-  // "혈색"/"장벽"/"다크서클 회복" (Inter Bold 16px, Cod Gray)
+  // "혈색"/"장벽"/"다크서클 회복" (Inter Bold 16px, Cod Gray (105:423) = #171717)
   comparisonLabel: {
     flex: 1.2,
     fontSize: 16,
     fontWeight: '700',
-    color: REPORT_TEXT_DARK,
+    color: REPORT_TEXT_DARKEST,
   },
   comparisonMidGroup: {
     flex: 1.4,
@@ -1729,11 +1744,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: REPORT_VALUE_MUTED,
   },
-  // 실측 값 (Inter Bold 15px, Cod Gray)
+  // 실측 값 (Inter Bold 15px, Cod Gray (105:423) = #171717)
   comparisonActualValue: {
     fontSize: 15,
     fontWeight: '700',
-    color: REPORT_TEXT_DARK,
+    color: REPORT_TEXT_DARKEST,
   },
   // 게이지 바 (node 243:1697 등) — 트랙/진행색/마커가 한 장으로 플랫하게 그려진 행별 에셋.
   comparisonGauge: {
@@ -1749,7 +1764,9 @@ const styles = StyleSheet.create({
     height: 15,
   },
   // 인사이트 스파클 필 (node 246:562, padding: 3px 9px, fill: Blue Ribbon 10%, radius: pill)
+  // 비교 테이블과의 간격(y:588 - 테이블 하단 ≈9px).
   insightSparklePill: {
+    marginTop: 9,
     alignSelf: 'flex-start',
     paddingVertical: 3,
     paddingHorizontal: 9,
@@ -1760,14 +1777,18 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
   },
-  // "내 모델이 한 걸음 정밀해졌어요" (node 246:567, Inter Bold 13.56px, Cod Gray)
+  // "내 모델이 한 걸음 정밀해졌어요" (node 246:567, Inter Bold 13.56px, Cod Gray (105:423) = #171717)
+  // 스파클 필과의 간격(y:618 - 필 하단 ≈13px).
   insightTitle: {
+    marginTop: 13,
     fontSize: 13.5,
     fontWeight: '700',
-    color: REPORT_TEXT_DARK,
+    color: REPORT_TEXT_DARKEST,
   },
   // "어제와 오늘 비교 데이터를..." (node 246:569, Inter Regular 12.55px, lineHeight:20.08px, Tuna 61%)
+  // 타이틀과의 간격(y:651 - 타이틀 하단 ≈7px).
   insightBody: {
+    marginTop: 7,
     fontSize: 12.5,
     lineHeight: 20,
     color: REPORT_VALUE_MUTED,

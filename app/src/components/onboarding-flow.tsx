@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { completeUserOnboarding, saveUserConsent } from '@/api/user';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/colors';
+import { TEMP_USER_ID } from '@/constants/config';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -231,7 +233,15 @@ function SleepStep({
 // ONB-03("온보딩 3", node 260:643): HealthKit 권한 상세 확인 + 최종 CTA.
 // 본문(제목·설명·"읽어올 데이터" 카드·CTA)은 프레임의 자식이 아니라 같은 캔버스에서 프레임과
 // 겹쳐 배치된 loose 오브젝트(node 261:676/677/678/699)였다 — 프레임 원점 기준 좌표로 역산해 옮겼다.
-function HealthConnectStep({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
+function HealthConnectStep({
+  onBack,
+  onFinish,
+  completing,
+}: {
+  onBack: () => void;
+  onFinish: () => void;
+  completing: boolean;
+}) {
   return (
     <View style={styles.figmaCanvas}>
       <FigmaStepHeader onBack={onBack} filledSegments={3} />
@@ -240,7 +250,7 @@ function HealthConnectStep({ onBack, onFinish }: { onBack: () => void; onFinish:
       <Text style={styles.healthTitle}>수면 데이터를 연결해주세요</Text>
       {/* 설명 (node 261:677, x:28 y:205 w:345 h:44) */}
       <Text style={styles.healthSubtitle}>
-        SkinCast는 애플 건강 앱의 수면 기록만 읽습니다. 쓰기 권한은 요청하지 않으며, 언제든 해제할 수 있어요.
+        Sleep2Skin은 애플 건강 앱의 수면 기록만 읽습니다. 쓰기 권한은 요청하지 않으며, 언제든 해제할 수 있어요.
       </Text>
 
       {/* "읽어올 데이터" 카드 (node 261:678, x:28 y:265 w:345, fill #F4F4F4, radius:12) */}
@@ -257,16 +267,26 @@ function HealthConnectStep({ onBack, onFinish }: { onBack: () => void; onFinish:
       </View>
 
       {/* CTA (node 261:699, x:28 y:705 w:345, gap:8) — 연결/스킵 모두 온보딩을 완료시킨다
-          (ONB-02 HealthAccessModal의 허용/거부 수렴 패턴과 동일). */}
+          (ONB-02 HealthAccessModal의 허용/거부 수렴 패턴과 동일). 완료 처리 중에는 중복 탭 방지. */}
       <View style={styles.healthCta}>
         <Pressable
           onPress={onFinish}
-          style={({ pressed }) => [styles.healthPrimaryButton, pressed && styles.pressed]}>
-          <Text style={styles.healthPrimaryButtonText}>건강 앱 연결하기</Text>
+          disabled={completing}
+          style={({ pressed }) => [
+            styles.healthPrimaryButton,
+            completing && styles.buttonDisabled,
+            pressed && !completing && styles.pressed,
+          ]}>
+          <Text style={styles.healthPrimaryButtonText}>{completing ? '처리 중...' : '건강 앱 연결하기'}</Text>
         </Pressable>
         <Pressable
           onPress={onFinish}
-          style={({ pressed }) => [styles.healthGhostButton, pressed && styles.pressed]}>
+          disabled={completing}
+          style={({ pressed }) => [
+            styles.healthGhostButton,
+            completing && styles.buttonDisabled,
+            pressed && !completing && styles.pressed,
+          ]}>
           <Text style={styles.healthGhostButtonText}>나중에 할게요</Text>
         </Pressable>
       </View>
@@ -315,7 +335,7 @@ function HealthAccessModal({
               건강
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
-              &apos;SkinCast&apos;이 사용자의 건강 데이터에 접근하여 업데이트하려고 합니다.
+              &apos;Sleep2Skin&apos;이 사용자의 건강 데이터에 접근하여 업데이트하려고 합니다.
             </ThemedText>
 
             <ThemedView type="backgroundElement" style={styles.modalSection}>
@@ -334,7 +354,7 @@ function HealthAccessModal({
             </ThemedView>
 
             <ThemedText type="small" themeColor="textSecondary" style={styles.modalSectionLabel}>
-              &apos;SkinCast&apos;의 읽기 항목
+              &apos;Sleep2Skin&apos;의 읽기 항목
             </ThemedText>
 
             <ThemedView type="backgroundElement" style={styles.modalSection}>
@@ -385,6 +405,23 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
   const [healthStatus, setHealthStatus] = useState<HealthKitStatus>('idle');
   const [healthModalVisible, setHealthModalVisible] = useState(false);
+  const [completing, setCompleting] = useState(false);
+
+  // ONB-03 CTA(연결/스킵 공용) — 온보딩 완료 시점에 개인정보 동의와 온보딩 완료 처리를 순서대로 호출한다.
+  // API 실패는 axios 인터셉터가 이미 로깅하므로, 실패해도 온보딩 자체는 막지 않고 앱으로 진입시킨다.
+  const handleFinishOnboarding = async () => {
+    if (completing) return;
+    setCompleting(true);
+    try {
+      await saveUserConsent(TEMP_USER_ID);
+      await completeUserOnboarding(TEMP_USER_ID);
+    } catch {
+      // no-op: 에러는 axios 인터셉터가 이미 로깅했다.
+    } finally {
+      setCompleting(false);
+      onComplete();
+    }
+  };
 
   const handleAllowHealthAccess = () => {
     // TODO(ONB-02): 실제 HealthKit 읽기 권한 요청(react-native-health 등)으로 교체한다.
@@ -412,7 +449,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             onBack={() => setStep(0)}
           />
         )}
-        {step === 2 && <HealthConnectStep onBack={() => setStep(1)} onFinish={onComplete} />}
+        {step === 2 && (
+          <HealthConnectStep onBack={() => setStep(1)} onFinish={handleFinishOnboarding} completing={completing} />
+        )}
       </ThemedView>
 
       <HealthAccessModal

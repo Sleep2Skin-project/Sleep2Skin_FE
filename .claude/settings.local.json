@@ -38,7 +38,10 @@
       "Bash(lsof -ti:8099)",
       "Bash(xargs kill -9)",
       "Bash(claude mcp *)",
-      "Bash(npx -y @modelcontextprotocol/server-figma)"
+      "Bash(npx -y @modelcontextprotocol/server-figma)",
+      "mcp__figma__get_figma_data",
+      "mcp__figma__download_figma_images",
+      "Bash(echo \"grep exit: $?\")"
     ]
   },
   "enableAllProjectMcpServers": true,

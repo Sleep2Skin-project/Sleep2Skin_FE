@@ -1,19 +1,23 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { getSkinForecast, type SkinForecastDetail } from '@/api/skin';
+import { getSleepInterpretation, type SleepInterpretation } from '@/api/sleep';
 import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
-import { HOME_SUMMARY_MOCK, type SkinRiskLevel } from '@/constants/mockData';
+import { TEMP_USER_ID } from '@/constants/config';
+import { HOME_SUMMARY_MOCK } from '@/constants/mockData';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
-// 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것. 실제 API가 아직 없어 데이터는
-// src/constants/mockData.ts의 HOME_SUMMARY_MOCK을 사용한다.
+// 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
+// 피부 예보/수면 통역은 GET /api/v1/skin/forecast, /api/v1/sleep/interpretation로 연동했고,
+// 날짜/인사말/레벨/적중률처럼 대응하는 API가 아직 없는 항목만 mockData.ts의 HOME_SUMMARY_MOCK을 그대로 쓴다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
@@ -21,13 +25,76 @@ const CANVAS_HEIGHT = 874;
 // 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 mock의 progressPercent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
 
-const RISK_LEVEL_COLOR: Record<SkinRiskLevel, string> = {
-  danger: Colors.danger,
-  warning: Colors.warning,
-  success: Colors.success,
-};
-
 const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
+const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
+
+const FORECAST_METRIC_LABELS = {
+  darkCircle: '다크서클',
+  complexion: '안색',
+  barrier: '장벽',
+} as const;
+
+type ForecastState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_data'; message: string }
+  | { status: 'available'; forecast: SkinForecastDetail };
+
+type InterpretationState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_data'; message: string }
+  | { status: 'available'; interpretation: SleepInterpretation };
+
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** grade는 백엔드가 자유 문자열로 내려줘 고정 enum이 없다 — 흔한 위험/주의 키워드만 색으로 매칭하고 나머지는 안전으로 취급한다. */
+function gradeToColor(grade: string): string {
+  const normalized = grade.toUpperCase();
+  if (normalized.includes('위험') || normalized.includes('DANGER') || normalized.includes('BAD')) {
+    return Colors.danger;
+  }
+  if (
+    normalized.includes('주의') ||
+    normalized.includes('경고') ||
+    normalized.includes('WARN') ||
+    normalized.includes('CAUTION')
+  ) {
+    return Colors.warning;
+  }
+  return Colors.success;
+}
+
+function buildForecastRows(forecast: SkinForecastDetail) {
+  const entries: [key: keyof typeof FORECAST_METRIC_LABELS, metric: SkinForecastDetail['darkCircle'] | null][] = [
+    ['darkCircle', forecast.darkCircle],
+    ['complexion', forecast.complexion],
+    ['barrier', forecast.barrier],
+  ];
+  return entries.map(([key, metric]) => ({
+    key,
+    label: FORECAST_METRIC_LABELS[key],
+    value: metric?.score ?? 0,
+    status: metric?.grade ?? '측정 불가',
+    color: metric ? gradeToColor(metric.grade) : UNAVAILABLE_METRIC_COLOR,
+  }));
+}
+
+function buildTooltipLines(state: InterpretationState): string[] {
+  if (state.status === 'loading') return ['불러오는 중...'];
+  if (state.status === 'error') return ['수면 통역을 불러오지 못했어요'];
+  if (state.status === 'no_data') return [state.message];
+  const { interpretation } = state;
+  return interpretation.tone === 'PRAISE'
+    ? [interpretation.headline]
+    : [interpretation.headline, interpretation.focus.label];
+}
 
 function ForecastGaugeRow({
   label,
@@ -58,6 +125,32 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
+  const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
+  const [interpretationState, setInterpretationState] = useState<InterpretationState>({ status: 'loading' });
+
+  useEffect(() => {
+    const baseDate = getTodayDateString();
+
+    getSkinForecast(baseDate, TEMP_USER_ID)
+      .then(({ data }) => {
+        setForecastState(
+          data.status === 'AVAILABLE'
+            ? { status: 'available', forecast: data.forecast }
+            : { status: 'no_data', message: data.message }
+        );
+      })
+      .catch(() => setForecastState({ status: 'error' }));
+
+    getSleepInterpretation(baseDate, TEMP_USER_ID)
+      .then(({ data }) => {
+        setInterpretationState(
+          data.status === 'AVAILABLE'
+            ? { status: 'available', interpretation: data.interpretation }
+            : { status: 'no_data', message: data.message }
+        );
+      })
+      .catch(() => setInterpretationState({ status: 'error' }));
+  }, []);
 
   return (
     <>
@@ -96,8 +189,8 @@ export default function HomeScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}>
               <View style={styles.tooltipIconSlot} />
-              <View>
-                {HOME_SUMMARY_MOCK.sleepSummary.tooltipLines.map((line, index) => (
+              <View style={styles.tooltipTextBlock}>
+                {buildTooltipLines(interpretationState).map((line, index) => (
                   <ThemedText key={index} style={styles.tooltipText}>
                     {line}
                   </ThemedText>
@@ -117,17 +210,28 @@ export default function HomeScreen() {
               />
               <ThemedText style={styles.forecastTitle}>{HOME_SUMMARY_MOCK.skinForecast.title}</ThemedText>
             </View>
-            <View style={styles.gaugeList}>
-              {HOME_SUMMARY_MOCK.skinForecast.items.map((item) => (
-                <ForecastGaugeRow
-                  key={item.key}
-                  label={item.label}
-                  value={item.value}
-                  status={item.status}
-                  statusColor={RISK_LEVEL_COLOR[item.riskLevel]}
-                />
-              ))}
-            </View>
+            {forecastState.status === 'loading' && (
+              <ThemedText style={styles.forecastDisclaimer}>불러오는 중...</ThemedText>
+            )}
+            {forecastState.status === 'error' && (
+              <ThemedText style={styles.forecastDisclaimer}>피부 예보를 불러오지 못했어요</ThemedText>
+            )}
+            {forecastState.status === 'no_data' && (
+              <ThemedText style={styles.forecastDisclaimer}>{forecastState.message}</ThemedText>
+            )}
+            {forecastState.status === 'available' && (
+              <View style={styles.gaugeList}>
+                {buildForecastRows(forecastState.forecast).map((item) => (
+                  <ForecastGaugeRow
+                    key={item.key}
+                    label={item.label}
+                    value={item.value}
+                    status={item.status}
+                    statusColor={item.color}
+                  />
+                ))}
+              </View>
+            )}
             <ThemedText style={styles.forecastDisclaimer}>{HOME_SUMMARY_MOCK.skinForecast.disclaimer}</ThemedText>
           </View>
 
@@ -249,13 +353,16 @@ const styles = StyleSheet.create({
     height: 296,
   },
 
-  // "div" 수면 요약 툴팁 카드 (node 187:2679, x:181 y:158 w:199 h:78, radius:25.3)
+  // "div" 수면 요약 툴팁 카드 (node 187:2679, x:181 y:158 w:199 h:78, radius:25.3) — 목업 시절엔
+  // "깊은 수면이" / "32분 부족했어요" 같은 짧은 2줄이었지만, 실제 API 메시지(특히 NO_SLEEP_DATA의
+  // message)는 길이를 예측할 수 없어서 height를 고정하지 않고 minHeight로 바꿔 내용만큼 늘어나게
+  // 했다. 아래로 481px(오늘의 피부 예보 카드)까지 충분히 여유가 있어 늘어나도 안 겹친다.
   tooltipCard: {
     position: 'absolute',
     left: 181,
     top: 158,
     width: 199,
-    height: 78,
+    minHeight: 78,
     borderRadius: 25,
     flexDirection: 'row',
     alignItems: 'center',
@@ -275,9 +382,16 @@ const styles = StyleSheet.create({
     width: 19,
     height: 24,
   },
+  // 아이콘 옆 텍스트 칸 — flex:1로 카드 남은 폭 안에서만 줄바꿈되게 잡아준다(안 그러면 텍스트가
+  // 카드 폭을 무시하고 옆으로 삐져나갈 수 있다).
+  tooltipTextBlock: {
+    flex: 1,
+  },
+  // 목업 2줄 문구 기준으로 16px이었는데, 실제 메시지는 한 문장으로 오는 경우가 많아 그대로 두면
+  // 글자가 카드 밖으로 잘렸다. 폭 안에서 여러 줄로 편하게 접히도록 줄였다.
   tooltipText: {
-    fontSize: 16,
-    lineHeight: 27,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
     color: '#1C2430',
   },

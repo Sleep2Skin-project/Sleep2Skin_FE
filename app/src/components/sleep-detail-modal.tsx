@@ -6,13 +6,21 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // REP-03 수면 단계 타임라인의 팝업 버전 — docs/home.png 우측 '팝업창' 와이어프레임을 그대로 따른다.
-// 실제 API가 없으므로 지난밤 수면 단계 목업값을 그대로 사용한다.
-const SLEEP_STAGES = [
+// 실제 API가 없으므로 지난밤 수면 단계 목업값을 기본값으로 쓰되, HealthKit 연동 후에는 실제 구간을
+// segments prop으로 넘기면 된다 — 아래 stageBar/legendRow는 flex 비율로 그려서 값만 바뀌면 그대로 반영된다.
+export type SleepStageSegment = {
+  key: string;
+  label: string;
+  minutes: number;
+  color: string;
+};
+
+const DEFAULT_SLEEP_STAGES: SleepStageSegment[] = [
   { key: 'awake', label: 'Awake', minutes: 39, color: '#E5E5EA' },
   { key: 'rem', label: 'REM', minutes: 102, color: '#9DC3FB' },
   { key: 'core', label: 'Core', minutes: 328, color: '#3C87F7' },
   { key: 'deep', label: 'Deep', minutes: 60, color: '#1C3F94' },
-] as const;
+];
 
 const SLEEP_WINDOW = '01:00-09:29';
 const AVG_HEART_RATE = '62 BPM AVG';
@@ -28,9 +36,11 @@ function formatDuration(minutes: number) {
 type SleepDetailModalProps = {
   visible: boolean;
   onClose: () => void;
+  /** HealthKit 연동 전까지는 생략 가능 — 생략 시 목업 구간을 보여준다. */
+  segments?: SleepStageSegment[];
 };
 
-export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
+export function SleepDetailModal({ visible, onClose, segments = DEFAULT_SLEEP_STAGES }: SleepDetailModalProps) {
   const theme = useTheme();
 
   return (
@@ -55,7 +65,7 @@ export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
             </View>
 
             <View style={[styles.stageBar, { backgroundColor: theme.backgroundSelected }]}>
-              {SLEEP_STAGES.map((stage) => (
+              {segments.map((stage) => (
                 <View
                   key={stage.key}
                   style={[styles.stageSegment, { flex: stage.minutes, backgroundColor: stage.color }]}
@@ -64,7 +74,7 @@ export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
             </View>
 
             <View style={styles.legendRow}>
-              {SLEEP_STAGES.map((stage) => (
+              {segments.map((stage) => (
                 <View key={stage.key} style={styles.legendItem}>
                   <View style={styles.legendHeader}>
                     <View style={[styles.legendDot, { backgroundColor: stage.color }]} />

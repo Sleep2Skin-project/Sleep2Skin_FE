@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { completeUserOnboarding, saveUserConsent } from '@/api/user';
 import { ThemedText } from '@/components/themed-text';
@@ -9,11 +9,14 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { Spacing } from '@/constants/theme';
+import { useDesignScale } from '@/hooks/use-design-scale';
 import { useTheme } from '@/hooks/use-theme';
 
 // ONB-01~05 온보딩(공통) 흐름 — 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서
 // AppTabs 대신 렌더된다.
 // 전체 캔버스는 HOME(index.tsx, node 187:2673)과 동일한 402x874 고정 컨테이너 규격을 따른다.
+// 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
 // ONB-01("온보딩 1", node 252:139)·ONB-02("온보딩 2", node 256:573)·ONB-03("온보딩 3", node 260:643)
 // 모두 Figma REST API로 좌표·색상·타이포를 그대로 옮겼고, 부모 테마(다크모드)와 무관하게 항상
 // Figma 지정 배경(#FFFFFF)으로 렌더한다. 세 화면 모두 본문(제목/리스트/CTA 등)이 프레임의 자식
@@ -401,7 +404,7 @@ function HealthAccessModal({
 }
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
-  const insets = useSafeAreaInsets();
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [step, setStep] = useState(0);
   const [healthStatus, setHealthStatus] = useState<HealthKitStatus>('idle');
   const [healthModalVisible, setHealthModalVisible] = useState(false);
@@ -438,35 +441,40 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   };
 
   return (
-    <View style={styles.screen}>
-      {/* HOME(node 187:2673)과 동일한 402x874 고정 캔버스. */}
-      <ThemedView style={[styles.canvas, { marginTop: insets.top }]}>
-        {step === 0 && <ValueStep onNext={() => setStep(1)} />}
-        {step === 1 && (
-          <SleepStep
-            status={healthStatus}
-            onOpenHealthAccess={() => setHealthModalVisible(true)}
-            onBack={() => setStep(0)}
-          />
-        )}
-        {step === 2 && (
-          <HealthConnectStep onBack={() => setStep(1)} onFinish={handleFinishOnboarding} completing={completing} />
-        )}
-      </ThemedView>
+    <SafeAreaView style={styles.screen}>
+      {/* HOME(node 187:2673)과 동일한 402x874 고정 캔버스를 기기 화면에 맞게 스케일링한다. */}
+      <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
+        <ThemedView style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+          {step === 0 && <ValueStep onNext={() => setStep(1)} />}
+          {step === 1 && (
+            <SleepStep
+              status={healthStatus}
+              onOpenHealthAccess={() => setHealthModalVisible(true)}
+              onBack={() => setStep(0)}
+            />
+          )}
+          {step === 2 && (
+            <HealthConnectStep onBack={() => setStep(1)} onFinish={handleFinishOnboarding} completing={completing} />
+          )}
+        </ThemedView>
+      </View>
 
       <HealthAccessModal
         visible={healthModalVisible}
         onAllow={handleAllowHealthAccess}
         onDeny={handleDenyHealthAccess}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  // backgroundColor: 스케일된 캔버스가 화면 폭보다 좁아 남는 여백(레터박스)도 캔버스와 같은
+  // Figma 지정 흰 배경으로 채워, 여백이 이질적인 색으로 도드라지지 않게 한다.
   screen: {
     flex: 1,
     alignItems: 'center',
+    backgroundColor: Colors.white,
   },
   // HOME(index.tsx)과 동일한 고정 프레임 규격.
   canvas: {

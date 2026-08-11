@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSkinForecast, type SkinForecastDetail } from '@/api/skin';
 import { getSleepInterpretation, type SleepInterpretation } from '@/api/sleep';
@@ -13,12 +13,15 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { HOME_SUMMARY_MOCK } from '@/constants/mockData';
+import { useDesignScale } from '@/hooks/use-design-scale';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
 // 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
 // 피부 예보/수면 통역은 GET /api/v1/skin/forecast, /api/v1/sleep/interpretation로 연동했고,
 // 날짜/인사말/레벨/적중률처럼 대응하는 API가 아직 없는 항목만 mockData.ts의 HOME_SUMMARY_MOCK을 그대로 쓴다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
+// 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
@@ -122,7 +125,7 @@ function ForecastGaugeRow({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
   const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
@@ -154,109 +157,111 @@ export default function HomeScreen() {
 
   return (
     <>
-      <View style={styles.screen}>
-        <View style={[styles.canvas, { marginTop: insets.top }]}>
-          {/* 배경 (fill #DFEAFF) */}
-          <View style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.screen}>
+        <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
+          <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+            {/* 배경 (fill #DFEAFF) */}
+            <View style={StyleSheet.absoluteFill} />
 
-          {/* 상단 안내 문구 (날짜 + 인사말) */}
-          <View style={styles.dateGreetingBlock}>
-            <ThemedText style={styles.dateText}>{HOME_SUMMARY_MOCK.date.label}</ThemedText>
-            <View style={styles.greetingRow}>
-              <Image source={require('@/assets/images/figma-icon-sun.png')} style={styles.sunIcon} contentFit="contain" />
-              <ThemedText style={styles.greetingText}>{HOME_SUMMARY_MOCK.greeting.message}</ThemedText>
-            </View>
-          </View>
-
-          {/* 캐릭터 레벨 */}
-          <ThemedText style={styles.levelText}>LEVEL. {HOME_SUMMARY_MOCK.level.current}</ThemedText>
-          <View style={styles.levelTrack}>
-            <View style={[styles.levelFill, { width: `${HOME_SUMMARY_MOCK.level.progressPercent}%` }]} />
-          </View>
-
-          {/* 캐릭터 */}
-          <Image
-            source={require('@/assets/images/figma-character.png')}
-            style={styles.characterImage}
-            contentFit="contain"
-          />
-
-          {/* 수면 요약 툴팁 카드 */}
-          <Pressable onPress={() => router.push('/report')} style={({ pressed }) => [pressed && styles.pressed]}>
-            <LinearGradient
-              style={styles.tooltipCard}
-              colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.22)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}>
-              <View style={styles.tooltipIconSlot} />
-              <View style={styles.tooltipTextBlock}>
-                {buildTooltipLines(interpretationState).map((line, index) => (
-                  <ThemedText key={index} style={styles.tooltipText}>
-                    {line}
-                  </ThemedText>
-                ))}
+            {/* 상단 안내 문구 (날짜 + 인사말) */}
+            <View style={styles.dateGreetingBlock}>
+              <ThemedText style={styles.dateText}>{HOME_SUMMARY_MOCK.date.label}</ThemedText>
+              <View style={styles.greetingRow}>
+                <Image source={require('@/assets/images/figma-icon-sun.png')} style={styles.sunIcon} contentFit="contain" />
+                <ThemedText style={styles.greetingText}>{HOME_SUMMARY_MOCK.greeting.message}</ThemedText>
               </View>
-            </LinearGradient>
-          </Pressable>
-          <Image source={require('@/assets/images/figma-icon-bed.png')} style={styles.tooltipIcon} contentFit="contain" />
-
-          {/* 오늘의 피부 예보 카드 */}
-          <View style={styles.forecastCard}>
-            <View style={styles.forecastTitleRow}>
-              <Image
-                source={require('@/assets/images/figma-icon-barchart.png')}
-                style={styles.forecastTitleIcon}
-                contentFit="contain"
-              />
-              <ThemedText style={styles.forecastTitle}>{HOME_SUMMARY_MOCK.skinForecast.title}</ThemedText>
             </View>
-            {forecastState.status === 'loading' && (
-              <ThemedText style={styles.forecastDisclaimer}>불러오는 중...</ThemedText>
-            )}
-            {forecastState.status === 'error' && (
-              <ThemedText style={styles.forecastDisclaimer}>피부 예보를 불러오지 못했어요</ThemedText>
-            )}
-            {forecastState.status === 'no_data' && (
-              <ThemedText style={styles.forecastDisclaimer}>{forecastState.message}</ThemedText>
-            )}
-            {forecastState.status === 'available' && (
-              <View style={styles.gaugeList}>
-                {buildForecastRows(forecastState.forecast).map((item) => (
-                  <ForecastGaugeRow
-                    key={item.key}
-                    label={item.label}
-                    value={item.value}
-                    status={item.status}
-                    statusColor={item.color}
-                  />
-                ))}
-              </View>
-            )}
-            <ThemedText style={styles.forecastDisclaimer}>{HOME_SUMMARY_MOCK.skinForecast.disclaimer}</ThemedText>
-          </View>
 
-          {/* 검증 버튼 + 트리거 */}
-          <Pressable onPress={() => setSelfieFlowVisible(true)} style={({ pressed }) => [styles.verifyButton, pressed && styles.pressed]}>
-            <ThemedText style={styles.verifyButtonText}>{VERIFY_BUTTON_LABEL}</ThemedText>
-          </Pressable>
+            {/* 캐릭터 레벨 */}
+            <ThemedText style={styles.levelText}>LEVEL. {HOME_SUMMARY_MOCK.level.current}</ThemedText>
+            <View style={styles.levelTrack}>
+              <View style={[styles.levelFill, { width: `${HOME_SUMMARY_MOCK.level.progressPercent}%` }]} />
+            </View>
 
-          <View style={styles.verificationTrigger}>
-            <ThemedText style={styles.verificationSummary}>{HOME_SUMMARY_MOCK.verification.summaryText}</ThemedText>
-          </View>
-          <Pressable
-            onPress={() => setSleepModalVisible(true)}
-            hitSlop={12}
-            style={({ pressed }) => [styles.chevronIcon, pressed && styles.pressed]}>
+            {/* 캐릭터 */}
             <Image
-              source={require('@/assets/images/figma-icon-chevron-up.png')}
-              style={styles.chevronImage}
+              source={require('@/assets/images/figma-character.png')}
+              style={styles.characterImage}
               contentFit="contain"
             />
-          </Pressable>
 
-          <View style={styles.divider} />
+            {/* 수면 요약 툴팁 카드 */}
+            <Pressable onPress={() => router.push('/report')} style={({ pressed }) => [pressed && styles.pressed]}>
+              <LinearGradient
+                style={styles.tooltipCard}
+                colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.22)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}>
+                <View style={styles.tooltipIconSlot} />
+                <View style={styles.tooltipTextBlock}>
+                  {buildTooltipLines(interpretationState).map((line, index) => (
+                    <ThemedText key={index} style={styles.tooltipText}>
+                      {line}
+                    </ThemedText>
+                  ))}
+                </View>
+              </LinearGradient>
+            </Pressable>
+            <Image source={require('@/assets/images/figma-icon-bed.png')} style={styles.tooltipIcon} contentFit="contain" />
+
+            {/* 오늘의 피부 예보 카드 */}
+            <View style={styles.forecastCard}>
+              <View style={styles.forecastTitleRow}>
+                <Image
+                  source={require('@/assets/images/figma-icon-barchart.png')}
+                  style={styles.forecastTitleIcon}
+                  contentFit="contain"
+                />
+                <ThemedText style={styles.forecastTitle}>{HOME_SUMMARY_MOCK.skinForecast.title}</ThemedText>
+              </View>
+              {forecastState.status === 'loading' && (
+                <ThemedText style={styles.forecastDisclaimer}>불러오는 중...</ThemedText>
+              )}
+              {forecastState.status === 'error' && (
+                <ThemedText style={styles.forecastDisclaimer}>피부 예보를 불러오지 못했어요</ThemedText>
+              )}
+              {forecastState.status === 'no_data' && (
+                <ThemedText style={styles.forecastDisclaimer}>{forecastState.message}</ThemedText>
+              )}
+              {forecastState.status === 'available' && (
+                <View style={styles.gaugeList}>
+                  {buildForecastRows(forecastState.forecast).map((item) => (
+                    <ForecastGaugeRow
+                      key={item.key}
+                      label={item.label}
+                      value={item.value}
+                      status={item.status}
+                      statusColor={item.color}
+                    />
+                  ))}
+                </View>
+              )}
+              <ThemedText style={styles.forecastDisclaimer}>{HOME_SUMMARY_MOCK.skinForecast.disclaimer}</ThemedText>
+            </View>
+
+            {/* 검증 버튼 + 트리거 */}
+            <Pressable onPress={() => setSelfieFlowVisible(true)} style={({ pressed }) => [styles.verifyButton, pressed && styles.pressed]}>
+              <ThemedText style={styles.verifyButtonText}>{VERIFY_BUTTON_LABEL}</ThemedText>
+            </Pressable>
+
+            <View style={styles.verificationTrigger}>
+              <ThemedText style={styles.verificationSummary}>{HOME_SUMMARY_MOCK.verification.summaryText}</ThemedText>
+            </View>
+            <Pressable
+              onPress={() => setSleepModalVisible(true)}
+              hitSlop={12}
+              style={({ pressed }) => [styles.chevronIcon, pressed && styles.pressed]}>
+              <Image
+                source={require('@/assets/images/figma-icon-chevron-up.png')}
+                style={styles.chevronImage}
+                contentFit="contain"
+              />
+            </Pressable>
+
+            <View style={styles.divider} />
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
 
       <SleepDetailModal visible={sleepModalVisible} onClose={() => setSleepModalVisible(false)} />
       <SelfieVerificationFlow

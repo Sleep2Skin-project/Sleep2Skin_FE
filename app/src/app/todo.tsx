@@ -1,10 +1,12 @@
 import { Image } from 'expo-image';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TODO_SUMMARY_MOCK, type ChecklistItemResponse } from '@/constants/mockData';
+import { useDesignScale } from '@/hooks/use-design-scale';
 
 // TODO — Figma 'Ui - 복사' 파일 노드 176:1165("iPhone 17 - 12")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -14,6 +16,11 @@ import { TODO_SUMMARY_MOCK, type ChecklistItemResponse } from '@/constants/mockD
 // 참고: Figma 프레임 안에는 "오늘 밤 체크리스트" 3개 항목이 위치만 다르게 통째로 한 번 더
 // 중복 배치되어 있었다(디자이너 작업 중 남은 복제본으로 보임, node 187:2527). 실제 앱에서
 // 같은 항목을 두 번 보여줄 수 없으므로 중복본은 제외하고 한 세트만 반영했다.
+//
+// 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
+// 캔버스는 402x874 고정 프레임(overflow:hidden)이라 세로 스케일도 함께 계산하고,
+// 그래도 짧은 기기에서 남는 여백은 기존처럼 ScrollView로 감싸 안전하게 처리한다.
 
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
@@ -46,6 +53,7 @@ function ChecklistRow({
 }
 
 export default function TodoScreen() {
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(TODO_SUMMARY_MOCK.checklist.map((item) => [item.id, item.checked])),
   );
@@ -59,68 +67,69 @@ export default function TodoScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}>
-      <View style={styles.canvas}>
-        {/* 배경 (fill #DFEAFF) */}
-        <View style={StyleSheet.absoluteFill} />
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
+          <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+          {/* 배경 (fill #DFEAFF) */}
+          <View style={StyleSheet.absoluteFill} />
 
-        {/* Spiral Notepad 아이콘 + "오늘의 투두리스트" (node 176:1228, x:71 y:71 w:168 h:26) */}
-        <Image
-          source={require('@/assets/images/figma-icon-notepad.png')}
-          style={styles.notepadIcon}
-          contentFit="contain"
-        />
-        <ThemedText style={styles.pageTitle}>오늘의 투두리스트</ThemedText>
+          {/* Spiral Notepad 아이콘 + "오늘의 투두리스트" (node 176:1228, x:71 y:71 w:168 h:26) */}
+          <Image
+            source={require('@/assets/images/figma-icon-notepad.png')}
+            style={styles.notepadIcon}
+            contentFit="contain"
+          />
+          <ThemedText style={styles.pageTitle}>오늘의 투두리스트</ThemedText>
 
-        {/* 유령 캐릭터 (node 187:2526, x:309 y:55 w:89 h:89) */}
-        <Image
-          source={require('@/assets/images/figma-icon-ghost-todo.png')}
-          style={styles.ghostImage}
-          contentFit="contain"
-        />
+          {/* 유령 캐릭터 (node 187:2526, x:309 y:55 w:89 h:89) */}
+          <Image
+            source={require('@/assets/images/figma-icon-ghost-todo.png')}
+            style={styles.ghostImage}
+            contentFit="contain"
+          />
 
-        {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) */}
-        <ThemedText style={styles.progressLabel}>진행도</ThemedText>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-        </View>
-        <ThemedText style={styles.progressCount}>
-          {completed}/{total}
-        </ThemedText>
+          {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) */}
+          <ThemedText style={styles.progressLabel}>진행도</ThemedText>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+          </View>
+          <ThemedText style={styles.progressCount}>
+            {completed}/{total}
+          </ThemedText>
 
-        {/* "오늘은 피하세요" 카드 (node 187:2505, x:9 y:125 w:400 h:216) */}
-        <View style={styles.avoidCard}>
-          <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
-          <View style={styles.avoidList}>
-            {TODO_SUMMARY_MOCK.avoidList.map((item) => (
-              <View key={item.id} style={styles.avoidItem}>
-                <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
-                <ThemedText style={styles.avoidItemReason}>{item.reason}</ThemedText>
-              </View>
+          {/* "오늘은 피하세요" 카드 (node 187:2505, x:9 y:125 w:400 h:216) */}
+          <View style={styles.avoidCard}>
+            <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
+            <View style={styles.avoidList}>
+              {TODO_SUMMARY_MOCK.avoidList.map((item) => (
+                <View key={item.id} style={styles.avoidItem}>
+                  <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
+                  <ThemedText style={styles.avoidItemReason}>{item.reason}</ThemedText>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Line 2 구분선 (node 176:1251, x:25 y:345 w:359) */}
+          <View style={styles.divider} />
+
+          {/* "오늘 밤 체크리스트" 섹션 (node 176:1166, x:21 y:359 w:363 h:216) */}
+          <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
+          <View style={styles.checklistList}>
+            {TODO_SUMMARY_MOCK.checklist.map((item) => (
+              <ChecklistRow
+                key={item.id}
+                item={item}
+                checked={checkedMap[item.id] ?? false}
+                onToggle={() => handleToggle(item.id)}
+              />
             ))}
           </View>
+          </View>
         </View>
-
-        {/* Line 2 구분선 (node 176:1251, x:25 y:345 w:359) */}
-        <View style={styles.divider} />
-
-        {/* "오늘 밤 체크리스트" 섹션 (node 176:1166, x:21 y:359 w:363 h:216) */}
-        <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
-        <View style={styles.checklistList}>
-          {TODO_SUMMARY_MOCK.checklist.map((item) => (
-            <ChecklistRow
-              key={item.id}
-              item={item}
-              checked={checkedMap[item.id] ?? false}
-              onToggle={() => handleToggle(item.id)}
-            />
-          ))}
-        </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -129,8 +138,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bgSoftBlue,
   },
-  // 체크리스트 6개로 확장되며 캔버스가 화면(및 하단 탭 바) 높이를 넘어설 수 있어
-  // 스크롤 가능하도록 처리 — 캔버스 자체의 크기·스타일은 그대로 유지한다.
+  // useDesignScale이 화면 높이에 맞춰 캔버스를 축소하므로 보통은 스크롤이 필요 없지만,
+  // 만약을 대비해 안전장치로 스크롤 가능하게 감싼다 — 캔버스 자체의 크기·스타일은 그대로 유지한다.
   scrollContent: {
     alignItems: 'center',
     paddingBottom: 24,

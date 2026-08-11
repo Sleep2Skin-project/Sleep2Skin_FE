@@ -17,13 +17,15 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TabSymbol } from '@/components/ui/tab-symbol';
+import { Colors } from '@/constants/colors';
 import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
+import { useDesignScale } from '@/hooks/use-design-scale';
 import { useTheme } from '@/hooks/use-theme';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
@@ -843,47 +845,55 @@ type SelfieFlowStepsProps = {
 // 이 안쪽 컴포넌트에 두면 매번 새로 열릴 때마다 자연스럽게 1단계로 초기화되어,
 // 별도의 "열릴 때 리셋" 이펙트가 필요 없다.
 // HOME(index.tsx)·온보딩(onboarding-flow.tsx)과 동일하게 402x874 고정 캔버스로 감싼다.
-// 이 래퍼가 없으면 넓은 뷰포트(데스크톱 웹 미리보기 등)에서 모든 요소가 실제 기기 대비
-// 작게 렌더돼, 텍스트 등 개별 수치는 Figma와 정확히 일치해도 전체 비율이 달라 보인다.
+// 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링). 이 래퍼가
+// 없으면 넓은 뷰포트(데스크톱 웹 미리보기 등)에서 모든 요소가 실제 기기 대비 작게 렌더돼,
+// 텍스트 등 개별 수치는 Figma와 정확히 일치해도 전체 비율이 달라 보인다.
 function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
+  const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
 
   if (step === 1) {
     return (
-      <View style={styles.screen}>
-        <LinearGradient
-          colors={[CAPTURE_BG_TOP, CAPTURE_BG_BOTTOM]}
-          style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <CaptureStep
-            onClose={onClose}
-            onCaptured={(uri) => {
-              setImageUri(uri);
-              setStep(2);
-            }}
-          />
-        </LinearGradient>
-      </View>
+      <SafeAreaView style={[styles.screen, { backgroundColor: CAPTURE_BG_BOTTOM }]}>
+        <View style={canvasWrapperStyle}>
+          <LinearGradient colors={[CAPTURE_BG_TOP, CAPTURE_BG_BOTTOM]} style={[styles.canvas, canvasScaleStyle]}>
+            <CaptureStep
+              onClose={onClose}
+              onCaptured={(uri) => {
+                setImageUri(uri);
+                setStep(2);
+              }}
+            />
+          </LinearGradient>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (step === 2) {
     return (
-      <View style={styles.screen}>
-        <ThemedView style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <AnalyzingStep imageUri={imageUri} onDone={() => setStep(3)} />
-        </ThemedView>
-      </View>
+      <SafeAreaView style={[styles.screen, { backgroundColor: Colors.white }]}>
+        <View style={canvasWrapperStyle}>
+          <ThemedView style={[styles.canvas, canvasScaleStyle]}>
+            <AnalyzingStep imageUri={imageUri} onDone={() => setStep(3)} />
+          </ThemedView>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <ThemedView style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-        <ReportStep onClose={onClose} onFinish={onFinish} />
-      </ThemedView>
-    </View>
+    <SafeAreaView style={[styles.screen, { backgroundColor: REPORT_BG }]}>
+      <View style={canvasWrapperStyle}>
+        <ThemedView style={[styles.canvas, canvasScaleStyle]}>
+          <ReportStep onClose={onClose} onFinish={onFinish} />
+        </ThemedView>
+      </View>
+    </SafeAreaView>
   );
 }
 

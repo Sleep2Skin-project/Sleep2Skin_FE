@@ -45,12 +45,14 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     paddingHorizontal: Spacing.four,
-    // Figma node 350:777(세그먼트 탭)이 안전영역 상단에서 y40만큼 떨어져 있다 — 기존 8px은 너무 붙어 있었다.
-    paddingTop: 40,
+    // Figma 원본은 세그먼트 탭이 안전영역 상단에서 y40만큼 떨어져 있었지만, 일간/주간/월간
+    // 리포트 콘텐츠가 스크롤 없이 최대한 한 화면에 들어오도록 탭 주변 여백만 줄였다(콘텐츠
+    // 자체 디자인은 손대지 않음).
+    paddingTop: Spacing.three,
   },
-  // node 350:777(탭) 바닥(y40+h33.94≈74) → node 350:789("최근 7일...") 상단(y97) 간격.
+  // node 350:777(탭) → node 350:789("최근 7일...") 간격 — 위 paddingTop과 같은 이유로 축소.
   tabsWrap: {
-    paddingBottom: 23,
+    paddingBottom: Spacing.three,
   },
   scrollContent: {
     // overall-report.tsx가 CTA 버튼을 화면 하단에 고정하려면(Figma의 flex spacer) 콘텐츠 컨테이너가

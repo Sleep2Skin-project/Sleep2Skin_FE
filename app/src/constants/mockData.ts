@@ -34,9 +34,6 @@ export interface HomeSummaryResponse {
     disclaimer: string;
     items: SkinForecastItem[];
   };
-  verification: {
-    summaryText: string;
-  };
 }
 
 export const HOME_SUMMARY_MOCK: HomeSummaryResponse = {
@@ -53,7 +50,6 @@ export const HOME_SUMMARY_MOCK: HomeSummaryResponse = {
       { key: 'dullness', label: '칙칙함', value: 55, status: '보통', riskLevel: 'success' },
     ],
   },
-  verification: { summaryText: '어제 예보 적중률 84% · 8일 연속 검증 중' },
 };
 
 // ── TODO (GET /todo/summary 예상) ──────────────────────────────────────────

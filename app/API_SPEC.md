@@ -11,6 +11,9 @@
 - [POST] `/api/v1/sleep/sessions` (수면 세션 업로드)
 - [POST] `/api/v1/users/me/consents` (개인정보 수집/이용 동의)
 - [PATCH] `/api/v1/users/me/onboarding` (온보딩 완료 처리)
+- [GET] `/api/v1/skin/model` (내 모델 — 일반 vs 개인화)
+- [POST] `/api/v1/skin/selfie` (셀피 분석·검증·학습)
+- [GET] `/api/v1/skin/verification/summary` (적중률·연속 검증 배너)
 
 ## 3. 🚨 Backend Developer Strict Rules (반드시 준수) 🚨
 특히 `POST /api/v1/sleep/sessions` API 연동 시 아래 규칙을 무조건 따른다.

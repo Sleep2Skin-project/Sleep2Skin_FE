@@ -5,7 +5,14 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getSkinForecast, type SkinForecastDetail } from '@/api/skin';
+import {
+  getSkinForecast,
+  getSkinModel,
+  getVerificationSummary,
+  SkinModelUserNotFoundError,
+  type SkinForecastDetail,
+  type VerificationSummary,
+} from '@/api/skin';
 import { getSleepInterpretation, type SleepInterpretation } from '@/api/sleep';
 import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
@@ -17,8 +24,9 @@ import { useDesignScale } from '@/hooks/use-design-scale';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
 // 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
-// 피부 예보/수면 통역은 GET /api/v1/skin/forecast, /api/v1/sleep/interpretation로 연동했고,
-// 날짜/인사말/레벨/적중률처럼 대응하는 API가 아직 없는 항목만 mockData.ts의 HOME_SUMMARY_MOCK을 그대로 쓴다.
+// 피부 예보/수면 통역/적중률·연속 검증 배너는 GET /api/v1/skin/forecast, /api/v1/sleep/interpretation,
+// GET /api/v1/skin/verification/summary로 연동했고, 날짜/인사말/레벨처럼 대응하는 API가 아직
+// 없는 항목만 mockData.ts의 HOME_SUMMARY_MOCK을 그대로 쓴다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -48,6 +56,12 @@ type InterpretationState =
   | { status: 'error' }
   | { status: 'no_data'; message: string }
   | { status: 'available'; interpretation: SleepInterpretation };
+
+type VerificationSummaryState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_data'; message: string | null }
+  | { status: 'available'; summary: VerificationSummary };
 
 function getTodayDateString() {
   const now = new Date();
@@ -99,6 +113,23 @@ function buildTooltipLines(state: InterpretationState): string[] {
     : [interpretation.headline, interpretation.focus.label];
 }
 
+/**
+ * 검증 트리거 아래 한 줄 요약(HOME-09, getVerificationSummary). summary.hitRate는 누적 적중률이라
+ * AccuracyCard(selfie-verification-flow.tsx)와 동일하게 "누적"이라 명시하고, latest.hitRate(그날치)와
+ * 섞어 쓰지 않는다.
+ */
+function buildVerificationSummaryText(state: VerificationSummaryState): string {
+  if (state.status === 'loading') return '불러오는 중...';
+  if (state.status === 'error') return '적중률 정보를 불러오지 못했어요';
+  if (state.status === 'no_data') {
+    return state.message ?? '아직 검증 이력이 없어요 · 셀피로 첫 검증을 시작해보세요';
+  }
+  const { summary } = state;
+  return summary.streakCount > 0
+    ? `누적 예보 적중률 ${summary.hitRate}% · ${summary.streakCount}일 연속 검증 중`
+    : `누적 예보 적중률 ${summary.hitRate}% · 오늘 검증하고 기록을 이어가 보세요`;
+}
+
 function ForecastGaugeRow({
   label,
   value,
@@ -130,6 +161,9 @@ export default function HomeScreen() {
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
   const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
   const [interpretationState, setInterpretationState] = useState<InterpretationState>({ status: 'loading' });
+  const [verificationSummaryState, setVerificationSummaryState] = useState<VerificationSummaryState>({
+    status: 'loading',
+  });
 
   useEffect(() => {
     const baseDate = getTodayDateString();
@@ -153,6 +187,48 @@ export default function HomeScreen() {
         );
       })
       .catch(() => setInterpretationState({ status: 'error' }));
+
+    // REP-12 테스트 호출: 내 모델 - 일반 vs 개인화 (userId: 1 고정)
+    getSkinModel(1)
+      .then(({ data }) => {
+        if (data.status === 'NO_VERIFICATION') {
+          console.log(
+            `✅ 내 모델 조회 성공: 상태 NO_VERIFICATION (아직 검증 이력 없음, message: ${data.message ?? '없음'})`
+          );
+        } else {
+          console.log(
+            `✅ 내 모델 조회 성공: 상태 AVAILABLE (누적 검증 횟수: ${data.model.verificationCount}, 헤드라인: ${data.model.headline})`
+          );
+        }
+      })
+      .catch((error) => {
+        if (error instanceof SkinModelUserNotFoundError) {
+          console.error(`❌ 내 모델 조회 실패: 존재하지 않는 사용자 (userId: ${error.userId})`);
+          return;
+        }
+        console.error('❌ 내 모델 조회 실패:', error);
+      });
+
+    // 테스트용 셀피 검증 호출: verifySelfie(1, "2026-08-07", "dummy_uri")
+    // (카메라 기능 미구현으로 아직 호출하지 않음)
+
+    // HOME-09: 적중률·연속 검증 배너 (검증 트리거 아래 한 줄 요약)
+    getVerificationSummary(TEMP_USER_ID, baseDate)
+      .then(({ data }) => {
+        setVerificationSummaryState(
+          data.status === 'AVAILABLE'
+            ? { status: 'available', summary: data.summary }
+            : { status: 'no_data', message: data.message }
+        );
+      })
+      .catch((error) => {
+        if (error instanceof SkinModelUserNotFoundError) {
+          console.error(`❌ 배너 조회 실패: 존재하지 않는 사용자 (userId: ${error.userId})`);
+        } else {
+          console.error('❌ 배너 조회 실패:', error);
+        }
+        setVerificationSummaryState({ status: 'error' });
+      });
   }, []);
 
   return (
@@ -245,7 +321,9 @@ export default function HomeScreen() {
             </Pressable>
 
             <View style={styles.verificationTrigger}>
-              <ThemedText style={styles.verificationSummary}>{HOME_SUMMARY_MOCK.verification.summaryText}</ThemedText>
+              <ThemedText style={styles.verificationSummary}>
+                {buildVerificationSummaryText(verificationSummaryState)}
+              </ThemedText>
             </View>
             <Pressable
               onPress={() => setSleepModalVisible(true)}

@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -35,6 +36,13 @@ const CANVAS_HEIGHT = 874;
 
 // 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 mock의 progressPercent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
+
+// "50/250 exp" 배지 전용 픽셀 폰트(node 541:3482) — 이 화면에만 로컬로 번들링한다(TODO(todo.tsx)의
+// exp 배지와 동일한 패턴).
+const PRESS_START_2P = 'PressStart2P-Regular';
+const EXP_TEXT_FONTS = {
+  [PRESS_START_2P]: require('@/assets/fonts/PressStart2P-Regular.ttf'),
+};
 
 const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
@@ -157,6 +165,7 @@ function ForecastGaugeRow({
 export default function HomeScreen() {
   const router = useRouter();
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
   const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
@@ -253,8 +262,17 @@ export default function HomeScreen() {
             <View style={styles.levelTrack}>
               <View style={[styles.levelFill, { width: `${HOME_SUMMARY_MOCK.level.progressPercent}%` }]} />
             </View>
+            {/* "50/250 exp" (node 541:3482, x:38 y:160 w:177.64 h:23) — 게이미케이션 API 연동 전까지
+                mock 값. 픽셀 폰트 로드 전엔 시스템 폰트로 잠깐 바뀌어 보이는 걸 막기 위해 렌더하지 않는다. */}
+            {expFontLoaded && (
+              <ThemedText style={styles.expText}>
+                {HOME_SUMMARY_MOCK.level.exp.current}/{HOME_SUMMARY_MOCK.level.exp.max} exp
+              </ThemedText>
+            )}
 
-            {/* 캐릭터 */}
+            {/* 캐릭터 — 지금은 레벨4 고정 이미지 하드코딩. 게이미케이션 API 연동 시 레벨별
+                이미지 전환 로직을 붙여야 한다 — 할 일 목록은 mockData.ts의 HOME_SUMMARY_MOCK
+                위 TODO 블록 참고(레벨1~5 원본은 app/assets/images/figma-character-level-1~5.png). */}
             <Image
               source={require('@/assets/images/figma-character.png')}
               style={styles.characterImage}
@@ -425,6 +443,16 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 6,
     backgroundColor: Colors.primaryDark,
+  },
+  // "50/250 exp" (node 541:3482, x:38 y:160 w:177.64 h:23, Press Start 2P 11px)
+  expText: {
+    position: 'absolute',
+    left: 38,
+    top: 160,
+    fontSize: 11,
+    lineHeight: 23,
+    fontFamily: PRESS_START_2P,
+    color: Colors.primaryDark,
   },
 
   // ghost3-nobg-shadow (1) 1 (node 187:2678, x:-17 y:162 w:367 h:296)

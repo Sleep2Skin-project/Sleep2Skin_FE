@@ -6,6 +6,10 @@ import { Spacing } from '@/constants/theme';
 
 export type TabItem = {
   name: 'index' | 'todo' | 'report' | 'my';
+  // 실제로 동작하는 경로 그대로다(정적 빌드에도 "/ (index)"로 나온다) — expo-router의 자동
+  // 생성 타입(.expo/types/router.d.ts)이 (tabs) 그룹 안의 index 라우트를 "/index"로만 잡고
+  // "/"는 빠뜨리는 알려진 갭이 있어, 이 값을 쓰는 곳(app-tabs.web.tsx, selfie-verification-flow.tsx)
+  // 에서 `as Href`로 캐스팅한다.
   href: '/' | '/todo' | '/report' | '/my';
   label: string;
   sf: SFSymbol;

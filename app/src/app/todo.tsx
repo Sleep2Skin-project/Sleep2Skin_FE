@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -7,6 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TODO_SUMMARY_MOCK, type ChecklistItemResponse } from '@/constants/mockData';
 import { useDesignScale } from '@/hooks/use-design-scale';
+
+// "+ 5 exp" 배지 전용 픽셀 폰트(node 434:1251) — 이 화면에만 로컬로 번들링한다(다른 화면 영향 없음,
+// 온보딩(onboarding-flow.tsx)의 Pretendard 번들링과 동일한 패턴).
+const PRESS_START_2P = 'PressStart2P-Regular';
+const EXP_BADGE_FONTS = {
+  [PRESS_START_2P]: require('@/assets/fonts/PressStart2P-Regular.ttf'),
+};
 
 // TODO — Figma 'Ui - 복사' 파일 노드 176:1165("iPhone 17 - 12")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -29,10 +37,12 @@ function ChecklistRow({
   item,
   checked,
   onToggle,
+  expBadgeFontReady,
 }: {
   item: ChecklistItemResponse;
   checked: boolean;
   onToggle: () => void;
+  expBadgeFontReady: boolean;
 }) {
   return (
     <Pressable
@@ -48,12 +58,19 @@ function ChecklistRow({
         </View>
       </View>
       <ThemedText style={styles.checklistItemTitle}>{item.title}</ThemedText>
+      {/* "+ 5 exp" 배지 (node 434:1251, Press Start 2P 12px, #3366FF) — Figma 시안엔 맨 위 항목
+          하나에만 예시로 붙어 있어, item.expLabel이 있을 때만 그려진다. 픽셀 폰트 로드 전엔 시스템
+          폰트로 잠깐 바뀌어 보이는 걸 막기 위해 폰트 준비 전에는 아예 렌더하지 않는다. */}
+      {item.expLabel && expBadgeFontReady && (
+        <ThemedText style={styles.checklistItemExpBadge}>{item.expLabel}</ThemedText>
+      )}
     </Pressable>
   );
 }
 
 export default function TodoScreen() {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const [expBadgeFontReady] = useFonts(EXP_BADGE_FONTS);
   const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(TODO_SUMMARY_MOCK.checklist.map((item) => [item.id, item.checked])),
   );
@@ -98,7 +115,8 @@ export default function TodoScreen() {
             {completed}/{total}
           </ThemedText>
 
-          {/* "오늘은 피하세요" 카드 (node 187:2505, x:9 y:125 w:400 h:216) */}
+          {/* "오늘은 피하세요" 카드 (node 432:1183, x:4 y:124 w:400, 항목 3개로 늘어 높이는
+              내용에 맞춰 자동으로 늘어난다 — 고정 높이를 주지 않음) */}
           <View style={styles.avoidCard}>
             <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
             <View style={styles.avoidList}>
@@ -111,10 +129,8 @@ export default function TodoScreen() {
             </View>
           </View>
 
-          {/* Line 2 구분선 (node 176:1251, x:25 y:345 w:359) */}
-          <View style={styles.divider} />
-
-          {/* "오늘 밤 체크리스트" 섹션 (node 176:1166, x:21 y:359 w:363 h:216) */}
+          {/* "오늘 밤 체크리스트" 섹션 (node 432:1155, x:18 y:431 w:363) — 새 시안에서는 구분선이
+              사라지고, 위 카드가 항목 3개만큼 늘어난 높이에 맞춰 곧바로 이어진다. */}
           <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
           <View style={styles.checklistList}>
             {TODO_SUMMARY_MOCK.checklist.map((item) => (
@@ -123,6 +139,7 @@ export default function TodoScreen() {
                 item={item}
                 checked={checkedMap[item.id] ?? false}
                 onToggle={() => handleToggle(item.id)}
+                expBadgeFontReady={expBadgeFontReady}
               />
             ))}
           </View>
@@ -267,32 +284,23 @@ const styles = StyleSheet.create({
     color: 'rgba(55, 56, 60, 0.61)',
   },
 
-  // Line 2 (node 176:1251, x:25 y:345 w:359, stroke #C8C8C8)
-  divider: {
-    position: 'absolute',
-    left: 25,
-    top: 345,
-    width: 359,
-    height: 1,
-    backgroundColor: '#C8C8C8',
-  },
-
-  // "오늘 밤 체크리스트" (node 176:1168, x:21 y:359 w:363 h:19)
+  // "오늘 밤 체크리스트" (node 432:1157, x:18 y:431 w:363) — 새 시안에서는 구분선 없이 "오늘은
+  // 피하세요" 카드(항목 3개, 자동 높이) 바로 아래로 이어진다.
   checklistTitle: {
     position: 'absolute',
     left: 21,
-    top: 359,
+    top: 431,
     width: 363,
     fontSize: 16,
     lineHeight: 19,
     fontWeight: '700',
     color: '#171717',
   },
-  // 항목 리스트 (node 176:1169, x:21 y:393 w:363 h:182, gap:10)
+  // 항목 리스트 (node 432:1158, x:21 y:465 w:363, gap:10)
   checklistList: {
     position: 'absolute',
     left: 21,
-    top: 393,
+    top: 465,
     width: 363,
     gap: 10,
   },
@@ -352,5 +360,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700',
     color: '#171717',
+  },
+  // "+ 5 exp" 배지 (node 434:1251, Press Start 2P 12px, #3366FF) — 제목이 flex:1이라 남는 공간만
+  // 차지하고, 배지는 줄어들지 않고 항상 제 크기로 오른쪽에 붙는다.
+  checklistItemExpBadge: {
+    flexShrink: 0,
+    fontSize: 12,
+    fontFamily: PRESS_START_2P,
+    color: '#3366FF',
   },
 });

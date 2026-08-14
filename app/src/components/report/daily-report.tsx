@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { getSkinForecast, type SkinForecastDetail } from '@/api/skin';
 import type { SleepStats } from '@/api/sleep';
+import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
@@ -38,6 +39,14 @@ const SLEEP_EXTRA_STATS_MOCK = {
   latencyMinutes: 62,
   efficiencyPercent: 70,
 };
+
+// 게이미케이션(경험치) 팝업 트리거용 목업 — 연속 출석/경험치를 다루는 백엔드 API가 아직 없어서
+// (API_SPEC.md 미등재) "어제보다 수면 점수가 올랐는지"를 실제로 계산할 방법이 없다. 그래서
+// today/previous를 하드코딩해두고 today > previous일 때만 팝업을 띄우는 것으로 로직만 흉내 낸다.
+// 실제 API가 생기면 이 목업 대신 응답의 오늘/어제 수면 점수와 지급 경험치 값을 쓸 것.
+const SLEEP_SCORE_MOCK = { today: 86, previous: 70 };
+const SLEEP_SCORE_EXP_MOCK = 10;
+const SLEEP_SCORE_DATE_LABEL_MOCK = '26년 8월 14일';
 
 function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
@@ -250,6 +259,8 @@ function SkinMetricRow({
 
 export function DailyReport() {
   const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
+  // 목업 트리거(위 SLEEP_SCORE_MOCK 주석 참고) — 오늘 점수가 어제보다 높을 때만 한 번 띄운다.
+  const [showScoreUpModal, setShowScoreUpModal] = useState(SLEEP_SCORE_MOCK.today > SLEEP_SCORE_MOCK.previous);
 
   useEffect(() => {
     const baseDate = getTodayDateString();
@@ -267,6 +278,15 @@ export function DailyReport() {
 
   return (
     <View style={styles.container}>
+      {showScoreUpModal && (
+        <SleepScoreGamificationModal
+          score={SLEEP_SCORE_MOCK.today}
+          expGained={SLEEP_SCORE_EXP_MOCK}
+          dateLabel={SLEEP_SCORE_DATE_LABEL_MOCK}
+          onClose={() => setShowScoreUpModal(false)}
+        />
+      )}
+
       <ThemedText style={styles.dateRange}>{DATE_RANGE_LABEL}</ThemedText>
       <ThemedText style={styles.heading}>{USER_HEADING}</ThemedText>
 

@@ -64,6 +64,8 @@ export interface ChecklistItemResponse {
   id: string;
   title: string;
   checked: boolean;
+  /** "+ 5 exp" 같은 경험치 배지 문구. Figma 시안엔 맨 위 항목에만 예시로 붙어 있어 옵셔널. */
+  expLabel?: string;
 }
 
 export interface TodoSummaryResponse {
@@ -73,15 +75,15 @@ export interface TodoSummaryResponse {
 
 export const TODO_SUMMARY_MOCK: TodoSummaryResponse = {
   avoidList: [
-    { id: 'exfoliation', title: '강한 각질 제거', reason: '스크럽·AHA는 장벽이 회복된 뒤에' },
-    { id: 'new-product', title: '새 제품 첫 사용', reason: '오늘은 반응을 예측하기 어려워요' },
+    { id: 'exfoliation', title: '강한 각질 제거', reason: '혈색 저하의 원인' },
+    { id: 'new-product', title: '새 제품 첫 사용', reason: '피부 장벽 저하의 원인' },
+    { id: 'phone-before-bed', title: '취침 전 스마트폰 장시간 사용', reason: '다크서클의 원인' },
   ],
   checklist: [
-    { id: 'caffeine-cutoff', title: '카페인 컷오프 15:00', checked: false },
-    { id: 'screen-off', title: '취침 30분 전 화면 끄기', checked: false },
+    { id: 'caffeine-cutoff-1', title: '카페인 컷오프 15:00', checked: true, expLabel: '+ 5 exp' },
+    { id: 'screen-off-1', title: '취침 30분 전 화면 끄기', checked: false },
     { id: 'room-temp', title: '침실 온도 19–21°C', checked: false },
-    { id: 'lukewarm-cleanse', title: '미온수로 가벼운 세안', checked: false },
-    { id: 'night-moisturizer', title: '취침 전 수분 크림 도포', checked: false },
-    { id: 'dim-lights', title: '암막 커튼 및 조도 낮추기', checked: false },
+    { id: 'caffeine-cutoff-2', title: '카페인 컷오프 15:00', checked: true },
+    { id: 'screen-off-2', title: '취침 30분 전 화면 끄기', checked: false },
   ],
 };

@@ -1,4 +1,5 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,7 +7,6 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Modal,
@@ -37,6 +37,7 @@ import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
 import { useDesignScale } from '@/hooks/use-design-scale';
 import { useTheme } from '@/hooks/use-theme';
+import { showAlert } from '@/utils/platform-alert';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
 // 1단계(촬영, node 176:816 "셀피 화면")·2단계(분석 중, node 176:961 "셀피 로딩 화면")·3단계(리포트,
@@ -161,9 +162,75 @@ const REPORT_HEADER_LABEL = 'rgba(55, 56, 60, 0.28)'; // Tuna 28%
 const REPORT_VALUE_MUTED = 'rgba(55, 56, 60, 0.61)'; // Tuna 61%
 const REPORT_SPARKLE_BG = 'rgba(0, 102, 255, 0.1)'; // Blue Ribbon 10%
 
+// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543, "연속 출석에 실패했어요") 전용 색상.
+// 연속 검증(스트릭)을 "일자별 완료/실패/예정" 배열로 조회하는 API는 없다(GET
+// /api/v1/skin/verification/summary는 streakCount 정수 하나와 최근 1건만 내려줄 뿐, 과거
+// 스트릭을 "이어서 재개"할 수 있는 개념 자체가 백엔드에 없다) — 그래서 요일별 배지 상태는
+// Figma 시안 값을 그대로 옮긴 정적 목업이고, 두 CTA 버튼은 실제 재개/재시작 로직 없이 모달을
+// 닫기만 한다. 실제 로직이 필요해지면 백엔드에 전용 API가 먼저 있어야 한다.
+const STREAK_MODAL_BACKDROP = 'rgba(255, 255, 255, 0.4)';
+const STREAK_MODAL_TITLE = '#000000';
+const STREAK_MODAL_SUBTITLE = '#525252';
+const STREAK_MODAL_PANEL_BG = 'rgba(209, 234, 255, 0.6)';
+const STREAK_MODAL_DAY_DONE_BG = '#8ECDFF';
+const STREAK_MODAL_DAY_DONE_BORDER = '#058BFC';
+const STREAK_MODAL_DAY_MISSED_BORDER = '#F91D33';
+const STREAK_MODAL_DAY_PENDING_BORDER = '#949597';
+const STREAK_MODAL_LABEL_MUTED = '#8B8B93';
+const STREAK_MODAL_PRIMARY_BTN_BG = '#008DFF';
+const STREAK_MODAL_SECONDARY_BTN_BG = '#E3E3E3';
+
+// 이 파일 대부분의 텍스트는 시스템 폰트로도 크게 문제없이 맞았지만, 이 모달의 타이틀("아차! 연속
+// 출석에 실패했어요")은 박스 폭이 좁아 시스템 폰트로는 두 줄로 넘칠 수 있다 — 온보딩
+// (onboarding-flow.tsx)·출석 화면(attendance-flow.tsx)에서 이미 겪은 것과 동일한 문제라, 같은
+// Pretendard 폰트 파일을 이 모달에만 재사용한다.
+const PRETENDARD_REGULAR = 'Pretendard-Regular';
+const PRETENDARD_SEMIBOLD = 'Pretendard-SemiBold';
+const STREAK_MODAL_FONTS = {
+  [PRETENDARD_REGULAR]: require('@/assets/fonts/Pretendard-Regular.otf'),
+  [PRETENDARD_SEMIBOLD]: require('@/assets/fonts/Pretendard-SemiBold.otf'),
+};
+
+type StreakDayState = 'done' | 'missed' | 'pending';
+
+// 요일 배지 5개(node 487:246/247/252/269/271) — 위 주석대로 실제 스트릭 데이터가 아니라
+// Figma 시안이 보여주는 정적 예시(3일 완료 → 4일째 실패 → 5일째는 아직 오지 않음) 그대로다.
+const STREAK_MODAL_DAYS: { state: StreakDayState; label: string }[] = [
+  { state: 'done', label: '완료' },
+  { state: 'done', label: '완료' },
+  { state: 'done', label: '완료' },
+  { state: 'missed', label: '4일' },
+  { state: 'pending', label: '5일' },
+];
+
 // 개발자용 프리패스(Bypass) — 웹 브라우저는 실기기 카메라/갤러리가 온전히 동작하지 않을 수
 // 있어, 화면 전환 흐름만 먼저 검증할 수 있도록 실패 시 이 더미 이미지로 강제 진행한다.
 const DEV_BYPASS_DUMMY_URI = 'https://dummyimage.com/600x400/000/fff&text=Mock+Selfie';
+
+// 더미 이미지는 실제 얼굴이 아니라 서버 분석(POST /api/v1/skin/selfie)이 항상 실패하므로,
+// 프리패스 경로에서는 실제 API를 호출하는 대신 아래 더미 데이터로 3단계(ReportStep) UI만
+// 확인할 수 있게 한다 — "웹에서는 페이지 UI만 확인하면 된다"는 용도.
+const DEV_BYPASS_MOCK_DELAY_MS = 2500;
+
+function createDevBypassMockVerificationData(): SelfieVerificationData {
+  const today = getTodayDateString();
+  return {
+    baseDate: today,
+    analyzedAt: new Date().toISOString(),
+    verifications: [
+      { metric: 'DARK_CIRCLE', forecast: { score: 78, grade: '양호' }, measured: { score: 74, grade: '양호' }, difference: 4, verdict: 'HIT' },
+      { metric: 'BARRIER', forecast: { score: 65, grade: '보통' }, measured: { score: 52, grade: '주의' }, difference: 13, verdict: 'CLOSE' },
+      { metric: 'COMPLEXION', forecast: { score: 82, grade: '양호' }, measured: { score: 60, grade: '보통' }, difference: 22, verdict: 'OVERESTIMATED' },
+    ],
+    skipped: [],
+    hitRate: 33,
+    model: {
+      updated: true,
+      message: '개발자 프리패스로 만든 더미 데이터예요 — 실제 분석 결과가 아니에요.',
+      changes: [],
+    },
+  };
+}
 
 function CornerBracket({ position }: { position: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' }) {
   return <View style={[styles.cornerBracket, cornerPositionStyles[position]]} />;
@@ -276,7 +343,7 @@ function CaptureStep({
   // 개발자용 프리패스 — 실기기 촬영/갤러리 선택이 실패하거나 웹 환경이라 애초에 시도할 수
   // 없을 때, 화면 전환 흐름 테스트가 막히지 않도록 더미 이미지로 강제 진행한다.
   const bypassWithDummyImage = async (reason: string) => {
-    Alert.alert('개발자 프리패스', `${reason} 더미 이미지로 다음 화면까지 진행할게요.`);
+    showAlert('개발자 프리패스', `${reason} 더미 이미지로 다음 화면까지 진행할게요.`);
     await handleImageSelected(DEV_BYPASS_DUMMY_URI);
   };
 
@@ -841,6 +908,82 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
   );
 }
 
+// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543) — 셀피 로딩 화면(AnalyzingStep)에서
+// 검증 리포트(ReportStep)로 넘어가는 순간, 리포트 화면 위에 겹쳐 뜨는 "연속 출석 실패" 안내 모달.
+// 좌표는 카드(node 487:543, x:33 y:204 w:331.67 h:413) 원점 기준 상대값을 그대로 옮겼다.
+// 두 CTA 버튼은 실제 재개/재시작 백엔드 로직이 없어(위 STREAK_MODAL 상수 주석 참고) 모달을
+// 닫기만 한다.
+function StreakBrokenModal({ onDismiss }: { onDismiss: () => void }) {
+  const [fontsLoaded] = useFonts(STREAK_MODAL_FONTS);
+  // 폰트 로드 전엔 아예 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 타이틀이 줄바꿈되는 걸 막는다.
+  if (!fontsLoaded) return null;
+
+  return (
+    <Pressable style={styles.streakModalBackdrop} onPress={onDismiss}>
+      {/* 카드 자체는 탭해도 안 닫히도록 backdrop과 별개 Pressable로 감싼다(이벤트 버블 차단). */}
+      <Pressable style={styles.streakModalCard} onPress={() => {}}>
+        <Text style={styles.streakModalTitle}>아차! 연속 출석에 실패했어요</Text>
+        <Text style={styles.streakModalSubtitle}>다시 출석한다면 다시 얻을 수 있어요.</Text>
+
+        <View style={styles.streakModalPanel} />
+
+        {/* 요일 배지 5개 (node 487:246/247/252/269/271) */}
+        <View style={styles.streakModalDayRow}>
+          {STREAK_MODAL_DAYS.map((day, index) => (
+            <View key={index} style={styles.streakModalDayItem}>
+              <View
+                style={[
+                  styles.streakModalDayCircle,
+                  day.state === 'done' && styles.streakModalDayCircleDone,
+                  day.state === 'missed' && styles.streakModalDayCircleMissed,
+                  day.state === 'pending' && styles.streakModalDayCirclePending,
+                ]}>
+                <Image
+                  source={
+                    day.state === 'done'
+                      ? require('@/assets/images/figma-icon-streak-day-done.png')
+                      : day.state === 'missed'
+                        ? require('@/assets/images/figma-icon-streak-day-missed.png')
+                        : require('@/assets/images/figma-icon-streak-day-pending.png')
+                  }
+                  style={styles.streakModalDayFace}
+                  contentFit="contain"
+                />
+              </View>
+              <Text
+                style={[
+                  styles.streakModalDayLabel,
+                  day.state === 'missed' && styles.streakModalDayLabelMissed,
+                ]}>
+                {day.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544) */}
+        <Image
+          source={require('@/assets/images/figma-icon-streak-flag.png')}
+          style={styles.streakModalFlag}
+          contentFit="contain"
+        />
+
+        {/* CTA (node 471:1032/1033) */}
+        <Pressable
+          onPress={onDismiss}
+          style={({ pressed }) => [styles.streakModalPrimaryButton, pressed && styles.pressed]}>
+          <Text style={styles.streakModalPrimaryButtonText}>이어서 4일차부터 도전하기</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDismiss}
+          style={({ pressed }) => [styles.streakModalSecondaryButton, pressed && styles.pressed]}>
+          <Text style={styles.streakModalSecondaryButtonText}>1일차부터 다시 시작하기</Text>
+        </Pressable>
+      </Pressable>
+    </Pressable>
+  );
+}
+
 // node 241:604 "iPhone 17 - 14 (검증 리포트)" — 부모 테마와 무관하게 항상 Figma 지정
 // 연한 파란 배경(#DFEAFF)으로 렌더한다. data는 verifySelfie(POST /api/v1/skin/selfie) 성공 응답.
 function ReportStep({
@@ -1011,6 +1154,10 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [verifyState, setVerifyState] = useState<VerifyRequestState>({ status: 'idle' });
+  // 셀피 로딩 화면(AnalyzingStep)에서 리포트(ReportStep)로 넘어가는 순간 한 번 뜨는 "연속 출석
+  // 실패" 팝업(node 487:273) — 모달이 이 컴포넌트와 함께 매번 새로 마운트되므로(위 주석 참고)
+  // true로 시작해도 매번 출입할 때마다 다시 뜬다.
+  const [showStreakModal, setShowStreakModal] = useState(true);
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
@@ -1026,10 +1173,26 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
 
   // POST /api/v1/skin/selfie(verifySelfie)는 2단계(AnalyzingStep) 진입과 동시에 SelfieFlowSteps가
   // 직접 보낸다 — AnalyzingStep은 순수 표시 전담, CaptureStep은 촬영/선택만 담당한다.
+  // 단, 개발자 프리패스 더미 이미지는 실제 얼굴이 아니라 서버 분석이 항상 실패하므로, 이 경우엔
+  // 실제 API를 호출하지 않고 더미 성공 응답으로 대신해 3단계(ReportStep) UI를 확인할 수 있게 한다.
   useEffect(() => {
     if (step !== 2 || !imageUri) return;
     let cancelled = false;
     setVerifyState({ status: 'pending' });
+
+    if (imageUri === DEV_BYPASS_DUMMY_URI) {
+      const timer = setTimeout(() => {
+        if (cancelled) return;
+        setVerifyState({ status: 'success', data: createDevBypassMockVerificationData() });
+        setTimeout(() => {
+          if (!cancelled) setStep(3);
+        }, REPORT_TRANSITION_DELAY_MS);
+      }, DEV_BYPASS_MOCK_DELAY_MS);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }
 
     verifySelfie(TEMP_USER_ID, getTodayDateString(), imageUri)
       .then(({ data }) => {
@@ -1056,36 +1219,36 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
     if (error instanceof SelfieVerificationApiError) {
       switch (error.code) {
         case 'VERIFICATION_ALREADY_DONE':
-          Alert.alert('오늘은 이미 검증을 완료했어요', '셀피 검증은 하루에 한 번만 할 수 있어요.', [
+          showAlert('오늘은 이미 검증을 완료했어요', '셀피 검증은 하루에 한 번만 할 수 있어요.', [
             { text: '확인', onPress: onClose },
           ]);
           return;
         case 'SKIN_FORECAST_NOT_FOUND':
-          Alert.alert('수면 기록이 없어 예보와 대조할 수 없어요', '수면 데이터를 먼저 업로드해 주세요.', [
+          showAlert('수면 기록이 없어 예보와 대조할 수 없어요', '수면 데이터를 먼저 업로드해 주세요.', [
             { text: '확인', onPress: onClose },
           ]);
           return;
         case 'SELFIE_IMAGE_INVALID':
         case 'INVALID_INPUT':
-          Alert.alert('사진을 다시 촬영해주세요', '얼굴이 잘 나오도록 다시 시도해 주세요.', [
+          showAlert('사진을 다시 촬영해주세요', '얼굴이 잘 나오도록 다시 시도해 주세요.', [
             { text: '확인', onPress: rollbackToCapture },
           ]);
           return;
         case 'USER_NOT_FOUND':
         case 'USER_ID_HEADER_INVALID':
-          Alert.alert('사용자 정보를 확인할 수 없어요', '앱을 다시 시작한 뒤 시도해 주세요.', [
+          showAlert('사용자 정보를 확인할 수 없어요', '앱을 다시 시작한 뒤 시도해 주세요.', [
             { text: '확인', onPress: onClose },
           ]);
           return;
         case 'SELFIE_ANALYSIS_FAILED':
         case 'SELFIE_ANALYSIS_TIMEOUT':
-          Alert.alert('분석에 실패했어요', '다시 촬영해서 시도해 주세요.', [
+          showAlert('분석에 실패했어요', '다시 촬영해서 시도해 주세요.', [
             { text: '확인', onPress: rollbackToCapture },
           ]);
           return;
       }
     }
-    Alert.alert('일시적인 오류가 발생했어요', '잠시 후 다시 시도해 주세요.', [
+    showAlert('일시적인 오류가 발생했어요', '잠시 후 다시 시도해 주세요.', [
       { text: '확인', onPress: rollbackToCapture },
     ]);
   };
@@ -1128,6 +1291,7 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
       <View style={canvasWrapperStyle}>
         <ThemedView style={[styles.canvas, canvasScaleStyle]}>
           <ReportStep data={verifyState.data} onClose={onClose} onFinish={onFinish} />
+          {showStreakModal && <StreakBrokenModal onDismiss={() => setShowStreakModal(false)} />}
         </ThemedView>
       </View>
     </SafeAreaView>
@@ -1722,6 +1886,155 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 15 * 1.55,
     textAlign: 'center',
+  },
+
+  // "셀피 리포트 팝업" > 모달(node 487:273/543) — 리포트 화면(캔버스 402x874) 전체를 덮는 반투명
+  // 백드롭 + 그 위에 뜨는 카드. ReportStep과 같은 캔버스 좌표계 위에 절대 배치된다.
+  streakModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: STREAK_MODAL_BACKDROP,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  // 카드(node 487:543, x:33 y:204 w:331.67 h:413, radius:35.8) — Figma는 배경에 blur(5.11px)
+  // 프로스티드 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로
+  // 근사했다.
+  streakModalCard: {
+    position: 'absolute',
+    left: 33,
+    top: 204,
+    width: 331.67,
+    height: 413,
+    backgroundColor: Colors.white,
+    borderRadius: 36,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  // "아차! 연속 출석에 실패했어요" (node 471:1028, 카드 원점 기준 x:28.5 y:45 w:256 h:25)
+  streakModalTitle: {
+    position: 'absolute',
+    left: 28.5,
+    top: 45,
+    width: 256,
+    fontSize: 20,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_TITLE,
+  },
+  // "다시 출석한다면 다시 얻을 수 있어요." (node 471:1029, x:28.5 y:79 w:246 h:19)
+  streakModalSubtitle: {
+    position: 'absolute',
+    left: 28.5,
+    top: 79,
+    width: 246,
+    fontSize: 15,
+    fontFamily: PRETENDARD_REGULAR,
+    color: STREAK_MODAL_SUBTITLE,
+  },
+  // 연한 블루 배경 패널 (node 471:1030, x:8.5 y:107 w:317 h:139, radius:9) — 요일 배지 행의 배경
+  streakModalPanel: {
+    position: 'absolute',
+    left: 8.5,
+    top: 107,
+    width: 317,
+    height: 139,
+    backgroundColor: STREAK_MODAL_PANEL_BG,
+    borderRadius: 9,
+  },
+  // 요일 배지 행 (node 487:246 등, x:15.84 y:133.58 w:286.25) — 5개 항목 균등 배치
+  streakModalDayRow: {
+    position: 'absolute',
+    left: 15.84,
+    top: 133.58,
+    width: 286.25,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  streakModalDayItem: {
+    width: 53.7,
+    alignItems: 'center',
+    gap: 6,
+  },
+  // 배지 원(53.7x53.7) — 상태별 배경/테두리는 인라인 스타일로 덧붙인다
+  streakModalDayCircle: {
+    width: 53.7,
+    height: 53.7,
+    borderRadius: 26.85,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  streakModalDayCircleDone: {
+    backgroundColor: STREAK_MODAL_DAY_DONE_BG,
+    borderWidth: 1.5,
+    borderColor: STREAK_MODAL_DAY_DONE_BORDER,
+  },
+  streakModalDayCircleMissed: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: STREAK_MODAL_DAY_MISSED_BORDER,
+  },
+  streakModalDayCirclePending: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: STREAK_MODAL_DAY_PENDING_BORDER,
+  },
+  streakModalDayFace: {
+    width: 40,
+    height: 34,
+  },
+  streakModalDayLabel: {
+    fontSize: 13,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_LABEL_MUTED,
+  },
+  streakModalDayLabelMissed: {
+    color: STREAK_MODAL_DAY_MISSED_BORDER,
+  },
+  // 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544, 카드 원점 기준 x:222 y:116 w:14 h:14)
+  streakModalFlag: {
+    position: 'absolute',
+    left: 222,
+    top: 116,
+    width: 14,
+    height: 14,
+  },
+  // "이어서 4일차부터 도전하기" 버튼 (node 471:1032, x:21 y:261 w:283 h:55, radius:26)
+  streakModalPrimaryButton: {
+    position: 'absolute',
+    left: 21,
+    top: 261,
+    width: 283,
+    height: 55,
+    borderRadius: 26,
+    backgroundColor: STREAK_MODAL_PRIMARY_BTN_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakModalPrimaryButtonText: {
+    fontSize: 16,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: Colors.white,
+  },
+  // "1일차부터 다시 시작하기" 버튼 (node 471:1033, x:21 y:331 w:283 h:55, radius:26)
+  streakModalSecondaryButton: {
+    position: 'absolute',
+    left: 21,
+    top: 331,
+    width: 283,
+    height: 55,
+    borderRadius: 26,
+    backgroundColor: STREAK_MODAL_SECONDARY_BTN_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakModalSecondaryButtonText: {
+    fontSize: 16,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_TITLE,
   },
 
   // 3단계: 검증 리포트 — node 241:604 "iPhone 17 - 14 (검증 리포트)"를 좌표 그대로 옮겼다.

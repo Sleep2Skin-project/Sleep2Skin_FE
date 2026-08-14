@@ -3,7 +3,7 @@ import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
@@ -1022,7 +1022,7 @@ function ReportStep({
 
   const handleTabNavigate = (item: TabItem) => {
     onClose();
-    if (item.name !== 'index') router.push(item.href);
+    if (item.name !== 'index') router.push(item.href as Href);
   };
 
   return (

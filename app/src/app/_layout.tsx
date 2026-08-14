@@ -1,11 +1,11 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { checkHealth } from '@/api/health';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import { AttendanceFlow } from '@/components/attendance-flow';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 
@@ -34,7 +34,15 @@ export default function TabLayout() {
       <AnimatedSplashOverlay />
       {!onboarded && <OnboardingFlow onComplete={() => setOnboarded(true)} />}
       {onboarded && !attendanceSeen && <AttendanceFlow onComplete={() => setAttendanceSeen(true)} />}
-      {onboarded && attendanceSeen && <AppTabs />}
+      {/* (tabs) 그룹(HOME/TODO/REPORT/MY, app-tabs.tsx의 NativeTabs)과 my-model.tsx를 형제
+          화면으로 두는 Stack — my-model이 탭 위로 push되는 화면이 되려면 탭 바(NativeTabs)
+          바깥에 별도 네비게이터가 있어야 한다(위 (tabs)/_layout.tsx 주석 참고). */}
+      {onboarded && attendanceSeen && (
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="my-model" options={{ animation: 'slide_from_right' }} />
+        </Stack>
+      )}
     </ThemeProvider>
   );
 }

@@ -35,8 +35,6 @@ const SLEEP_TEXT_BACK_LABEL = '#6B6B6B';
 const HEALTH_TEXT_TITLE = '#1A1A1A';
 const HEALTH_TEXT_SUBTITLE = '#6B6B6B';
 const HEALTH_TEXT_HINT = '#9E9E9E';
-const HEALTH_CARD_BG = '#F4F4F4';
-const HEALTH_CHECKBOX_BG = '#DEDEDE';
 
 const PRIVACY_TEXT_TITLE = '#000000';
 const PRIVACY_TEXT_MUTED = '#868686';
@@ -72,12 +70,30 @@ const SLEEP_METRICS = [
   { label: '취침·기상 시각(수면 규칙성)', icon: '🛏️', iconColor: '#0A84FF' },
 ] as const;
 
-// "온보딩 3"(node 260:643) > "읽어올 데이터" 카드(node 261:678) 4개 항목 문구·순서 그대로.
+// "온보딩 5"(node 541:2852) > 읽어올 데이터 리스트(node 541:2864) 4개 항목 문구·순서·아이콘 그대로.
+// 아이콘은 침대(깊은 수면·취침시각)/하트(야간 각성·HRV) 2종을 행마다 재사용한다
+// (Figma 원본도 두 아이콘을 두 번씩 재사용하는 동일한 이미지 fill을 쓴다).
 const HEALTH_DATA_ITEMS = [
-  { title: '깊은 수면 · REM · 코어', subtitle: '장벽 재생과 콜라겐 합성 지표' },
-  { title: '취침 · 기상 시각', subtitle: '수면 규칙성 계산' },
-  { title: '야간 각성 횟수', subtitle: '다크서클 예측의 핵심 변수' },
-  { title: 'HRV · 안정시 심박', subtitle: '스트레스성 트러블 신호' },
+  {
+    title: '깊은 수면 · REM · 코어',
+    subtitle: '장벽 재생과 콜라겐 합성 지표',
+    icon: require('@/assets/images/figma-icon-onboarding-health-bed.png'),
+  },
+  {
+    title: '취침 · 기상 시각',
+    subtitle: '수면 규칙성 계산',
+    icon: require('@/assets/images/figma-icon-onboarding-health-bed.png'),
+  },
+  {
+    title: '야간 각성 횟수',
+    subtitle: '다크서클 예측의 핵심 변수',
+    icon: require('@/assets/images/figma-icon-onboarding-health-heart.png'),
+  },
+  {
+    title: 'HRV · 안정시 심박',
+    subtitle: '스트레스성 트러블 신호',
+    icon: require('@/assets/images/figma-icon-onboarding-health-heart.png'),
+  },
 ] as const;
 
 function PrimaryButton({
@@ -357,11 +373,12 @@ function HealthConnectStep({
         Sleep2Skin은 애플 건강 앱의 수면 기록만 읽습니다. 쓰기 권한은 요청하지 않으며, 언제든 해제할 수 있어요.
       </Text>
 
-      {/* "읽어올 데이터" 카드 (node 261:678, x:28 y:265 w:345, fill #F4F4F4, radius:12) */}
-      <View style={styles.healthCard}>
+      {/* 읽어올 데이터 리스트 (node 541:2864 + 아이콘 rect 4개, x:45 y:287) — 카드 배경 없이
+          침대/하트 아이콘 + 제목/부제 두 줄로 구성된다(구 카드+체크박스 플레이스홀더를 대체). */}
+      <View style={styles.healthList}>
         {HEALTH_DATA_ITEMS.map((item) => (
-          <View key={item.title} style={styles.healthCardRow}>
-            <View style={styles.healthCardCheckbox} />
+          <View key={item.title} style={styles.healthListRow}>
+            <Image source={item.icon} style={styles.healthListIcon} contentFit="contain" />
             <View style={styles.healthCardTextGroup}>
               <Text style={styles.healthCardItemTitle}>{item.title}</Text>
               <Text style={styles.healthCardItemSubtitle}>{item.subtitle}</Text>
@@ -370,7 +387,7 @@ function HealthConnectStep({
         ))}
       </View>
 
-      {/* CTA (node 261:699, x:28 y:705 w:345, gap:8) — 연결/스킵 모두 온보딩을 완료시킨다
+      {/* CTA (node 541:2855, x:28 y:705 w:345, gap:8) — 연결/스킵 모두 온보딩을 완료시킨다
           (ONB-02 HealthAccessModal의 허용/거부 수렴 패턴과 동일). 완료 처리 중에는 중복 탭 방지. */}
       <View style={styles.healthCta}>
         <Pressable
@@ -381,7 +398,7 @@ function HealthConnectStep({
             completing && styles.buttonDisabled,
             pressed && !completing && styles.pressed,
           ]}>
-          <Text style={styles.healthPrimaryButtonText}>{completing ? '처리 중...' : '건강 앱 연결하기'}</Text>
+          <Text style={styles.healthPrimaryButtonText}>{completing ? '처리 중...' : '건강 앱 연동하기'}</Text>
         </Pressable>
         <Pressable
           onPress={onFinish}
@@ -999,30 +1016,27 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: HEALTH_TEXT_SUBTITLE,
   },
-  // "읽어올 데이터" 카드 (node 261:678, x:28 y:265 w:345, fill #F4F4F4, radius:12, padding:4px 16px)
-  healthCard: {
+  // 읽어올 데이터 리스트 (node 541:2864, x:45 y:287 — 아이콘 x=45/텍스트 x=85 기준으로 역산한
+  // 좌측 45 정렬 컨테이너. 행 간격 24는 각 행 title/subtitle 두 줄(23+2+17=42) + 다음 행까지의
+  // 간격(≈24, 4개 행 모두 65.9~67.26px 피치)을 평균낸 값 — 아이콘 폭 차이(21~24px)는 눈에 띄지
+  // 않아 아이콘 칸을 24px 고정폭으로 통일했다.
+  healthList: {
     position: 'absolute',
-    left: 28,
-    top: 265,
-    width: 345,
-    backgroundColor: HEALTH_CARD_BG,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    left: 45,
+    top: 287,
+    width: 328,
+    gap: 24,
   },
-  // 카드 행 (node 261:679 등, padding: 12px 0px, gap:12)
-  healthCardRow: {
+  healthListRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
+    alignItems: 'flex-start',
+    gap: 16,
   },
-  // 체크박스 자리(node 261:680 등, 20x20, radius:5, fill #DEDEDE)
-  healthCardCheckbox: {
-    width: 20,
+  // 침대/하트 아이콘 (node 541:2873~2877, 실제 크기는 21~24 x 18~20이지만 24x20 고정폭으로 통일)
+  healthListIcon: {
+    width: 24,
     height: 20,
-    borderRadius: 5,
-    backgroundColor: HEALTH_CHECKBOX_BG,
+    marginTop: 2,
   },
   healthCardTextGroup: {
     flex: 1,

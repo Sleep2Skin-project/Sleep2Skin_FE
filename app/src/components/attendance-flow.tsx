@@ -18,8 +18,8 @@ import { useDesignScale } from '@/hooks/use-design-scale';
 // 아니라 체크/비체크 두 상태를 보여주기 위한 예시로 보임) 그 값을 그대로 옮겼다 — 실제 연속
 // 출석 로직이 필요해지면 백엔드 API가 생긴 뒤 이 정적 배열을 응답 데이터로 교체할 것.
 //
-// Figma 시안에 별도 CTA 버튼이 없어(프레임에 텍스트/이미지/요일 원 외 다른 노드 없음), 화면
-// 전체를 탭하면 다음(홈)으로 넘어가는 것으로 구현했다 — 다른 인터랙션을 원하면 조정 필요.
+// 우상단 X 버튼(node 541:3063, x:345 y:37 w:20 h:19)을 눌러야만 닫힌다 — 화면 전체 탭으로
+// 넘어가던 이전 동작(별도 CTA 없는 구 시안 501:292 기준)을 최신 시안(541:3041)에 맞춰 교체했다.
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -65,8 +65,17 @@ export function AttendanceFlow({ onComplete }: { onComplete: () => void }) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <Pressable onPress={onComplete} style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
+      <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
         <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+          {/* X 버튼(node 541:3063, x:345 y:37 w:20 h:19) — 이 화면을 닫는 유일한 인터랙션 */}
+          <Pressable onPress={onComplete} hitSlop={12} style={styles.closeButton}>
+            <Image
+              source={require('@/assets/images/figma-icon-attendance-close.svg')}
+              style={styles.closeIcon}
+              contentFit="contain"
+            />
+          </Pressable>
+
           {/* "image 78" (node 509:293, x:135 y:253 w:132 h:123) — 파란 체크 배지 히어로 이미지 */}
           <Image
             source={require('@/assets/images/figma-icon-attendance-hero.png')}
@@ -102,7 +111,7 @@ export function AttendanceFlow({ onComplete }: { onComplete: () => void }) {
             </View>
           ))}
         </View>
-      </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -118,6 +127,16 @@ const styles = StyleSheet.create({
     height: CANVAS_HEIGHT,
     backgroundColor: Colors.white,
     overflow: 'hidden',
+  },
+  // X 버튼(node 541:3063, x:345 y:37 w:20 h:19)
+  closeButton: {
+    position: 'absolute',
+    left: 345,
+    top: 37,
+  },
+  closeIcon: {
+    width: 20,
+    height: 19,
   },
   // "image 78" (node 509:293, x:135 y:253 w:132 h:123)
   heroImage: {

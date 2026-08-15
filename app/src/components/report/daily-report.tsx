@@ -2,48 +2,49 @@ import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { getSkinForecast, type SkinForecastDetail } from '@/api/skin';
+import {
+  getDailyReport,
+  type DailyReportForecastMetric,
+  type DailyReportSleepSummary,
+} from '@/api/report';
 import type { SleepStats } from '@/api/sleep';
 import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { ThemedText } from '@/components/themed-text';
-import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 
-// 일간 리포트 (REP-02~05) — Figma 'Ui (복사)' 파일 node 350:698("리포트- 일간")을 Dev Mode 값
+// 일간 리포트 (REP-02, 04, 05) — Figma 'Ui (복사)' 파일 node 350:698("리포트- 일간")을 Dev Mode 값
 // (색상 hex/폰트/여백/radius) 그대로 옮긴 것. 탭 전환 세그먼트(일간/주간/월간/종합)와 하단 탭바는
 // report.tsx/app-tabs.tsx가 소유하는 공용 UI라 이 파일에서는 건드리지 않는다.
 // index.tsx/onboarding-flow.tsx와 달리 이 화면은 고정 캔버스에 절대좌표를 옮기지 않고, Figma가 준
 // 좌표 간격을 padding/gap으로 환산해 Flexbox로 짜서 기기 폭에 반응형으로 채운다(카드 폭 등도 %/flex).
 //
-// "지난밤 수면 구간" 섹션(바/범례/지표 카드 일부)은 실제 POST /api/v1/sleep/sessions 응답의 sleep
-// 필드(SleepStats, api/sleep.ts에 이미 정의된 실제 타입)와 정확히 같은 모양의 목업 객체 하나로
-// 통일했다. HealthKit 연동 후에는 uploadSleepSession(...).then(res => setSleepStats(res.data.sleep))
-// 처럼 SLEEP_STATS_MOCK 자리만 실제 응답 state로 바꿔 끼우면 바/범례/지표 카드가 전부 자동으로
-// 맞게 다시 그려진다(스킨 예보를 API로 바꿨을 때와 동일한 패턴).
+// GET /api/v1/report/daily(REP-02/04/05)로 "지난밤 수면 구간" 카드/통계 카드/오늘의 피부 예보를
+// 전부 이 한 API로 연동한다. sleepSummary와 skinForecast는 응답 안에서 완전히 독립된 섹션이라
+// (api/report.ts 주석 참고) 아래 두 상태(sleepSummaryState/skinForecastState)도 서로 다른 시점에
+// 서로 다른 값을 가질 수 있게 별도로 관리한다 — 한쪽이 NO_SLEEP_DATA라고 다른 쪽까지 숨기지 않는다.
 const DATE_RANGE_LABEL = '최근 7일 · 7/25 – 7/31';
 const USER_HEADING = 'test1님의 어제';
 
-const SLEEP_STATS_MOCK: SleepStats = {
+// report/daily가 아직 주지 않는 필드(입면/기상 시각, REM 수면 분) — 값이 생기기 전까지 목업으로
+// 채운다. deepSleepMinutes/coreSleepMinutes(=lightSleepMinutes)/awakeCount/awakeMinutes는 이제
+// 전부 API 실값을 쓴다(아래 toHybridSleepStats 참고).
+const SLEEP_TIMING_MOCK = {
   sleepOnsetTime: '2026-08-09T14:40:00Z', // UTC — KST 23:40
   wakeTime: '2026-08-09T22:10:00Z', // UTC — KST(다음날) 07:10
-  totalSleepMinutes: 399, // deep + rem + core
-  deepSleepMinutes: 126, // 2시간 6분
   remSleepMinutes: 202, // 3시간 22분
-  coreSleepMinutes: 71, // 1시간 11분
-  awakeCount: 2,
-  awakeMinutes: 30,
 };
 
-// SleepStats에 없는 필드(입면 지연·수면 효율)는 백엔드에 추가되기 전까지 별도 목업으로 남겨둔다.
+// SleepStats에 없는 필드(입면 지연·수면 효율)는 report/daily에도 아직 없어 별도 목업으로 남겨둔다.
 const SLEEP_EXTRA_STATS_MOCK = {
   latencyMinutes: 62,
   efficiencyPercent: 70,
 };
 
 // 게이미케이션(경험치) 팝업 트리거용 목업 — 연속 출석/경험치를 다루는 백엔드 API가 아직 없어서
-// (API_SPEC.md 미등재) "어제보다 수면 점수가 올랐는지"를 실제로 계산할 방법이 없다. 그래서
-// today/previous를 하드코딩해두고 today > previous일 때만 팝업을 띄우는 것으로 로직만 흉내 낸다.
-// 실제 API가 생기면 이 목업 대신 응답의 오늘/어제 수면 점수와 지급 경험치 값을 쓸 것.
+// (API_SPEC.md 미등재) "어제보다 수면 점수가 올랐는지"를 실제로 계산할 방법이 없다. report/daily의
+// sleepScore는 어제 값을 함께 주지 않아(diffFromYesterday가 없음) 이 비교엔 아직 못 쓴다.
+// 그래서 today/previous를 하드코딩해두고 today > previous일 때만 팝업을 띄우는 것으로 로직만
+// 흉내 낸다. 실제 API가 어제 대비 값을 내려주면 이 목업 대신 그 값을 쓸 것.
 const SLEEP_SCORE_MOCK = { today: 86, previous: 70 };
 const SLEEP_SCORE_EXP_MOCK = 10;
 const SLEEP_SCORE_DATE_LABEL_MOCK = '26년 8월 14일';
@@ -64,6 +65,25 @@ function formatTimeKST(isoUtc: string) {
   return `${hours}:${minutes}`;
 }
 
+/**
+ * report/daily의 DailyReportSleepSummary(실측) + 아직 API에 없는 필드(목업)를 합쳐 기존
+ * SleepStats 모양으로 만든다. lightSleepMinutes → coreSleepMinutes 매핑이 핵심 규칙
+ * ("얕은 수면(HealthKit asleepCore)을 리포트 노출용으로 부르는 이름", api/report.ts 참고) —
+ * awakeCount/awakeMinutes는 재계산하지 않고 API 값을 그대로 옮긴다.
+ */
+function toHybridSleepStats(summary: DailyReportSleepSummary): SleepStats {
+  return {
+    sleepOnsetTime: SLEEP_TIMING_MOCK.sleepOnsetTime,
+    wakeTime: SLEEP_TIMING_MOCK.wakeTime,
+    totalSleepMinutes: summary.totalSleepMinutes,
+    deepSleepMinutes: summary.deepSleepMinutes,
+    remSleepMinutes: SLEEP_TIMING_MOCK.remSleepMinutes,
+    coreSleepMinutes: summary.lightSleepMinutes,
+    awakeCount: summary.awakeCount,
+    awakeMinutes: summary.awakeMinutes,
+  };
+}
+
 // "stages" 바(node 350:705~714) 세그먼트 색상 — SleepStats 필드명(core/deep/rem/awake)과 1:1로
 // 맞췄다(Figma 원본은 바 레이어명과 범례 라벨/색이 서로 어긋나 있었는데, 데이터 하나로 통일하면서
 // 정리했다).
@@ -81,9 +101,9 @@ export type SleepTimelineSegment = {
 };
 
 // Figma가 준 9개 세그먼트(55.85:68.74:40.81:6.44:47.26:62.3:35.44:5.37:13.96)의 시각적 배열(어느
-// 단계가 몇 조각으로 나뉘어 몇 번째에 오는지)만 그대로 두고, 각 조각 길이는 SLEEP_STATS_MOCK의
-// 실제 분(minute)에서 비례 배분한다 — SleepTimelineBar의 flex 비율 "계산식" 자체는 손대지 않았고
-// (변경 금지 지시 준수), 그 계산식에 넣어줄 숫자만 데이터에서 매번 다시 뽑아내도록 만들었다.
+// 단계가 몇 조각으로 나뉘어 몇 번째에 오는지)만 그대로 두고, 각 조각 길이는 실제 분(minute)에서
+// 비례 배분한다 — SleepTimelineBar의 flex 비율 "계산식" 자체는 손대지 않았고(변경 금지 지시 준수),
+// 그 계산식에 넣어줄 숫자만 데이터에서 매번 다시 뽑아내도록 만들었다.
 const TIMELINE_SHAPE: { key: string; stage: keyof typeof STAGE_COLORS; weightWithinStage: number }[] = [
   { key: '1', stage: 'core', weightWithinStage: 0.424 },
   { key: '2', stage: 'deep', weightWithinStage: 0.595 },
@@ -133,8 +153,8 @@ function buildLegendRows(stats: SleepStats): LegendItem[][] {
 const AROUSAL_MARKER_POSITIONS = [36.3, 64.3];
 
 // 지표 카드 6개 (node 350:737~814) — 3열 x 2행, Figma 순서(좌→우, 상→하) 그대로.
-// 총 수면/야간 각성/각성 시간/얕은 수면(코어)은 SleepStats에서, 잠든 시간/수면 효율은 아직 API에
-// 없는 필드라 SLEEP_EXTRA_STATS_MOCK에서 가져온다.
+// 총 수면/야간 각성/각성 시간/얕은 수면(코어)은 report/daily 실값에서, 잠든 시간/수면 효율은
+// 아직 API에 없는 필드라 SLEEP_EXTRA_STATS_MOCK에서 가져온다.
 function buildStatItems(stats: SleepStats) {
   return [
     { key: 'total', label: '총 수면', value: formatDuration(stats.totalSleepMinutes) },
@@ -146,12 +166,11 @@ function buildStatItems(stats: SleepStats) {
   ];
 }
 
-// 오늘의 피부 예보 — GET /api/v1/skin/forecast 실연동. 이 API가 실제로 내려주는 지표는
+// 오늘의 피부 예보 — report/daily의 skinForecast 실연동. 이 API가 내려주는 지표는
 // darkCircle/complexion/barrier 3개뿐이라(눈 부기는 API에 없음) Figma의 4개 중 "눈 부기"를 뺐다.
 // 3번째 지표가 빠지면서 남는 세로 공간은 아래 수면 카드 범례를 2열 x 3행으로 넓혀 쓰는 데 썼다.
-// 트랙(node 350:751 등)은 배경 트랙 위에 score%만큼 진한 막대가 채워지는 형태다.
-// (수면 구간 상세는 HealthKit 연동 전까지 계속 목업 — API_SPEC.md 6개 중 sleep/sessions·
-// interpretation은 이 화면 범위 밖.)
+// 트랙(node 350:751 등)은 배경 트랙 위에 today%만큼 진한 막대가 채워지는 형태다.
+// (수면 구간 상세 일부(입면/기상 시각, REM)는 여전히 목업 — 위 SLEEP_TIMING_MOCK 참고.)
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 
 const SKIN_METRIC_LABELS = {
@@ -160,11 +179,22 @@ const SKIN_METRIC_LABELS = {
   barrier: '장벽 저하',
 } as const;
 
-type ForecastState =
+type SleepSummaryState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'no_data'; message: string }
-  | { status: 'available'; forecast: SkinForecastDetail };
+  | { status: 'no_data'; message: string | null }
+  | { status: 'available'; summary: DailyReportSleepSummary };
+
+type SkinForecastState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_data'; message: string | null }
+  | {
+      status: 'available';
+      darkCircle: DailyReportForecastMetric;
+      complexion: DailyReportForecastMetric;
+      barrier: DailyReportForecastMetric;
+    };
 
 function getTodayDateString() {
   const now = new Date();
@@ -174,36 +204,29 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
-/** grade는 백엔드가 자유 문자열로 내려줘 고정 enum이 없다 — 흔한 위험/주의 키워드만 색으로 매칭하고 나머지는 안전으로 취급한다. */
-function gradeToColor(grade: string): string {
-  const normalized = grade.toUpperCase();
-  if (normalized.includes('위험') || normalized.includes('DANGER') || normalized.includes('BAD')) {
-    return Colors.danger;
-  }
-  if (
-    normalized.includes('주의') ||
-    normalized.includes('경고') ||
-    normalized.includes('WARN') ||
-    normalized.includes('CAUTION')
-  ) {
-    return Colors.warning;
-  }
-  return Colors.success;
-}
-
-function buildSkinMetricRows(forecast: SkinForecastDetail) {
-  const entries: [key: keyof typeof SKIN_METRIC_LABELS, metric: SkinForecastDetail['darkCircle'] | null][] = [
-    ['darkCircle', forecast.darkCircle],
-    ['complexion', forecast.complexion],
-    ['barrier', forecast.barrier],
+function buildSkinReportRows(state: Extract<SkinForecastState, { status: 'available' }>) {
+  const entries: [key: keyof typeof SKIN_METRIC_LABELS, metric: DailyReportForecastMetric][] = [
+    ['darkCircle', state.darkCircle],
+    ['complexion', state.complexion],
+    ['barrier', state.barrier],
   ];
   return entries.map(([key, metric]) => ({
     key,
     label: SKIN_METRIC_LABELS[key],
-    score: metric?.score ?? 0,
-    grade: metric?.grade ?? '측정 불가',
-    color: metric ? gradeToColor(metric.grade) : UNAVAILABLE_METRIC_COLOR,
+    today: metric.today,
+    diff: metric.diffFromYesterday,
   }));
+}
+
+/**
+ * diffFromYesterday 폴백 규칙: null("비교 불가")과 0("어제와 동일")은 서로 다른 상태이니 같은
+ * 문구로 뭉개지 않는다. 지표별로 값이 클수록 좋은지 나쁜지가 다 달라 임의로 좋다/나쁘다 색을
+ * 매기지 않고, 방향(▲/▼)만 중립색으로 보여준다.
+ */
+function formatDiffFromYesterday(diff: number | null): { text: string; color: string } {
+  if (diff === null) return { text: '전날 비교 불가', color: UNAVAILABLE_METRIC_COLOR };
+  if (diff === 0) return { text: '어제와 동일', color: UNAVAILABLE_METRIC_COLOR };
+  return { text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)}`, color: '#1A1A1A' };
 }
 
 function SleepTimelineBar({ segments }: { segments: SleepTimelineSegment[] }) {
@@ -233,48 +256,74 @@ function SleepTimelineBar({ segments }: { segments: SleepTimelineSegment[] }) {
 
 function SkinMetricRow({
   label,
-  score,
-  grade,
-  color,
+  today,
+  diff,
 }: {
   label: string;
-  score: number;
-  grade: string;
-  color: string;
+  today: number | null;
+  diff: number | null;
 }) {
+  const diffLabel = formatDiffFromYesterday(diff);
   return (
     <View style={styles.metricRow}>
       <View style={styles.metricHeader}>
         <ThemedText style={styles.metricLabel}>{label}</ThemedText>
         <ThemedText style={styles.metricValue}>
-          {score} <ThemedText style={[styles.metricDelta, { color }]}>{grade}</ThemedText>
+          {today === null ? '측정 불가' : today}{' '}
+          <ThemedText style={[styles.metricDelta, { color: diffLabel.color }]}>{diffLabel.text}</ThemedText>
         </ThemedText>
       </View>
       <View style={styles.metricTrack}>
-        <View style={[styles.metricFill, { width: `${Math.min(100, score)}%` }]} />
+        <View
+          style={[
+            styles.metricFill,
+            {
+              width: `${today === null ? 0 : Math.min(100, today)}%`,
+              backgroundColor: today === null ? UNAVAILABLE_METRIC_COLOR : '#031949',
+            },
+          ]}
+        />
       </View>
     </View>
   );
 }
 
 export function DailyReport() {
-  const [forecastState, setForecastState] = useState<ForecastState>({ status: 'loading' });
+  const [sleepSummaryState, setSleepSummaryState] = useState<SleepSummaryState>({ status: 'loading' });
+  const [skinForecastState, setSkinForecastState] = useState<SkinForecastState>({ status: 'loading' });
   // 목업 트리거(위 SLEEP_SCORE_MOCK 주석 참고) — 오늘 점수가 어제보다 높을 때만 한 번 띄운다.
   const [showScoreUpModal, setShowScoreUpModal] = useState(SLEEP_SCORE_MOCK.today > SLEEP_SCORE_MOCK.previous);
 
   useEffect(() => {
     const baseDate = getTodayDateString();
 
-    getSkinForecast(baseDate, TEMP_USER_ID)
+    getDailyReport(baseDate, TEMP_USER_ID)
       .then(({ data }) => {
-        setForecastState(
-          data.status === 'AVAILABLE'
-            ? { status: 'available', forecast: data.forecast }
-            : { status: 'no_data', message: data.message }
+        // sleepSummary/skinForecast는 완전히 독립된 섹션 — 같은 응답에서 나왔더라도 각자 다른
+        // status를 가질 수 있으므로 반드시 따로 분기해서 두 state에 나눠 담는다.
+        setSleepSummaryState(
+          data.sleepSummary.status === 'AVAILABLE'
+            ? { status: 'available', summary: data.sleepSummary.summary }
+            : { status: 'no_data', message: data.sleepSummary.message }
+        );
+        setSkinForecastState(
+          data.skinForecast.status === 'AVAILABLE'
+            ? {
+                status: 'available',
+                darkCircle: data.skinForecast.darkCircle,
+                complexion: data.skinForecast.complexion,
+                barrier: data.skinForecast.barrier,
+              }
+            : { status: 'no_data', message: data.skinForecast.message }
         );
       })
-      .catch(() => setForecastState({ status: 'error' }));
+      .catch(() => {
+        setSleepSummaryState({ status: 'error' });
+        setSkinForecastState({ status: 'error' });
+      });
   }, []);
+
+  const hybridSleepStats = sleepSummaryState.status === 'available' ? toHybridSleepStats(sleepSummaryState.summary) : null;
 
   return (
     <View style={styles.container}>
@@ -299,60 +348,85 @@ export function DailyReport() {
           />
           <ThemedText style={styles.sleepCardTitle}>지난밤 수면 구간</ThemedText>
         </View>
-        <ThemedText style={styles.sleepWindow}>
-          {formatTimeKST(SLEEP_STATS_MOCK.sleepOnsetTime)} – {formatTimeKST(SLEEP_STATS_MOCK.wakeTime)}
-        </ThemedText>
 
-        <SleepTimelineBar segments={buildTimelineSegments(SLEEP_STATS_MOCK)} />
+        {sleepSummaryState.status === 'loading' && (
+          <ThemedText style={styles.statusText}>불러오는 중...</ThemedText>
+        )}
+        {sleepSummaryState.status === 'error' && (
+          <ThemedText style={styles.statusText}>수면 요약을 불러오지 못했어요</ThemedText>
+        )}
+        {sleepSummaryState.status === 'no_data' && (
+          <ThemedText style={styles.statusText}>
+            {sleepSummaryState.message ?? '그날의 수면 데이터가 없어요'}
+          </ThemedText>
+        )}
 
-        <View style={styles.legendList}>
-          {buildLegendRows(SLEEP_STATS_MOCK).map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.legendRow}>
-              {row.map((item) => (
-                <View key={item.key} style={styles.legendItem}>
-                  {item.icon === 'ring' ? (
-                    <View style={[styles.legendRing, { borderColor: item.color }]} />
-                  ) : (
-                    <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                  )}
-                  <ThemedText
-                    style={[styles.legendText, { color: item.color }]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.5}>
-                    {item.label}
-                  </ThemedText>
+        {sleepSummaryState.status === 'available' && hybridSleepStats && (
+          <>
+            {/* 예보 점수(가중평균)와 다른 "그날 수면 부분점수 단순평균" — report/daily.sleepScore
+                실값. 다른 화면의 적중률/예보 점수와 절대 혼동하지 말 것(api/report.ts 주석 참고). */}
+            <ThemedText style={styles.sleepScoreBadge}>오늘 수면 점수 {sleepSummaryState.summary.sleepScore}점</ThemedText>
+
+            <ThemedText style={styles.sleepWindow}>
+              {formatTimeKST(hybridSleepStats.sleepOnsetTime)} – {formatTimeKST(hybridSleepStats.wakeTime)}
+            </ThemedText>
+
+            <SleepTimelineBar segments={buildTimelineSegments(hybridSleepStats)} />
+
+            <View style={styles.legendList}>
+              {buildLegendRows(hybridSleepStats).map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.legendRow}>
+                  {row.map((item) => (
+                    <View key={item.key} style={styles.legendItem}>
+                      {item.icon === 'ring' ? (
+                        <View style={[styles.legendRing, { borderColor: item.color }]} />
+                      ) : (
+                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                      )}
+                      <ThemedText
+                        style={[styles.legendText, { color: item.color }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.5}>
+                        {item.label}
+                      </ThemedText>
+                    </View>
+                  ))}
                 </View>
               ))}
             </View>
-          ))}
-        </View>
+          </>
+        )}
       </View>
 
-      <View style={styles.statGrid}>
-        {buildStatItems(SLEEP_STATS_MOCK).map((item) => (
-          <View key={item.key} style={styles.statCard}>
-            <ThemedText style={styles.statLabel}>{item.label}</ThemedText>
-            <ThemedText style={styles.statValue}>{item.value}</ThemedText>
-          </View>
-        ))}
-      </View>
+      {sleepSummaryState.status === 'available' && hybridSleepStats && (
+        <View style={styles.statGrid}>
+          {buildStatItems(hybridSleepStats).map((item) => (
+            <View key={item.key} style={styles.statCard}>
+              <ThemedText style={styles.statLabel}>{item.label}</ThemedText>
+              <ThemedText style={styles.statValue}>{item.value}</ThemedText>
+            </View>
+          ))}
+        </View>
+      )}
 
       <View style={styles.forecastSection}>
         <ThemedText style={styles.forecastTitle}>오늘의 피부 예보</ThemedText>
         <View style={styles.metricList}>
-          {forecastState.status === 'loading' && (
-            <ThemedText style={styles.forecastStatusText}>불러오는 중...</ThemedText>
+          {skinForecastState.status === 'loading' && (
+            <ThemedText style={styles.statusText}>불러오는 중...</ThemedText>
           )}
-          {forecastState.status === 'error' && (
-            <ThemedText style={styles.forecastStatusText}>피부 예보를 불러오지 못했어요</ThemedText>
+          {skinForecastState.status === 'error' && (
+            <ThemedText style={styles.statusText}>피부 예보를 불러오지 못했어요</ThemedText>
           )}
-          {forecastState.status === 'no_data' && (
-            <ThemedText style={styles.forecastStatusText}>{forecastState.message}</ThemedText>
+          {skinForecastState.status === 'no_data' && (
+            <ThemedText style={styles.statusText}>
+              {skinForecastState.message ?? '그날의 피부 예보가 없어요'}
+            </ThemedText>
           )}
-          {forecastState.status === 'available' &&
-            buildSkinMetricRows(forecastState.forecast).map((row) => (
-              <SkinMetricRow key={row.key} label={row.label} score={row.score} grade={row.grade} color={row.color} />
+          {skinForecastState.status === 'available' &&
+            buildSkinReportRows(skinForecastState).map((row) => (
+              <SkinMetricRow key={row.key} label={row.label} today={row.today} diff={row.diff} />
             ))}
         </View>
       </View>
@@ -412,6 +486,28 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: '600',
     color: '#031949',
+  },
+  // 로딩/에러/빈 상태 공용 텍스트 — 수면 카드/피부 예보 섹션이 각자 독립적으로 이 스타일을 쓴다.
+  statusText: {
+    marginTop: 10,
+    fontSize: 13.5,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: 'rgba(55, 56, 60, 0.61)',
+  },
+  // "오늘 수면 점수 70점" — report/daily.sleepSummary.summary.sleepScore 실값. Figma 노드 없음,
+  // 카드 타이틀과 시간 범위 사이에 보조 배지로 얹는다.
+  sleepScoreBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    color: '#031949',
+    backgroundColor: 'rgba(3, 25, 73, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   // "23:40 – 07:10" (node 350:704) — Inter Bold 11.3, Tuna 69%
   sleepWindow: {
@@ -531,12 +627,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  forecastStatusText: {
-    fontSize: 13.5,
-    lineHeight: 17,
-    fontWeight: '500',
-    color: 'rgba(55, 56, 60, 0.61)',
-  },
   // node 350:744 자체 paddingTop(5.78) — 제목 하단 여백(2) 포함해 8.
   metricList: {
     marginTop: 8,
@@ -557,7 +647,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // node "Inter/Bold" ~12, Cod Gray + 델타 색상(초록/빨강)은 metricDelta에서 덮어씀
+  // node "Inter/Bold" ~12, Cod Gray + 델타 색상은 metricDelta에서 덮어씀
   metricValue: {
     fontSize: 12,
     lineHeight: 15,
@@ -569,7 +659,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '700',
   },
-  // 트랙 (node 350:751 등, h5.78→6, radius2.89→3, Pale Sky 8%) + value%만큼 채워지는 진한 막대.
+  // 트랙 (node 350:751 등, h5.78→6, radius2.89→3, Pale Sky 8%) + today%만큼 채워지는 진한 막대.
   metricTrack: {
     height: 6,
     borderRadius: 3,
@@ -579,6 +669,5 @@ const styles = StyleSheet.create({
   metricFill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: '#031949',
   },
 });

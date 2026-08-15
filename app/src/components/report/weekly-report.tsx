@@ -1,124 +1,130 @@
 import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import {
+  getWeeklyReport,
+  type FullWeeklyReportData,
+  type WeeklyReportCorrelation,
+  type WeeklyReportDailyScore,
+} from '@/api/report';
 import { ThemedText } from '@/components/themed-text';
+import { TEMP_USER_ID } from '@/constants/config';
 
-// 주간 리포트 (REP-06~07) — Figma 'Ui' 파일(9c7nKnuMLNcGYC33lmX8Im) node 306:2268("리포트- 주간")을
+// 주간 리포트 (REP-06) — Figma 'Ui' 파일(9c7nKnuMLNcGYC33lmX8Im) node 306:2268("리포트- 주간")을
 // Dev Mode 값 그대로 옮긴 것. 탭 전환 세그먼트(일간/주간/월간/종합)와 하단 탭바는
 // report.tsx/report-ui.tsx/app-tabs.tsx가 소유하는 공용 UI라 이 파일에서는 건드리지 않는다
-// (daily-report.tsx와 동일 원칙 — report-ui.tsx는 monthly/overall이 계속 쓰므로 그대로 둔다).
+// (daily/monthly-report.tsx와 동일 원칙 — report-ui.tsx는 overall이 계속 쓰므로 그대로 둔다).
 // 고정 캔버스 절대좌표 대신 Figma 좌표 간격을 padding/gap/marginTop으로 환산해 Flexbox로 짜서
 // 기기 폭에 반응형으로 채운다. ThemedText는 type 생략 시 기본 lineHeight:24가 깔리므로 모든
 // 텍스트에 fontSize에 맞는 lineHeight를 명시했다(daily-report.tsx에서 겪은 것과 같은 함정).
 //
-// 주간 집계(점수 추이/평균/요인 상관관계)를 내려주는 백엔드 API는 아직 없다(daily의 skin/forecast
-// 같은 실제 타입이 없음). 그래도 나중에 그런 엔드포인트가 생겼을 때 이 자리에 바로 끼워 넣기
-// 쉽도록, 흩어져 있던 목업 값들을 응답 하나로 묶었다 — 실제 fetch가 생기면
-// `const [data, setData] = useState(WEEKLY_REPORT_MOCK)` 후 API 응답으로 setData만 하면 된다
-// (스킨 예보를 API로 바꿨을 때와 동일한 패턴).
-export type WeeklyChartDatum = { key: string; label: string; value: number; highlighted?: boolean };
-export type FactorStrength = '매우 강함' | '강함' | '보통' | '약함';
-export type WeeklyFactor = { key: string; factor: string; target: string; strength: FactorStrength };
-export type WeeklyStat = { key: string; label: string; value: string };
+// GET /api/v1/report/weekly로 실연동한다(api/report.ts). 월간 리포트와 마찬가지로 이 API는
+// status 하나로 응답 전체를 감싼다(FULL | INSUFFICIENT_DATA).
+// 🚨 신규 사용자(INSUFFICIENT_DATA)와 기존 사용자의 결측치(FULL인데 특정 날짜만 sleepScore: null)는
+// 서로 다른 케이스다 — 절대 같은 문구/같은 분기로 섞지 않는다. 평균 재계산도 금지: summary는
+// dailyScores로부터 프론트가 다시 평균 내지 않고 API 값 그대로 쓴다.
 
-export interface WeeklyReportData {
-  dateRangeLabel: string;
-  heading: string;
-  /** 저번주 대비 수면 점수 변화량 — "+10"처럼 부호 붙여서 보여준다. */
-  insightScoreDelta: number;
-  chart: {
-    title: string;
-    legend: string;
-    subRangeLabel: string;
-    days: WeeklyChartDatum[];
-    maxValue: number;
-    targetScore: number;
-  };
-  summaryStats: WeeklyStat[];
-  factorSectionTitle: string;
-  factors: WeeklyFactor[];
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-const WEEKLY_REPORT_MOCK: WeeklyReportData = {
-  dateRangeLabel: '최근 7일 · 7/25 - 7/31',
-  heading: 'test1님의 일주일',
-  insightScoreDelta: 10,
-  chart: {
-    title: '주간 수면 구간',
-    legend: '막대= 수면/ 점선= 목표',
-    subRangeLabel: '26.07.25 - 26.07.31',
-    days: [
-      { key: '25', label: '25', value: 58 },
-      { key: '26', label: '26', value: 74 },
-      { key: '27', label: '27', value: 78 },
-      { key: '28', label: '28', value: 70 },
-      { key: '29', label: '29', value: 60 },
-      { key: '30', label: '30', value: 66 },
-      { key: '31', label: '31', value: 79, highlighted: true },
-    ],
-    maxValue: 100,
-    targetScore: 75,
-  },
-  summaryStats: [
-    { key: 'avgScore', label: '평균 수면 점수', value: '70점' },
-    { key: 'avgDeep', label: '평균 깊은수면', value: '56분' },
-  ],
-  factorSectionTitle: '한 주간 영향이 컸던 요인',
-  factors: [
-    { key: '1', factor: '야간 각성', target: '다크서클', strength: '매우 강함' },
-    { key: '2', factor: '깊은 수면', target: '장벽', strength: '강함' },
-    { key: '3', factor: '총 수면시간', target: '유분', strength: '보통' },
-    { key: '4', factor: '취침 규칙성', target: '톤', strength: '약함' },
-  ],
-};
+/** "YYYY-MM-DD" → "M/D". 형식이 예상과 다르면(방어) 원본 문자열을 그대로 돌려준다. */
+function formatShortDate(isoDate: string): string {
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [, month, day] = parts;
+  return `${Number(month)}/${Number(day)}`;
+}
 
-function formatSigned(value: number) {
-  return value >= 0 ? `+${value}` : `${value}`;
+/** "YYYY-MM-DD" → "YY.MM.DD". 형식이 예상과 다르면(방어) 원본 문자열을 그대로 돌려준다. */
+function formatDotDate(isoDate: string): string {
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  return `${year.slice(2)}.${month}.${day}`;
+}
+
+/** "YYYY-MM-DD" → "D"(일자만, 막대 아래 요일 라벨용). 형식이 예상과 다르면(방어) 원본 문자열을 그대로 돌려준다. */
+function formatDayOfMonth(isoDate: string): string {
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  return String(Number(parts[2]));
+}
+
+function formatDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return `${remainder}분`;
+  if (remainder === 0) return `${hours}시간`;
+  return `${hours}시간 ${remainder}분`;
 }
 
 // Figma 차트 플롯 영역 높이(막대 바닥 y206 - 가장 높은 막대 상단 y52 ≈ 154px) — 데이터가 아니라
 // 이 화면 전용 레이아웃 수치라 응답 객체가 아닌 스타일 상수로 둔다.
 const CHART_PLOT_HEIGHT = 154;
-// "점선(목표)" 라인의 점 색 — Figma가 점마다 남색/검정을 번갈아 썼다(node 348:1017~1023).
-// (참고: Figma 원본은 이 목표선이 요일마다 오르내리는 곡선인데, 그 세부 값은 지금 데이터에 없어
-// 기존 targetScore 단일값 기준의 수평선 + 점 마커로 옮겼다.)
+// 수면 점수는 0~100 스케일 — 막대 높이 계산용 표시 상수(다른 리포트 화면과 동일).
+const CHART_MAX_VALUE = 100;
+// "목표 수면 점수" 점선 — 이 API에 목표치 개념이 없어(개인 목표 설정 API 미등재) 여전히 목업이다.
+// 실제 목표 설정 기능이 생기면 이 상수 대신 그 값을 쓸 것.
+const WEEKLY_TARGET_SCORE_MOCK = 75;
+// 점선 위 점 색 — Figma가 점마다 남색/검정을 번갈아 썼다(node 348:1017~1023).
 const TARGET_DOT_COLORS = ['#031949', '#031949', '#000000', '#000000', '#000000', '#031949', '#031949'];
+// sleepScore: null(그날 세션 없음)인 막대 — 실측 0점과 헷갈리지 않도록 점선 테두리의 빈 막대로 구분
+// (월간 리포트의 avgSleepScore: null 처리와 동일한 방어).
+const BAR_COLOR_NO_DATA = '#F0F0F2';
+const BAR_BORDER_NO_DATA = '#C7C7C7';
 
-// Figma 텍스트 색(node 306:2456/2464/2472/2480) 그대로 — report-ui.tsx의 공용 STRENGTH_META와는
-// 다른 색이라(이 파일 전용 리팩터링이라 공용 파일은 건드리지 않음) 로컬로 따로 둔다. 강도별 스타일
-// 규칙이라 응답 데이터가 아니라 화면 상수로 둔다.
-const STRENGTH_META: Record<FactorStrength, { color: string; widthPercent: number }> = {
-  '매우 강함': { color: '#FF4242', widthPercent: 92 },
-  강함: { color: '#FF9200', widthPercent: 68 },
-  보통: { color: '#40A33C', widthPercent: 42 },
-  약함: { color: 'rgba(55, 56, 60, 0.61)', widthPercent: 20 },
+// 상관관계 강도(strength) 표시 메타 — 서버가 내려주는 정확한 값 전체 목록이 확정돼 있지 않다
+// (api/report.ts 주석 참고, 이 엔드포인트는 "VERY_STRONG" 예시가 확인됨 — 월간 리포트의
+// "STRONG" 예시와 다른 값이라 두 화면의 실제 등급 종류가 같다고 단정하지 않는다). 알려진 값만
+// 매핑하고, 모르는 값이 와도 화면이 깨지지 않도록 원문 문자열 그대로 보여주는 중립색 fallback을 둔다.
+const CORRELATION_STRENGTH_META: Record<string, { label: string; color: string; widthPercent: number }> = {
+  VERY_STRONG: { color: '#FF4242', label: '매우 강함', widthPercent: 92 },
+  STRONG: { color: '#FF9200', label: '강함', widthPercent: 68 },
+  MODERATE: { color: '#40A33C', label: '보통', widthPercent: 42 },
+  WEAK: { color: 'rgba(55, 56, 60, 0.61)', label: '약함', widthPercent: 20 },
 };
+const CORRELATION_STRENGTH_FALLBACK_COLOR = '#6B6B6B';
+const CORRELATION_STRENGTH_FALLBACK_WIDTH = 40;
+const INSUFFICIENT_SAMPLE_COLOR = '#9E9E9E';
 
-function WeeklyBarChart({
-  days,
-  maxValue,
-  targetScore,
-}: {
-  days: WeeklyChartDatum[];
-  maxValue: number;
-  targetScore: number;
-}) {
-  const targetHeight = (targetScore / maxValue) * CHART_PLOT_HEIGHT;
+type WeeklyReportState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'insufficient_data'; periodStart: string; periodEnd: string }
+  | { status: 'full'; data: FullWeeklyReportData };
+
+function WeeklyBarChart({ days }: { days: WeeklyReportDailyScore[] }) {
+  const targetHeight = (WEEKLY_TARGET_SCORE_MOCK / CHART_MAX_VALUE) * CHART_PLOT_HEIGHT;
+  // periodEnd(가장 최근 날짜) = 오늘 — Figma가 항상 마지막(가장 최근) 막대의 요일 라벨만 굵게
+  // 강조한 것과 같은 규칙("오늘" 강조), 점수 순위로 매기는 게 아니다.
+  const todayDate = days.length > 0 ? days[days.length - 1].date : null;
 
   return (
     <View>
       <View style={styles.chartPlot}>
         <View style={[styles.targetLine, { bottom: targetHeight }]} />
         <View style={styles.barsRow}>
-          {days.map((day) => (
-            <View key={day.key} style={styles.barColumn}>
-              <View style={[styles.bar, { height: Math.max(4, (day.value / maxValue) * CHART_PLOT_HEIGHT) }]} />
-            </View>
-          ))}
+          {days.map((day) => {
+            const hasScore = day.sleepScore !== null;
+            const height = hasScore
+              ? Math.max(4, (day.sleepScore! / CHART_MAX_VALUE) * CHART_PLOT_HEIGHT)
+              : 4;
+            return (
+              <View key={day.date} style={styles.barColumn}>
+                <View style={[styles.bar, { height }, !hasScore && styles.barNoData]} />
+              </View>
+            );
+          })}
         </View>
         <View style={[styles.targetDotsRow, { bottom: targetHeight - 3 }]}>
           {days.map((day, index) => (
-            <View key={day.key} style={styles.targetDotColumn}>
+            <View key={day.date} style={styles.targetDotColumn}>
               <View style={[styles.targetDot, { backgroundColor: TARGET_DOT_COLORS[index] }]} />
             </View>
           ))}
@@ -127,9 +133,9 @@ function WeeklyBarChart({
 
       <View style={styles.dayLabelsRow}>
         {days.map((day) => (
-          <View key={day.key} style={styles.dayLabelColumn}>
-            <ThemedText style={[styles.dayLabel, day.highlighted && styles.dayLabelHighlighted]}>
-              {day.label}
+          <View key={day.date} style={styles.dayLabelColumn}>
+            <ThemedText style={[styles.dayLabel, day.date === todayDate && styles.dayLabelHighlighted]}>
+              {formatDayOfMonth(day.date)}
             </ThemedText>
           </View>
         ))}
@@ -138,45 +144,111 @@ function WeeklyBarChart({
   );
 }
 
-function FactorRow({
-  factor,
-  target,
-  strength,
-}: {
-  factor: string;
-  target: string;
-  strength: FactorStrength;
-}) {
-  const meta = STRENGTH_META[strength];
+function CorrelationRow({ item }: { item: WeeklyReportCorrelation }) {
+  // 표본 부족은 strength 값과 무관하게 이 플래그로만 분기한다(규칙: insufficientSample: true면
+  // strength는 항상 null이지만, 판단 자체는 항상 insufficientSample로 한다).
+  if (item.insufficientSample) {
+    return (
+      <View style={styles.factorRow}>
+        <View style={styles.factorHeader}>
+          <ThemedText style={[styles.factorLabel, styles.factorLabelMuted]}>
+            {item.featureLabel} → {item.metricLabel}
+          </ThemedText>
+          <ThemedText style={styles.factorInsufficientText}>데이터 부족 ({item.sampleSize}건)</ThemedText>
+        </View>
+        <View style={styles.factorTrack} />
+      </View>
+    );
+  }
+
+  const meta = item.strength
+    ? (CORRELATION_STRENGTH_META[item.strength] ?? {
+        label: item.strength,
+        color: CORRELATION_STRENGTH_FALLBACK_COLOR,
+        widthPercent: CORRELATION_STRENGTH_FALLBACK_WIDTH,
+      })
+    : null;
 
   return (
     <View style={styles.factorRow}>
       <View style={styles.factorHeader}>
         <ThemedText style={styles.factorLabel}>
-          {factor} → {target}
+          {item.featureLabel} → {item.metricLabel}
         </ThemedText>
-        <ThemedText style={[styles.factorStrength, { color: meta.color }]}>{strength}</ThemedText>
+        {meta && <ThemedText style={[styles.factorStrength, { color: meta.color }]}>{meta.label}</ThemedText>}
       </View>
       <View style={styles.factorTrack}>
-        <View style={[styles.factorFill, { width: `${meta.widthPercent}%`, backgroundColor: meta.color }]} />
+        {meta && <View style={[styles.factorFill, { width: `${meta.widthPercent}%`, backgroundColor: meta.color }]} />}
       </View>
     </View>
   );
 }
 
 export function WeeklyReport() {
-  // 실제 백엔드 응답이 생기면 이 줄만 useState + useEffect(fetch)로 바꾸면 된다 — 아래 JSX는
-  // 전부 data 하나만 읽으므로 그대로 동작한다.
-  const data = WEEKLY_REPORT_MOCK;
+  const [state, setState] = useState<WeeklyReportState>({ status: 'loading' });
+
+  useEffect(() => {
+    const baseDate = getTodayDateString();
+
+    getWeeklyReport(baseDate, TEMP_USER_ID)
+      .then(({ data }) => {
+        setState(
+          data.status === 'FULL'
+            ? { status: 'full', data }
+            : { status: 'insufficient_data', periodStart: data.periodStart, periodEnd: data.periodEnd }
+        );
+      })
+      .catch(() => setState({ status: 'error' }));
+  }, []);
+
+  if (state.status === 'loading') {
+    return (
+      <View style={styles.container}>
+        <ThemedText style={styles.statusText}>불러오는 중...</ThemedText>
+      </View>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <View style={styles.container}>
+        <ThemedText style={styles.statusText}>주간 리포트를 불러오지 못했어요</ThemedText>
+      </View>
+    );
+  }
+
+  // INSUFFICIENT_DATA — 신규 사용자(가입 후 7일 미만) 전용 빈 상태. 에러가 아니므로 화면이 뻗지
+  // 않도록 차트/상관관계 없이 안내 문구만 보여준다. FULL인데 특정 날짜만 결측인 경우는 이 분기를
+  // 타지 않는다(아래 'full' 분기에서 날짜별로 개별 방어).
+  if (state.status === 'insufficient_data') {
+    return (
+      <View style={styles.container}>
+        <ThemedText style={styles.dateRange}>
+          최근 7일 · {formatShortDate(state.periodStart)} – {formatShortDate(state.periodEnd)}
+        </ThemedText>
+        <ThemedText style={styles.heading}>test1님의 일주일</ThemedText>
+        <View style={styles.emptyState}>
+          <ThemedText style={styles.emptyStateText}>가입 후 7일이 지나야 주간 리포트가 제공돼요</ThemedText>
+        </View>
+      </View>
+    );
+  }
+
+  const { data } = state;
+  const { dailyScores, summary, correlations } = data;
 
   return (
     <View style={styles.container}>
-      <ThemedText style={styles.dateRange}>{data.dateRangeLabel}</ThemedText>
-      <ThemedText style={styles.heading}>{data.heading}</ThemedText>
+      <ThemedText style={styles.dateRange}>
+        최근 7일 · {formatShortDate(data.periodStart)} – {formatShortDate(data.periodEnd)}
+      </ThemedText>
+      <ThemedText style={styles.heading}>test1님의 일주일</ThemedText>
 
       <View style={styles.insightRow}>
-        <ThemedText style={styles.insightLabel}>{'• 저번주 보다 수면 점수 '}</ThemedText>
-        <ThemedText style={styles.insightDelta}>{formatSigned(data.insightScoreDelta)}</ThemedText>
+        <ThemedText style={styles.insightLabel}>{'• 이번 주 평균 수면 점수 '}</ThemedText>
+        <ThemedText style={styles.insightValue}>
+          {summary.avgSleepScore === null ? '측정 불가' : summary.avgSleepScore}
+        </ThemedText>
       </View>
 
       <View style={styles.chartCard}>
@@ -187,29 +259,37 @@ export function WeeklyReport() {
               style={styles.moonIcon}
               contentFit="contain"
             />
-            <ThemedText style={styles.chartTitle}>{data.chart.title}</ThemedText>
+            <ThemedText style={styles.chartTitle}>주간 수면 구간</ThemedText>
           </View>
-          <ThemedText style={styles.chartLegend}>{data.chart.legend}</ThemedText>
+          <ThemedText style={styles.chartLegend}>막대= 수면/ 점선= 목표</ThemedText>
         </View>
-        <ThemedText style={styles.chartSubRange}>{data.chart.subRangeLabel}</ThemedText>
+        <ThemedText style={styles.chartSubRange}>
+          {formatDotDate(data.periodStart)} - {formatDotDate(data.periodEnd)}
+        </ThemedText>
 
-        <WeeklyBarChart days={data.chart.days} maxValue={data.chart.maxValue} targetScore={data.chart.targetScore} />
+        <WeeklyBarChart days={dailyScores} />
       </View>
 
       <View style={styles.statGrid}>
-        {data.summaryStats.map((item) => (
-          <View key={item.key} style={styles.statCard}>
-            <ThemedText style={styles.statLabel}>{item.label}</ThemedText>
-            <ThemedText style={styles.statValue}>{item.value}</ThemedText>
-          </View>
-        ))}
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statLabel}>평균 수면 점수</ThemedText>
+          <ThemedText style={styles.statValue}>
+            {summary.avgSleepScore === null ? '측정 불가' : `${summary.avgSleepScore}점`}
+          </ThemedText>
+        </View>
+        <View style={styles.statCard}>
+          <ThemedText style={styles.statLabel}>평균 깊은수면</ThemedText>
+          <ThemedText style={styles.statValue}>
+            {summary.avgDeepSleepMinutes === null ? '측정 불가' : formatDuration(summary.avgDeepSleepMinutes)}
+          </ThemedText>
+        </View>
       </View>
 
       <View style={styles.factorSection}>
-        <ThemedText style={styles.factorSectionTitle}>{data.factorSectionTitle}</ThemedText>
+        <ThemedText style={styles.factorSectionTitle}>한 주간 영향이 컸던 요인</ThemedText>
         <View style={styles.factorList}>
-          {data.factors.map((item) => (
-            <FactorRow key={item.key} factor={item.factor} target={item.target} strength={item.strength} />
+          {correlations.map((item) => (
+            <CorrelationRow key={`${item.sleepFeature}-${item.skinMetric}`} item={item} />
           ))}
         </View>
       </View>
@@ -220,6 +300,26 @@ export function WeeklyReport() {
 const styles = StyleSheet.create({
   container: {
     flexShrink: 1,
+  },
+
+  statusText: {
+    fontSize: 13.5,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: 'rgba(55, 56, 60, 0.61)',
+  },
+
+  emptyState: {
+    marginTop: 40,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyStateText: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '600',
+    textAlign: 'center',
+    color: 'rgba(55, 56, 60, 0.61)',
   },
 
   // "최근 7일 · 7/25 – 7/31" (node 306:2385)
@@ -238,7 +338,9 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
   },
 
-  // "• 저번주 보다 수면 점수 +10" (node 306:2428/348:1033) — 배너 박스 없이 빨간 텍스트만.
+  // "• 이번 주 평균 수면 점수 70" (node 306:2428/348:1033) — 배너 박스 없이 빨간 텍스트만.
+  // 원래 Figma 문구는 "저번주 대비 +N"이었지만 이 API가 저번 주 값을 내려주지 않아(별도 API
+  // 호출 없이는 재계산 없이 만들 수 없는 값) 이번 주 평균으로 대체했다.
   insightRow: {
     marginTop: 6,
     flexDirection: 'row',
@@ -251,7 +353,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#E52222',
   },
-  insightDelta: {
+  insightValue: {
     fontSize: 20,
     lineHeight: 24,
     fontWeight: '700',
@@ -297,7 +399,7 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#9C9C9C',
   },
-  // "26.07.25 - 26.07.31" (node 348:940)
+  // "26.08.08 - 26.08.14" (node 348:940)
   chartSubRange: {
     marginTop: 6,
     fontSize: 13.4,
@@ -326,6 +428,13 @@ const styles = StyleSheet.create({
     width: '82%',
     borderRadius: 7,
     backgroundColor: '#D1D9E9',
+  },
+  // sleepScore: null(그날 세션 없음)인 날 — 실측 저점(0)과 구분되도록 점선 테두리의 빈 막대로 표시.
+  barNoData: {
+    backgroundColor: BAR_COLOR_NO_DATA,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: BAR_BORDER_NO_DATA,
   },
   // 목표선 (점선) — node 348:1024~1029 스트로크를 하나의 가로 점선으로 옮겼다.
   targetLine: {
@@ -368,7 +477,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#9E9E9E',
   },
-  // "31"(오늘, node 348:1015)만 Bold + 진한 색
+  // periodEnd(오늘)만 Bold + 진한 색
   dayLabelHighlighted: {
     fontWeight: '700',
     color: '#1A1A1A',
@@ -435,7 +544,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // node style_6e2192a5 — Inter Bold ~11.72, 강도별 색은 STRENGTH_META에서 덮어씀
+  // 표본 부족(insufficientSample: true) 행 — 라벨 자체도 흐리게 눌러 "이 조합은 아직 근거가
+  // 약하다"는 걸 색만으로도 알 수 있게 한다.
+  factorLabelMuted: {
+    color: INSUFFICIENT_SAMPLE_COLOR,
+  },
+  factorInsufficientText: {
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '700',
+    color: INSUFFICIENT_SAMPLE_COLOR,
+  },
+  // node style_6e2192a5 — Inter Bold ~11.72, 강도별 색은 CORRELATION_STRENGTH_META에서 덮어씀
   factorStrength: {
     fontSize: 12,
     lineHeight: 15,

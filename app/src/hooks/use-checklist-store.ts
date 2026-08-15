@@ -23,6 +23,16 @@ export function toggleChecklistItem(id: string) {
   emitChange();
 }
 
+/**
+ * MY-04(회원 탈퇴) 성공 시 호출한다 — 삭제된 사용자의 체크 상태가 다음 사용자(재가입 등)에게
+ * 그대로 남아있으면 안 되므로 완전히 비운다. 다른 로컬 스토어가 이 앱에 추가되면 그것도 같이
+ * 초기화 대상에 넣을 것.
+ */
+export function resetChecklistStore() {
+  checkedMap = {};
+  emitChange();
+}
+
 function subscribe(onStoreChange: () => void) {
   listeners.add(onStoreChange);
   return () => listeners.delete(onStoreChange);

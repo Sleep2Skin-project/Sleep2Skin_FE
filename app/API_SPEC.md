@@ -14,6 +14,16 @@
 - [GET] `/api/v1/skin/model` (내 모델 — 일반 vs 개인화)
 - [POST] `/api/v1/skin/selfie` (셀피 분석·검증·학습)
 - [GET] `/api/v1/skin/verification/summary` (적중률·연속 검증 배너)
+- [POST] `/api/v1/users/me/attendance` (출석 체크인 — HOME-04)
+- [GET] `/api/v1/report/daily` (일간 리포트 — 수면 요약 + 피부 예보 전일 대비, REP-02/04/05)
+- [GET] `/api/v1/report/daily/timeline` (일간 수면 타임라인 — 수면 단계 구간, REP-03)
+- [GET] `/api/v1/report/monthly` (월간 리포트 — 주별 수면 점수/최고 주, 28일 요약, 수면-피부 상관관계, REP-07)
+- [GET] `/api/v1/report/weekly` (주간 리포트 — 하루치 수면 점수 추이, 요약, 수면-피부 상관관계(실측 기준), REP-06)
+- [GET] `/api/v1/todo` (오늘의 TODO 목록 — 오늘은 피하세요 + 오늘 밤 체크리스트, TODO-02~05)
+- [PATCH] `/api/v1/todo/{id}` (TODO 항목 상태 변경 — 체크리스트 완료/되돌리기, exp 증감·회수, TODO-05)
+- [GET] `/api/v1/users/me` (온보딩·동의 상태 + 프로필 조회 — 앱 진입 라우팅, MY 탭 레벨/exp/검증 횟수, ONB-01/MY-01)
+- [DELETE] `/api/v1/users/me` (모든 기록 삭제 — 회원 탈퇴, hard delete, MY-04)
+- [GET] `/api/v1/users/me/data-status` (수면 데이터 연결 상태 — 마지막 수신 시각, baseDate 없음, MY-02)
 
 ## 3. 🚨 Backend Developer Strict Rules (반드시 준수) 🚨
 특히 `POST /api/v1/sleep/sessions` API 연동 시 아래 규칙을 무조건 따른다.

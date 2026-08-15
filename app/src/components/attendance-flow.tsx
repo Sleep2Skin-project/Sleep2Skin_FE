@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { calculateRemainingExp, type AttendanceExpInfo } from '@/api/game';
 import { Colors } from '@/constants/colors';
 import { useDesignScale } from '@/hooks/use-design-scale';
 
@@ -11,12 +12,16 @@ import { useDesignScale } from '@/hooks/use-design-scale';
 // 온보딩(onboarding-flow.tsx)과 동일하게 402x874 고정 캔버스로 좌표를 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 501:292) 원점 기준 절대값.
 //
-// 연속 출석/포인트를 다루는 백엔드 API가 아직 없다(API_SPEC.md에 미등재 — 확인 결과는 응답
-// 메시지 참고). 그래서 이 화면은 셀피 검증 스트릭(GET /api/v1/skin/verification/summary)과는
-// 무관한 별도 개념이고, 아래 요일별 출석 상태는 전부 하드코딩된 정적 목업이다. Figma 시안 자체가
-// 월/수/금만 파란 체크, 화/목/토/일은 회색 X로 고정돼 있어(실제 "이번 주 진행 상황"을 반영한 게
-// 아니라 체크/비체크 두 상태를 보여주기 위한 예시로 보임) 그 값을 그대로 옮겼다 — 실제 연속
-// 출석 로직이 필요해지면 백엔드 API가 생긴 뒤 이 정적 배열을 응답 데이터로 교체할 것.
+// 요일별 출석 상태(ATTENDANCE_DAYS)는 여전히 정적 목업이다 — Figma 시안 자체가 월/수/금만
+// 파란 체크, 화/목/토/일은 회색 X로 고정돼 있어(체크/비체크 두 상태를 보여주기 위한 예시로 보임)
+// 그 값을 그대로 옮겼다. HOME-04(POST /api/v1/users/me/attendance)의 streakCount를 여기 흘려
+// 쓰면 안 된다 — 그 값은 "출석 연속 횟수"가 아니라 "연속 검증 횟수"(GET /skin/verification/summary와
+// 동일 개념)라 이 주간 출석 UI와는 의미가 다르다. 실제 주간 출석 이력 API가 생기면 그때 이
+// 정적 배열을 교체할 것.
+//
+// exp(HOME-04 응답의 exp)는 optional prop으로 받는다 — 이 화면 자체를 호출부(_layout.tsx)가
+// checkedIn: true일 때만 마운트하므로 항상 채워지지만, 방어적으로 없을 때는 경험치 줄을 렌더하지
+// 않는다.
 //
 // 우상단 X 버튼(node 541:3063, x:345 y:37 w:20 h:19)을 눌러야만 닫힌다 — 화면 전체 탭으로
 // 넘어가던 이전 동작(별도 CTA 없는 구 시안 501:292 기준)을 최신 시안(541:3041)에 맞춰 교체했다.
@@ -54,9 +59,16 @@ const ATTENDANCE_DAYS = [
   { label: '일', labelX: 317.7, circleX: 308.53, attended: false },
 ] as const;
 
-export function AttendanceFlow({ onComplete }: { onComplete: () => void }) {
+export function AttendanceFlow({
+  onComplete,
+  exp,
+}: {
+  onComplete: () => void;
+  exp?: AttendanceExpInfo;
+}) {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(ATTENDANCE_FONTS);
+  const remainingExp = exp ? calculateRemainingExp(exp) : null;
 
   // 폰트 로드 전엔 흰 배경만 렌더한다 — 시스템 폰트로 잠깐 렌더돼 줄바꿈이 튀는 걸 막는다.
   if (!fontsLoaded) {
@@ -88,6 +100,15 @@ export function AttendanceFlow({ onComplete }: { onComplete: () => void }) {
 
           {/* 설명 (node 509:296, x:88 y:437 w:225 h:56) */}
           <Text style={styles.body}>매일 방문하면{'\n'}포인트를 더 많이 받을 수 있어요</Text>
+
+          {/* HOME-04 실데이터: 획득 exp + 다음 레벨까지 남은 exp. Figma에 없는 요소라 body(~493)와
+              요일 라벨(542) 사이 여백에 작은 보조 텍스트로 얹는다. exp가 없으면(방어) 렌더하지 않는다. */}
+          {exp && (
+            <Text style={styles.expInfo}>
+              {`+${exp.gained} EXP`}
+              {remainingExp === null ? ' · MAX 레벨' : ` · 다음 레벨까지 ${remainingExp} EXP`}
+            </Text>
+          )}
 
           {/* 요일 라벨 + 출석 원 (node 509:297~339, y:542/570.65) */}
           {ATTENDANCE_DAYS.map((day) => (
@@ -169,6 +190,17 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_REGULAR,
     lineHeight: 28,
     color: ATTENDANCE_BODY_COLOR,
+  },
+  // HOME-04 exp 보조 텍스트 — Figma 노드 없음, body(top:437 h:56)와 요일 라벨(top:542) 사이 여백에 배치
+  expInfo: {
+    position: 'absolute',
+    left: 0,
+    top: 508,
+    width: CANVAS_WIDTH,
+    textAlign: 'center',
+    fontSize: 13,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: Colors.accentBlue,
   },
   // 요일 라벨(node 509:297 등, y:542 w:15 h:20, Pretendard SemiBold 16.59px) — left는 인라인으로 개별 지정
   dayLabel: {

@@ -20,11 +20,11 @@ export const PERIOD_LABELS: Record<Period, string> = {
 
 const PERIOD_ORDER: Period[] = ['daily', 'weekly', 'monthly', 'overall'];
 
+// Figma node 350:777~785 — 남색 트랙 위에 선택된 탭만 흰색 알약, 나머지는 흰색 60% 텍스트로
+// 트랙에 묻힌다. 다크모드와 무관한 고정 색이라 테마 토큰을 쓰지 않는다.
 export function PeriodTabs({ selected, onSelect }: { selected: Period; onSelect: (period: Period) => void }) {
-  const theme = useTheme();
-
   return (
-    <View style={[styles.tabTrack, { backgroundColor: theme.backgroundElement }]}>
+    <View style={styles.tabTrack}>
       {PERIOD_ORDER.map((period) => {
         const active = period === selected;
         return (
@@ -33,12 +33,12 @@ export function PeriodTabs({ selected, onSelect }: { selected: Period; onSelect:
             onPress={() => onSelect(period)}
             style={({ pressed }) => [
               styles.tabItem,
-              active && { backgroundColor: Colors.primaryDark },
+              active && styles.tabItemActive,
               pressed && !active && styles.tabItemPressed,
             ]}>
             <ThemedText
               type="smallBold"
-              style={[styles.tabLabel, { color: active ? Colors.white : theme.textSecondary }]}>
+              style={[styles.tabLabel, { color: active ? Colors.primaryDark : 'rgba(255, 255, 255, 0.6)' }]}>
               {PERIOD_LABELS[period]}
             </ThemedText>
           </Pressable>
@@ -209,21 +209,25 @@ export function BarChart({
 const styles = StyleSheet.create({
   tabTrack: {
     flexDirection: 'row',
-    borderRadius: Spacing.three,
-    padding: Spacing.half,
-    gap: Spacing.half,
+    borderRadius: 999,
+    padding: 3,
+    gap: 2,
+    backgroundColor: Colors.primaryDark,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
+    borderRadius: 999,
+  },
+  tabItemActive: {
+    backgroundColor: Colors.white,
   },
   tabItemPressed: {
     opacity: 0.6,
   },
   tabLabel: {
-    fontSize: 13,
+    fontSize: 12,
   },
 
   insightBanner: {

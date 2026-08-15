@@ -1,4 +1,4 @@
-import { usePathname } from 'expo-router';
+import { usePathname, type Href } from 'expo-router';
 import { Tabs, TabList, TabSlot, TabTrigger } from 'expo-router/ui';
 import { StyleSheet } from 'react-native';
 
@@ -25,7 +25,7 @@ export default function AppTabs() {
           const themeColor = isActive ? 'text' : 'textSecondary';
 
           return (
-            <TabTrigger key={item.name} name={item.name} href={item.href} style={tabBarStyles.item}>
+            <TabTrigger key={item.name} name={item.name} href={item.href as Href} style={tabBarStyles.item}>
               <TabSymbol sf={item.sf} android={item.android} tintColor={theme[themeColor]} size={22} />
               <ThemedText type="small" themeColor={themeColor} style={tabBarStyles.label}>
                 {item.label}

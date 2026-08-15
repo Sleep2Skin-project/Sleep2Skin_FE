@@ -1,12 +1,12 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Modal,
@@ -17,25 +17,36 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  getVerificationSummary,
+  SelfieVerificationApiError,
+  SkinModelUserNotFoundError,
+  verifySelfie,
+  type SelfieVerificationData,
+  type VerificationSummary,
+  type VerificationVerdict,
+} from '@/api/skin';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TabSymbol } from '@/components/ui/tab-symbol';
+import { Colors } from '@/constants/colors';
+import { TEMP_USER_ID } from '@/constants/config';
 import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
+import { useDesignScale } from '@/hooks/use-design-scale';
 import { useTheme } from '@/hooks/use-theme';
+import { showAlert } from '@/utils/platform-alert';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
 // 1단계(촬영, node 176:816 "셀피 화면")·2단계(분석 중, node 176:961 "셀피 로딩 화면")·3단계(리포트,
 // node 241:604 "iPhone 17 - 14")는 모두 Figma REST API로 좌표·색상·타이포·에셋을 그대로 옮겼고,
 // 부모 테마와 무관하게 항상 Figma가 지정한 배경(1단계 다크 그라디언트 / 2단계 흰 배경 / 3단계
-// 연한 파란 배경)으로 렌더한다. 실제 카메라/LLM Vision 연동 전이라 촬영 화면은 플레이스홀더
-// 프리뷰를 쓰고, 분석·리포트 값은 목업이다.
-
-const ACCENT = '#3C87F7';
-const SUCCESS = '#34C759';
-const WARNING = '#FF9F0A';
+// 연한 파란 배경)으로 렌더한다. 실제 카메라 연동 전이라 촬영 화면은 플레이스홀더 프리뷰를 쓰지만,
+// 2단계(분석)·3단계(리포트)는 POST /api/v1/skin/selfie(verifySelfie, HOME-06→07→08) 실응답으로
+// 채운다 — 업로드/분석 요청은 SelfieFlowSteps가 소유하고, AnalyzingStep은 그 진행 상태만 표시,
+// ReportStep은 그 응답 데이터만 렌더링한다.
 
 // node 176:816 배경(linear-gradient(180deg, #191A28 0%, #0C0D15 100%))
 const CAPTURE_BG_TOP = '#191A28';
@@ -66,9 +77,10 @@ const ANALYZING_CARD_BORDER = 'rgba(112, 115, 124, 0.22)'; // Pale Sky 22%
 const ANALYZING_ROW_DIVIDER = 'rgba(112, 115, 124, 0.08)'; // Pale Sky 8%
 const ANALYZING_AVATAR_BG = '#F7F7F8'; // Athens Gray
 
+// 지표 배지 한 칸이 순환하는 주기 — pending 동안 이 주기로 계속 한 바퀴씩 돈다(고정 총 소요시간 아님).
 const METRIC_STEP_DURATION_MS = 1250;
+// 응답 도착 후 배지를 전부 완료 상태로 보여주고 나서 리포트로 넘어가기까지의 여운.
 const REPORT_TRANSITION_DELAY_MS = 400;
-const ANALYSIS_TOTAL_MS = METRIC_STEP_DURATION_MS * 4; // 5000ms — 기존 3초(800ms*4)를 5초로 비율 유지하며 연장.
 
 type MetricStatus = 'pending' | 'active' | 'done';
 
@@ -79,28 +91,56 @@ const METRIC_ITEMS = [
   { key: 'compare', label: '어제 예보와 대조' },
 ] as const;
 
-// node 241:604 "iPhone 17 - 14 (검증 리포트)"의 비교 테이블(node 243:1683)은 3개 지표만 보여준다.
-// 예보/실측 값은 기존 목업과 동일(순서대로 62/58, 78/81, 41/29)하고 라벨만 Figma에 맞춰 옮겼다.
-const COMPARISON_ROWS = [
-  { key: 'blood', label: '혈색', forecast: 62, actual: 58 },
-  { key: 'barrier', label: '장벽', forecast: 78, actual: 81 },
-  { key: 'darkCircle', label: '다크서클 회복', forecast: 41, actual: 29 },
-] as const;
-// 지표별 게이지 바(트랙+진행색+동그란 마커)가 Figma에서 행마다 다른 색의 플랫 벡터로 미리
-// 그려져 있어, 값으로부터 동적으로 계산하는 대신 행 순서에 맞춰 에셋을 그대로 사용한다.
+// node 241:604 "iPhone 17 - 14 (검증 리포트)"의 비교 테이블(node 243:1683)은 verifySelfie 응답의
+// verifications 배열(항상 1개 이상, 최대 3개)을 행으로 그린다. 지표별 게이지 바(트랙+진행색+동그란
+// 마커)가 Figma에서 행마다 다른 색의 플랫 벡터로 미리 그려져 있어, 값으로부터 동적으로 계산하는
+// 대신 행 순서에 맞춰 에셋을 그대로 사용한다(값 크기와 무관한 장식용 자산).
 const COMPARISON_GAUGE_ASSETS = [
   require('@/assets/images/figma-icon-report-gauge-1.png'),
   require('@/assets/images/figma-icon-report-gauge-2.png'),
   require('@/assets/images/figma-icon-report-gauge-3.png'),
 ] as const;
 
-// 최근 8일치 예보 적중률(%) — 마지막 값이 오늘, 연속 검증 배너(HOME-11)와 동일한 8일 기준.
-const WEEKLY_ACCURACY = [46, 58, 51, 70, 62, 65, 74, 84] as const;
-const ACCURACY_RATE = WEEKLY_ACCURACY[WEEKLY_ACCURACY.length - 1];
-const ACCURACY_DELTA = '+6%p';
-const STREAK_DAYS = WEEKLY_ACCURACY.length;
-// 스트릭 배지 라벨 (node 243:1524~1552) — "오늘"은 별도 별 배지로 렌더한다.
-const STREAK_BADGE_DAYS = ['3일', '4일', '5일', '6일', '7일'] as const;
+// verifications/skipped의 metric 필드(DARK_CIRCLE/BARRIER/COMPLEXION 등) → 표시 라벨.
+// index.tsx(FORECAST_METRIC_LABELS)와 동일한 한글 라벨을 써서 앱 전체 표기를 통일한다.
+const VERIFICATION_METRIC_LABELS: Record<string, string> = {
+  DARK_CIRCLE: '다크서클',
+  BARRIER: '장벽',
+  COMPLEXION: '안색',
+};
+
+function metricLabel(metric: string): string {
+  return VERIFICATION_METRIC_LABELS[metric] ?? metric;
+}
+
+// verdict(HIT/CLOSE/UNDERESTIMATED/OVERESTIMATED)는 서버가 이미 판정까지 끝낸 결과라, 프론트는
+// 임계값을 다시 계산하지 않고 그대로 아이콘/라벨에 매핑만 한다. 에셋은 ok/warn 2종뿐이라
+// HIT·CLOSE는 ok로, UNDER/OVERESTIMATED는 warn으로 묶는다.
+const VERDICT_ICON_SOURCES: Record<VerificationVerdict, number> = {
+  HIT: require('@/assets/images/figma-icon-report-verdict-ok.png'),
+  CLOSE: require('@/assets/images/figma-icon-report-verdict-ok.png'),
+  UNDERESTIMATED: require('@/assets/images/figma-icon-report-verdict-warn.png'),
+  OVERESTIMATED: require('@/assets/images/figma-icon-report-verdict-warn.png'),
+};
+
+const VERDICT_LABELS: Record<VerificationVerdict, string> = {
+  HIT: '적중',
+  CLOSE: '근접',
+  UNDERESTIMATED: '과소예측',
+  OVERESTIMATED: '과대예측',
+};
+
+// AccuracyCard(적중률·연속 검증 배너, HOME-09)에 그리는 스트릭 체크 배지 최대 개수 — streakCount가
+// 이보다 크면 나머지는 배지로 그리지 않고 타이틀 텍스트의 숫자로만 표시한다(공간 제약).
+const STREAK_BADGE_MAX = 5;
+
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 // node 241:604 "iPhone 17 - 14 (검증 리포트)" 전용 색상.
 const REPORT_BG = '#DFEAFF';
@@ -122,23 +162,74 @@ const REPORT_HEADER_LABEL = 'rgba(55, 56, 60, 0.28)'; // Tuna 28%
 const REPORT_VALUE_MUTED = 'rgba(55, 56, 60, 0.61)'; // Tuna 61%
 const REPORT_SPARKLE_BG = 'rgba(0, 102, 255, 0.1)'; // Blue Ribbon 10%
 
-// 백엔드 연동 지점 — 지금은 목업이라 아무 요청도 보내지 않는다. 실제 업로드/분석 API가
-// 준비되면 이 함수 내부만 교체하면 되도록(홈/투두의 Mock 데이터 교체 방식과 동일하게)
-// handleImageSelected에서 이 함수 하나만 호출한다.
-async function uploadImageToServer(uri: string): Promise<void> {
-  // TODO(backend): 예) await fetch('<API_BASE_URL>/selfie', { method: 'POST', body: buildFormData(uri) });
-  void uri;
-}
+// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543, "연속 출석에 실패했어요") 전용 색상.
+// 연속 검증(스트릭)을 "일자별 완료/실패/예정" 배열로 조회하는 API는 없다(GET
+// /api/v1/skin/verification/summary는 streakCount 정수 하나와 최근 1건만 내려줄 뿐, 과거
+// 스트릭을 "이어서 재개"할 수 있는 개념 자체가 백엔드에 없다) — 그래서 요일별 배지 상태는
+// Figma 시안 값을 그대로 옮긴 정적 목업이고, 두 CTA 버튼은 실제 재개/재시작 로직 없이 모달을
+// 닫기만 한다. 실제 로직이 필요해지면 백엔드에 전용 API가 먼저 있어야 한다.
+const STREAK_MODAL_BACKDROP = 'rgba(255, 255, 255, 0.4)';
+const STREAK_MODAL_TITLE = '#000000';
+const STREAK_MODAL_SUBTITLE = '#525252';
+const STREAK_MODAL_PANEL_BG = 'rgba(209, 234, 255, 0.6)';
+const STREAK_MODAL_DAY_DONE_BG = '#8ECDFF';
+const STREAK_MODAL_DAY_DONE_BORDER = '#058BFC';
+const STREAK_MODAL_DAY_MISSED_BORDER = '#F91D33';
+const STREAK_MODAL_DAY_PENDING_BORDER = '#949597';
+const STREAK_MODAL_LABEL_MUTED = '#8B8B93';
+const STREAK_MODAL_PRIMARY_BTN_BG = '#008DFF';
+const STREAK_MODAL_SECONDARY_BTN_BG = '#E3E3E3';
+
+// 이 파일 대부분의 텍스트는 시스템 폰트로도 크게 문제없이 맞았지만, 이 모달의 타이틀("아차! 연속
+// 출석에 실패했어요")은 박스 폭이 좁아 시스템 폰트로는 두 줄로 넘칠 수 있다 — 온보딩
+// (onboarding-flow.tsx)·출석 화면(attendance-flow.tsx)에서 이미 겪은 것과 동일한 문제라, 같은
+// Pretendard 폰트 파일을 이 모달에만 재사용한다.
+const PRETENDARD_REGULAR = 'Pretendard-Regular';
+const PRETENDARD_SEMIBOLD = 'Pretendard-SemiBold';
+const STREAK_MODAL_FONTS = {
+  [PRETENDARD_REGULAR]: require('@/assets/fonts/Pretendard-Regular.otf'),
+  [PRETENDARD_SEMIBOLD]: require('@/assets/fonts/Pretendard-SemiBold.otf'),
+};
+
+type StreakDayState = 'done' | 'missed' | 'pending';
+
+// 요일 배지 5개(node 487:246/247/252/269/271) — 위 주석대로 실제 스트릭 데이터가 아니라
+// Figma 시안이 보여주는 정적 예시(3일 완료 → 4일째 실패 → 5일째는 아직 오지 않음) 그대로다.
+const STREAK_MODAL_DAYS: { state: StreakDayState; label: string }[] = [
+  { state: 'done', label: '완료' },
+  { state: 'done', label: '완료' },
+  { state: 'done', label: '완료' },
+  { state: 'missed', label: '4일' },
+  { state: 'pending', label: '5일' },
+];
 
 // 개발자용 프리패스(Bypass) — 웹 브라우저는 실기기 카메라/갤러리가 온전히 동작하지 않을 수
 // 있어, 화면 전환 흐름만 먼저 검증할 수 있도록 실패 시 이 더미 이미지로 강제 진행한다.
 const DEV_BYPASS_DUMMY_URI = 'https://dummyimage.com/600x400/000/fff&text=Mock+Selfie';
 
-function getVerdict(forecast: number, actual: number) {
-  const diff = Math.abs(forecast - actual);
-  if (diff <= 4) return { label: '적중', icon: '◎', color: SUCCESS };
-  if (diff <= 9) return { label: '근접', icon: '✓', color: ACCENT };
-  return { label: forecast > actual ? '과대예측' : '과소예측', icon: '⚠', color: WARNING };
+// 더미 이미지는 실제 얼굴이 아니라 서버 분석(POST /api/v1/skin/selfie)이 항상 실패하므로,
+// 프리패스 경로에서는 실제 API를 호출하는 대신 아래 더미 데이터로 3단계(ReportStep) UI만
+// 확인할 수 있게 한다 — "웹에서는 페이지 UI만 확인하면 된다"는 용도.
+const DEV_BYPASS_MOCK_DELAY_MS = 2500;
+
+function createDevBypassMockVerificationData(): SelfieVerificationData {
+  const today = getTodayDateString();
+  return {
+    baseDate: today,
+    analyzedAt: new Date().toISOString(),
+    verifications: [
+      { metric: 'DARK_CIRCLE', forecast: { score: 78, grade: '양호' }, measured: { score: 74, grade: '양호' }, difference: 4, verdict: 'HIT' },
+      { metric: 'BARRIER', forecast: { score: 65, grade: '보통' }, measured: { score: 52, grade: '주의' }, difference: 13, verdict: 'CLOSE' },
+      { metric: 'COMPLEXION', forecast: { score: 82, grade: '양호' }, measured: { score: 60, grade: '보통' }, difference: 22, verdict: 'OVERESTIMATED' },
+    ],
+    skipped: [],
+    hitRate: 33,
+    model: {
+      updated: true,
+      message: '개발자 프리패스로 만든 더미 데이터예요 — 실제 분석 결과가 아니에요.',
+      changes: [],
+    },
+  };
 }
 
 function CornerBracket({ position }: { position: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' }) {
@@ -241,19 +332,18 @@ function CaptureStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraPermission?.granted, cameraPermission?.canAskAgain, libraryPermission?.granted, libraryPermission?.canAskAgain]);
 
-  // 카메라 촬영과 갤러리 선택 결과(uri)를 동일하게 처리하는 공통 진입점. 실제 백엔드 연동
-  // 시에는 uploadImageToServer 내부만 채우면 되고, 이 함수는 그대로 둘 수 있다. uri가 실제
-  // 촬영본이든 개발자 프리패스로 만든 더미든 상관없이 항상 다음 화면(step 2, AnalyzingStep
-  // = "셀피 로딩 화면")으로 넘어간다.
+  // 카메라 촬영과 갤러리 선택 결과(uri)를 동일하게 처리하는 공통 진입점. 실제 업로드/분석
+  // (verifySelfie) 호출은 다음 화면 진입을 소유한 SelfieFlowSteps가 담당하므로, 여기서는 uri가
+  // 실제 촬영본이든 개발자 프리패스로 만든 더미든 상관없이 그대로 다음 화면(step 2, AnalyzingStep
+  // = "셀피 로딩 화면")으로 넘긴다.
   const handleImageSelected = async (uri: string) => {
-    await uploadImageToServer(uri);
     onCaptured(uri);
   };
 
   // 개발자용 프리패스 — 실기기 촬영/갤러리 선택이 실패하거나 웹 환경이라 애초에 시도할 수
   // 없을 때, 화면 전환 흐름 테스트가 막히지 않도록 더미 이미지로 강제 진행한다.
   const bypassWithDummyImage = async (reason: string) => {
-    Alert.alert('개발자 프리패스', `${reason} 더미 이미지로 다음 화면까지 진행할게요.`);
+    showAlert('개발자 프리패스', `${reason} 더미 이미지로 다음 화면까지 진행할게요.`);
     await handleImageSelected(DEV_BYPASS_DUMMY_URI);
   };
 
@@ -503,12 +593,14 @@ function MetricStatusBadge({ status }: { status: MetricStatus }) {
 }
 
 // node 176:961 "셀피 로딩 화면" — 부모 테마와 무관하게 항상 Figma 지정 흰 배경으로 렌더한다.
-// imageUri는 CaptureStep에서 촬영/선택한 사진 경로로, 중앙 원형 배지 미리보기에 쓰인다. 실제 분석
-// API 연동 시에는 이 값을 그대로 요청 본문에 실어 보내면 된다(현재는 목업 타이머만 돌린다).
-function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: () => void }) {
-  // TODO(backend): 분석 API 연동 시 이 uri로 요청을 보낸다.
-  const [statuses, setStatuses] = useState<MetricStatus[]>(() => METRIC_ITEMS.map(() => 'pending'));
-  const [secondsLeft, setSecondsLeft] = useState(5);
+// imageUri는 CaptureStep에서 촬영/선택한 사진 경로로, 중앙 원형 배지 미리보기에 쓰인다.
+// 실제 verifySelfie 요청은 SelfieFlowSteps가 보내고, 이 컴포넌트는 그 진행 상태(pending)만
+// 받아 순수하게 화면을 그린다. 502/504는 verifySelfie 내부에서 이미 1회 자동 재시도되므로
+// 5초를 넘길 수 있다 — 그래서 지표 배지를 고정 타임라인 한 번으로 끝내는 대신, pending인 동안
+// 계속 한 바퀴씩 돌려(끊겨 보이지 않게) 응답이 오면(pending=false) 즉시 전부 완료로 스냅한다.
+function AnalyzingStep({ imageUri, pending }: { imageUri: string | null; pending: boolean }) {
+  const [statuses, setStatuses] = useState<MetricStatus[]>(() => METRIC_ITEMS.map((_, i) => (i === 0 ? 'active' : 'pending')));
+  const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [rotateAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -526,39 +618,35 @@ function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: 
   }, []);
 
   useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (!pending) {
+      setStatuses(METRIC_ITEMS.map(() => 'done'));
+      return;
+    }
 
-    METRIC_ITEMS.forEach((_, index) => {
-      timers.push(
-        setTimeout(() => {
-          setStatuses((prev) => prev.map((status, i) => (i === index ? 'active' : status)));
-        }, index * METRIC_STEP_DURATION_MS),
-      );
-      timers.push(
-        setTimeout(
-          () => {
-            setStatuses((prev) => prev.map((status, i) => (i === index ? 'done' : status)));
-          },
-          (index + 1) * METRIC_STEP_DURATION_MS,
-        ),
-      );
-    });
+    let cycleIndex = 0;
+    setStatuses(METRIC_ITEMS.map((_, i) => (i === 0 ? 'active' : 'pending')));
 
+    const cycleTimer = setInterval(() => {
+      cycleIndex = (cycleIndex + 1) % METRIC_ITEMS.length;
+      setStatuses(
+        METRIC_ITEMS.map((_, i) => {
+          if (i === cycleIndex) return 'active';
+          if (cycleIndex === 0) return 'pending';
+          return i < cycleIndex ? 'done' : 'pending';
+        }),
+      );
+    }, METRIC_STEP_DURATION_MS);
+
+    return () => clearInterval(cycleTimer);
+  }, [pending]);
+
+  useEffect(() => {
+    if (!pending) return;
     const secondsTimer = setInterval(() => {
-      setSecondsLeft((prev) => Math.max(0, prev - 1));
+      setSecondsElapsed((prev) => prev + 1);
     }, 1000);
-
-    const finishTimer = setTimeout(() => {
-      onDone();
-    }, ANALYSIS_TOTAL_MS + REPORT_TRANSITION_DELAY_MS);
-
-    return () => {
-      timers.forEach(clearTimeout);
-      clearInterval(secondsTimer);
-      clearTimeout(finishTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => clearInterval(secondsTimer);
+  }, [pending]);
 
   return (
     <View style={styles.analyzingContainer}>
@@ -569,7 +657,9 @@ function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: 
         {/* "div"(node 176:984, gap:5) */}
         <View style={styles.analyzingTitleGroup}>
           <Text style={styles.analyzingTitle}>피부 지표를 읽는 중</Text>
-          <Text style={styles.analyzingSubtitle}>약 {secondsLeft}초 남았어요</Text>
+          <Text style={styles.analyzingSubtitle}>
+            {pending ? `${secondsElapsed}초째 분석 중이에요` : '분석 완료!'}
+          </Text>
         </View>
 
         {/* 지표 카드 (node 176:989, w:334, radius:16, border: Pale Sky 22%) */}
@@ -599,8 +689,82 @@ function AnalyzingStep({ imageUri, onDone }: { imageUri: string | null; onDone: 
   );
 }
 
+type AccuracyBannerState =
+  | { kind: 'loading' }
+  | { kind: 'error' }
+  | { kind: 'no_verification'; message: string | null }
+  | { kind: 'available'; baseDate: string; summary: VerificationSummary };
+
 // "84% 예보 적중률" 링 + "N일 연속 검증 완료!" 스트릭 배지 (node 243:1507).
+// GET /api/v1/skin/verification/summary(HOME-09)를 직접 호출해 채운다.
+// - 링 중앙 수치는 summary.hitRate(누적 적중률). summary.latest.hitRate(그날치)와는 다른 숫자라
+//   섞어 쓰지 않고 "최근 검증 N%" 배지로 따로 보여준다.
+// - 스트릭 배지 개수는 summary.streakCount를 그대로 쓰되, "오늘"은 응답의 baseDate(요청한
+//   오늘 날짜)와 summary.latest.baseDate가 같을 때만 별 배지로 표시한다 — 오늘 아직 검증하지
+//   않았는데도 별을 붙이면 하지 않은 일을 한 것처럼 보이게 된다("오늘 미검증이 연속을 끊지
+//   않는다"는 규칙과, 하지 않은 일로 보여선 안 된다는 규칙은 서로 다른 요구라 둘 다 지켜야 한다).
 function AccuracyCard() {
+  const [state, setState] = useState<AccuracyBannerState>({ kind: 'loading' });
+
+  useEffect(() => {
+    const baseDate = getTodayDateString();
+
+    getVerificationSummary(TEMP_USER_ID, baseDate)
+      .then(({ data }) => {
+        setState(
+          data.status === 'AVAILABLE'
+            ? { kind: 'available', baseDate: data.baseDate, summary: data.summary }
+            : { kind: 'no_verification', message: data.message }
+        );
+      })
+      .catch((error) => {
+        if (error instanceof SkinModelUserNotFoundError) {
+          console.error(`❌ 적중률 배너 조회 실패: 존재하지 않는 사용자 (userId: ${error.userId})`);
+        } else {
+          console.error('❌ 적중률 배너 조회 실패:', error);
+        }
+        setState({ kind: 'error' });
+      });
+  }, []);
+
+  if (state.kind === 'loading') {
+    return (
+      <View style={[styles.accuracyCard, styles.accuracyCardCentered]}>
+        <ActivityIndicator size="small" color={REPORT_BLUE} />
+      </View>
+    );
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <View style={[styles.accuracyCard, styles.accuracyCardCentered]}>
+        <Text style={styles.accuracyEmptyText}>적중률 정보를 불러오지 못했어요</Text>
+      </View>
+    );
+  }
+
+  if (state.kind === 'no_verification') {
+    return (
+      <View style={[styles.accuracyCard, styles.accuracyCardCentered]}>
+        <Text style={styles.accuracyEmptyTitle}>아직 검증 이력이 없어요</Text>
+        <Text style={styles.accuracyEmptyText}>
+          {state.message ?? '셀피로 첫 검증을 마치면 적중률과 연속 기록이 여기 쌓여요'}
+        </Text>
+      </View>
+    );
+  }
+
+  const { summary, baseDate } = state;
+  const todayInStreak = summary.streakCount > 0 && summary.latest.baseDate === baseDate;
+  const totalBadges = Math.min(summary.streakCount, STREAK_BADGE_MAX);
+  const checkBadgeCount = todayInStreak ? Math.max(totalBadges - 1, 0) : totalBadges;
+  const streakTitle =
+    summary.streakCount === 0
+      ? '오늘부터 연속 검증을 시작해보세요'
+      : todayInStreak
+        ? `${summary.streakCount}일 연속 검증 완료!`
+        : `${summary.streakCount}일 연속 검증 중 · 오늘도 이어가 볼까요?`;
+
   return (
     <View style={styles.accuracyCard}>
       <View style={styles.accuracyTopRow}>
@@ -613,65 +777,67 @@ function AccuracyCard() {
           />
           <View style={styles.accuracyRingContent}>
             <View style={styles.accuracyRateRow}>
-              <Text style={styles.accuracyRateText}>{ACCURACY_RATE}</Text>
+              <Text style={styles.accuracyRateText}>{summary.hitRate}</Text>
               <Text style={styles.accuracyRatePercent}>%</Text>
             </View>
-            <Text style={styles.accuracyRateLabel}>예보 적중률</Text>
+            <Text style={styles.accuracyRateLabel}>누적 예보 적중률</Text>
             <View style={styles.accuracyDeltaPill}>
-              <Text style={styles.accuracyDeltaText}>{ACCURACY_DELTA}</Text>
+              <Text style={styles.accuracyDeltaText}>최근 검증 {summary.latest.hitRate}%</Text>
             </View>
           </View>
         </View>
 
         {/* 스트릭 배지 (node 243:1520) */}
         <View style={styles.accuracyStreakColumn}>
-          <Text style={styles.accuracyStreakTitle}>{STREAK_DAYS}일 연속 검증 완료!</Text>
-          <View style={styles.accuracyStreakRow}>
-            {STREAK_BADGE_DAYS.map((label) => (
-              <View key={label} style={styles.accuracyStreakBadgeGroup}>
-                <View style={styles.accuracyStreakBadgeCircle}>
-                  <Image
-                    source={require('@/assets/images/figma-icon-report-streak-check.png')}
-                    style={styles.accuracyStreakCheckIcon}
-                    contentFit="contain"
-                  />
+          <Text style={styles.accuracyStreakTitle}>{streakTitle}</Text>
+          {summary.streakCount > 0 && (
+            <View style={styles.accuracyStreakRow}>
+              {Array.from({ length: checkBadgeCount }).map((_, index) => (
+                <View key={index} style={styles.accuracyStreakBadgeGroup}>
+                  <View style={styles.accuracyStreakBadgeCircle}>
+                    <Image
+                      source={require('@/assets/images/figma-icon-report-streak-check.png')}
+                      style={styles.accuracyStreakCheckIcon}
+                      contentFit="contain"
+                    />
+                  </View>
                 </View>
-                <Text style={styles.accuracyStreakBadgeLabel}>{label}</Text>
-              </View>
-            ))}
-            <View style={styles.accuracyStreakBadgeGroup}>
-              <View style={[styles.accuracyStreakBadgeCircle, styles.accuracyStreakBadgeCircleToday]}>
-                <Image
-                  source={require('@/assets/images/figma-icon-report-streak-star.png')}
-                  style={styles.accuracyStreakStarIcon}
-                  contentFit="contain"
-                />
-              </View>
-              <Text style={[styles.accuracyStreakBadgeLabel, styles.accuracyStreakBadgeLabelToday]}>오늘</Text>
+              ))}
+              {todayInStreak && (
+                <View style={styles.accuracyStreakBadgeGroup}>
+                  <View style={[styles.accuracyStreakBadgeCircle, styles.accuracyStreakBadgeCircleToday]}>
+                    <Image
+                      source={require('@/assets/images/figma-icon-report-streak-star.png')}
+                      style={styles.accuracyStreakStarIcon}
+                      contentFit="contain"
+                    />
+                  </View>
+                  <Text style={[styles.accuracyStreakBadgeLabel, styles.accuracyStreakBadgeLabelToday]}>오늘</Text>
+                </View>
+              )}
             </View>
-          </View>
+          )}
         </View>
       </View>
     </View>
   );
 }
 
-// 지표 비교 행 (node 243:1691/1705/1719) — 게이지는 값 대신 행별 플랫 에셋을, 판정 아이콘은
-// 기존 getVerdict() 임계값(diff<=9면 적중/근접, 그 외 과대·과소예측) 로직 그대로 사용해 선택한다.
+// 지표 비교 행 (node 243:1691/1705/1719) — 게이지는 값 대신 행별 플랫 에셋을, 판정 아이콘은 서버가
+// 내려준 verdict(HIT/CLOSE/UNDERESTIMATED/OVERESTIMATED)를 그대로 매핑해 선택한다.
 function ComparisonRow({
   label,
   forecast,
   actual,
+  verdict,
   gaugeSource,
 }: {
   label: string;
   forecast: number;
   actual: number;
+  verdict: VerificationVerdict;
   gaugeSource: number;
 }) {
-  const verdict = getVerdict(forecast, actual);
-  const isOk = Math.abs(forecast - actual) <= 9;
-
   return (
     <View style={styles.comparisonRow}>
       <Text style={styles.comparisonLabel}>{label}</Text>
@@ -684,15 +850,32 @@ function ComparisonRow({
 
       <View style={styles.comparisonVerdictCell}>
         <Image
-          source={
-            isOk
-              ? require('@/assets/images/figma-icon-report-verdict-ok.png')
-              : require('@/assets/images/figma-icon-report-verdict-warn.png')
-          }
+          source={VERDICT_ICON_SOURCES[verdict]}
           style={styles.comparisonVerdictIcon}
           contentFit="contain"
-          accessibilityLabel={verdict.label}
+          accessibilityLabel={VERDICT_LABELS[verdict]}
         />
+      </View>
+    </View>
+  );
+}
+
+// 그날 예보가 없어 대조하지 못한 지표(skipped) 행 — 판정 자체가 없으므로 예보/게이지/판정 아이콘
+// 칸을 채우지 않고, 실측값과 스킵 사유만 같은 행 레이아웃 안에 얹는다(테이블 구조는 그대로 유지).
+function SkippedComparisonRow({ label, actual, reason }: { label: string; actual: number; reason: string }) {
+  return (
+    <View style={styles.comparisonRow}>
+      <Text style={styles.comparisonLabel}>{label}</Text>
+
+      <View style={styles.comparisonMidGroup}>
+        <Text style={styles.comparisonSkippedReason} numberOfLines={1}>
+          {reason}
+        </Text>
+        <Text style={styles.comparisonActualValue}>{actual}</Text>
+      </View>
+
+      <View style={styles.comparisonVerdictCell}>
+        <Text style={styles.comparisonSkippedDash}>–</Text>
       </View>
     </View>
   );
@@ -725,23 +908,121 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
   );
 }
 
+// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543) — 셀피 로딩 화면(AnalyzingStep)에서
+// 검증 리포트(ReportStep)로 넘어가는 순간, 리포트 화면 위에 겹쳐 뜨는 "연속 출석 실패" 안내 모달.
+// 좌표는 카드(node 487:543, x:33 y:204 w:331.67 h:413) 원점 기준 상대값을 그대로 옮겼다.
+// 두 CTA 버튼은 실제 재개/재시작 백엔드 로직이 없어(위 STREAK_MODAL 상수 주석 참고) 모달을
+// 닫기만 한다.
+function StreakBrokenModal({ onDismiss }: { onDismiss: () => void }) {
+  const [fontsLoaded] = useFonts(STREAK_MODAL_FONTS);
+  // 폰트 로드 전엔 아예 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 타이틀이 줄바꿈되는 걸 막는다.
+  if (!fontsLoaded) return null;
+
+  return (
+    <Pressable style={styles.streakModalBackdrop} onPress={onDismiss}>
+      {/* 카드 자체는 탭해도 안 닫히도록 backdrop과 별개 Pressable로 감싼다(이벤트 버블 차단). */}
+      <Pressable style={styles.streakModalCard} onPress={() => {}}>
+        <Text style={styles.streakModalTitle}>아차! 연속 출석에 실패했어요</Text>
+        <Text style={styles.streakModalSubtitle}>다시 출석한다면 다시 얻을 수 있어요.</Text>
+
+        <View style={styles.streakModalPanel} />
+
+        {/* 요일 배지 5개 (node 487:246/247/252/269/271) */}
+        <View style={styles.streakModalDayRow}>
+          {STREAK_MODAL_DAYS.map((day, index) => (
+            <View key={index} style={styles.streakModalDayItem}>
+              <View
+                style={[
+                  styles.streakModalDayCircle,
+                  day.state === 'done' && styles.streakModalDayCircleDone,
+                  day.state === 'missed' && styles.streakModalDayCircleMissed,
+                  day.state === 'pending' && styles.streakModalDayCirclePending,
+                ]}>
+                <Image
+                  source={
+                    day.state === 'done'
+                      ? require('@/assets/images/figma-icon-streak-day-done.png')
+                      : day.state === 'missed'
+                        ? require('@/assets/images/figma-icon-streak-day-missed.png')
+                        : require('@/assets/images/figma-icon-streak-day-pending.png')
+                  }
+                  style={styles.streakModalDayFace}
+                  contentFit="contain"
+                />
+              </View>
+              <Text
+                style={[
+                  styles.streakModalDayLabel,
+                  day.state === 'missed' && styles.streakModalDayLabelMissed,
+                ]}>
+                {day.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544) */}
+        <Image
+          source={require('@/assets/images/figma-icon-streak-flag.png')}
+          style={styles.streakModalFlag}
+          contentFit="contain"
+        />
+
+        {/* CTA (node 471:1032/1033) */}
+        <Pressable
+          onPress={onDismiss}
+          style={({ pressed }) => [styles.streakModalPrimaryButton, pressed && styles.pressed]}>
+          <Text style={styles.streakModalPrimaryButtonText}>이어서 4일차부터 도전하기</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDismiss}
+          style={({ pressed }) => [styles.streakModalSecondaryButton, pressed && styles.pressed]}>
+          <Text style={styles.streakModalSecondaryButtonText}>1일차부터 다시 시작하기</Text>
+        </Pressable>
+      </Pressable>
+    </Pressable>
+  );
+}
+
 // node 241:604 "iPhone 17 - 14 (검증 리포트)" — 부모 테마와 무관하게 항상 Figma 지정
-// 연한 파란 배경(#DFEAFF)으로 렌더한다.
-function ReportStep({ onClose, onFinish }: { onClose: () => void; onFinish: () => void }) {
+// 연한 파란 배경(#DFEAFF)으로 렌더한다. data는 verifySelfie(POST /api/v1/skin/selfie) 성공 응답.
+function ReportStep({
+  data,
+  onClose,
+  onFinish,
+}: {
+  data: SelfieVerificationData;
+  onClose: () => void;
+  onFinish: () => void;
+}) {
   const router = useRouter();
+
+  // baseDate는 그 셀피가 대조한 예보의 날짜 — "어제/오늘"을 실제로 검증한 날짜 기준으로 표기한다
+  // (검증 요청은 항상 오늘 날짜로 보내지만, 서버가 과거 baseDate도 허용하므로 하드코딩하지 않는다).
+  const dayWord = useMemo(() => {
+    const today = getTodayDateString();
+    if (data.baseDate === today) return '오늘';
+    const yesterday = new Date(`${today}T00:00:00+09:00`);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayLabel = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    if (data.baseDate === yesterdayLabel) return '어제';
+    const parsed = new Date(`${data.baseDate}T00:00:00+09:00`);
+    return parsed.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+  }, [data.baseDate]);
+
   const dateLabel = useMemo(() => {
-    const now = new Date();
-    const formatted = now.toLocaleDateString('ko-KR', {
+    const parsed = new Date(`${data.baseDate}T00:00:00+09:00`);
+    const formatted = parsed.toLocaleDateString('ko-KR', {
       month: 'long',
       day: 'numeric',
       weekday: 'long',
     });
     return `${formatted} · 셀피 검증`;
-  }, []);
+  }, [data.baseDate]);
 
   const handleTabNavigate = (item: TabItem) => {
     onClose();
-    if (item.name !== 'index') router.push(item.href);
+    if (item.name !== 'index') router.push(item.href as Href);
   };
 
   return (
@@ -775,15 +1056,17 @@ function ReportStep({ onClose, onFinish }: { onClose: () => void; onFinish: () =
           <Text style={styles.reportDateLabel}>{dateLabel}</Text>
         </View>
 
-        {/* "어제 예보, 이만큼 맞았어요!" (node 243:1393, "이만큼"만 블루) */}
+        {/* "어제 예보, 이만큼 맞았어요!" (node 243:1393, "이만큼"만 블루) — 날짜 단어는 실제 검증한
+            baseDate 기준(dayWord)으로, 항상 "어제"라고 못 박지 않는다. */}
         <Text style={styles.reportTitle}>
-          어제 예보,{'\n'}
+          {dayWord} 예보,{'\n'}
           <Text style={styles.reportTitleAccent}>이만큼</Text> 맞았어요!
         </Text>
 
         <AccuracyCard />
 
-        {/* 비교 테이블 (node 243:1683, w:362, radius:16, border: Pale Sky 22%) */}
+        {/* 비교 테이블 (node 243:1683, w:362, radius:16, border: Pale Sky 22%) — verifications는
+            항상 1개 이상, skipped는 그날 예보가 없어 대조하지 못한 지표(있을 수도, 없을 수도). */}
         <View style={styles.comparisonSection}>
           <View style={styles.comparisonHeaderRow}>
             <Text style={[styles.comparisonHeaderLabel, styles.comparisonHeaderIndicatorCell]}>지표</Text>
@@ -794,20 +1077,35 @@ function ReportStep({ onClose, onFinish }: { onClose: () => void; onFinish: () =
             <Text style={[styles.comparisonHeaderLabel, styles.comparisonHeaderVerdictCell]}>판정</Text>
           </View>
 
-          {COMPARISON_ROWS.map((row, index) => (
-            <View key={row.key}>
-              <ComparisonRow
-                label={row.label}
-                forecast={row.forecast}
-                actual={row.actual}
-                gaugeSource={COMPARISON_GAUGE_ASSETS[index]}
-              />
-              {index < COMPARISON_ROWS.length - 1 && <View style={styles.comparisonRowDivider} />}
-            </View>
-          ))}
+          {data.verifications.map((row, index) => {
+            const isLast = index === data.verifications.length - 1 && data.skipped.length === 0;
+            return (
+              <View key={row.metric}>
+                <ComparisonRow
+                  label={metricLabel(row.metric)}
+                  forecast={row.forecast.score}
+                  actual={row.measured.score}
+                  verdict={row.verdict}
+                  gaugeSource={COMPARISON_GAUGE_ASSETS[index % COMPARISON_GAUGE_ASSETS.length]}
+                />
+                {!isLast && <View style={styles.comparisonRowDivider} />}
+              </View>
+            );
+          })}
+          {data.skipped.map((row, index) => {
+            const isLast = index === data.skipped.length - 1;
+            return (
+              <View key={row.metric}>
+                <SkippedComparisonRow label={metricLabel(row.metric)} actual={row.measured.score} reason={row.reason} />
+                {!isLast && <View style={styles.comparisonRowDivider} />}
+              </View>
+            );
+          })}
         </View>
 
-        {/* 인사이트 (node 246:562/567/568) — 카드 배경 없이 페이지 위에 바로 배치 */}
+        {/* 인사이트 (node 246:562/567/568) — 카드 배경 없이 페이지 위에 바로 배치.
+            본문은 data.model.message(개인 가중치가 이번 검증으로 어떻게 보정됐는지 서버가 만든
+            문장) — model.updated가 false여도 서버가 상황에 맞는 메시지를 내려주므로 그대로 쓴다. */}
         <View style={styles.insightSparklePill}>
           <Image
             source={require('@/assets/images/figma-icon-report-sparkle.png')}
@@ -816,7 +1114,7 @@ function ReportStep({ onClose, onFinish }: { onClose: () => void; onFinish: () =
           />
         </View>
         <Text style={styles.insightTitle}>내 모델이 한 걸음 정밀해졌어요</Text>
-        <Text style={styles.insightBody}>어제와 오늘 비교 데이터를 가시적으로 적어주기?</Text>
+        <Text style={styles.insightBody}>{data.model.message}</Text>
       </ScrollView>
 
       <View style={styles.reportFooter}>
@@ -843,47 +1141,160 @@ type SelfieFlowStepsProps = {
 // 이 안쪽 컴포넌트에 두면 매번 새로 열릴 때마다 자연스럽게 1단계로 초기화되어,
 // 별도의 "열릴 때 리셋" 이펙트가 필요 없다.
 // HOME(index.tsx)·온보딩(onboarding-flow.tsx)과 동일하게 402x874 고정 캔버스로 감싼다.
-// 이 래퍼가 없으면 넓은 뷰포트(데스크톱 웹 미리보기 등)에서 모든 요소가 실제 기기 대비
-// 작게 렌더돼, 텍스트 등 개별 수치는 Figma와 정확히 일치해도 전체 비율이 달라 보인다.
+// 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링). 이 래퍼가
+// 없으면 넓은 뷰포트(데스크톱 웹 미리보기 등)에서 모든 요소가 실제 기기 대비 작게 렌더돼,
+// 텍스트 등 개별 수치는 Figma와 정확히 일치해도 전체 비율이 달라 보인다.
+type VerifyRequestState =
+  | { status: 'idle' }
+  | { status: 'pending' }
+  | { status: 'success'; data: SelfieVerificationData };
+
 function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
+  const [verifyState, setVerifyState] = useState<VerifyRequestState>({ status: 'idle' });
+  // 셀피 로딩 화면(AnalyzingStep)에서 리포트(ReportStep)로 넘어가는 순간 한 번 뜨는 "연속 출석
+  // 실패" 팝업(node 487:273) — 모달이 이 컴포넌트와 함께 매번 새로 마운트되므로(위 주석 참고)
+  // true로 시작해도 매번 출입할 때마다 다시 뜬다.
+  const [showStreakModal, setShowStreakModal] = useState(true);
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
+  const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
+
+  // 촬영을 다시 하도록 1단계로 되돌린다 — 400(SELFIE_IMAGE_INVALID/INVALID_INPUT)이나 502/504
+  // 재시도까지 실패했을 때, 행이 생기지 않아 재시도가 안전하므로(같은 baseDate로 다시 보내도 됨)
+  // 새로 촬영해서 다시 시도할 수 있게 한다.
+  const rollbackToCapture = () => {
+    setImageUri(null);
+    setVerifyState({ status: 'idle' });
+    setStep(1);
+  };
+
+  // POST /api/v1/skin/selfie(verifySelfie)는 2단계(AnalyzingStep) 진입과 동시에 SelfieFlowSteps가
+  // 직접 보낸다 — AnalyzingStep은 순수 표시 전담, CaptureStep은 촬영/선택만 담당한다.
+  // 단, 개발자 프리패스 더미 이미지는 실제 얼굴이 아니라 서버 분석이 항상 실패하므로, 이 경우엔
+  // 실제 API를 호출하지 않고 더미 성공 응답으로 대신해 3단계(ReportStep) UI를 확인할 수 있게 한다.
+  useEffect(() => {
+    if (step !== 2 || !imageUri) return;
+    let cancelled = false;
+    setVerifyState({ status: 'pending' });
+
+    if (imageUri === DEV_BYPASS_DUMMY_URI) {
+      const timer = setTimeout(() => {
+        if (cancelled) return;
+        setVerifyState({ status: 'success', data: createDevBypassMockVerificationData() });
+        setTimeout(() => {
+          if (!cancelled) setStep(3);
+        }, REPORT_TRANSITION_DELAY_MS);
+      }, DEV_BYPASS_MOCK_DELAY_MS);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }
+
+    verifySelfie(TEMP_USER_ID, getTodayDateString(), imageUri)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setVerifyState({ status: 'success', data });
+        // 배지가 전부 "완료"로 바뀐 걸 잠깐 보여준 다음 리포트로 넘어간다.
+        setTimeout(() => {
+          if (!cancelled) setStep(3);
+        }, REPORT_TRANSITION_DELAY_MS);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        handleVerifyError(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, imageUri]);
+
+  // 예외 코드별 사용자 고지 + 후속 동작. 코드 문서는 SelfieVerificationErrorCode(api/skin.ts) 참고.
+  const handleVerifyError = (error: unknown) => {
+    if (error instanceof SelfieVerificationApiError) {
+      switch (error.code) {
+        case 'VERIFICATION_ALREADY_DONE':
+          showAlert('오늘은 이미 검증을 완료했어요', '셀피 검증은 하루에 한 번만 할 수 있어요.', [
+            { text: '확인', onPress: onClose },
+          ]);
+          return;
+        case 'SKIN_FORECAST_NOT_FOUND':
+          showAlert('수면 기록이 없어 예보와 대조할 수 없어요', '수면 데이터를 먼저 업로드해 주세요.', [
+            { text: '확인', onPress: onClose },
+          ]);
+          return;
+        case 'SELFIE_IMAGE_INVALID':
+        case 'INVALID_INPUT':
+          showAlert('사진을 다시 촬영해주세요', '얼굴이 잘 나오도록 다시 시도해 주세요.', [
+            { text: '확인', onPress: rollbackToCapture },
+          ]);
+          return;
+        case 'USER_NOT_FOUND':
+        case 'USER_ID_HEADER_INVALID':
+          showAlert('사용자 정보를 확인할 수 없어요', '앱을 다시 시작한 뒤 시도해 주세요.', [
+            { text: '확인', onPress: onClose },
+          ]);
+          return;
+        case 'SELFIE_ANALYSIS_FAILED':
+        case 'SELFIE_ANALYSIS_TIMEOUT':
+          showAlert('분석에 실패했어요', '다시 촬영해서 시도해 주세요.', [
+            { text: '확인', onPress: rollbackToCapture },
+          ]);
+          return;
+      }
+    }
+    showAlert('일시적인 오류가 발생했어요', '잠시 후 다시 시도해 주세요.', [
+      { text: '확인', onPress: rollbackToCapture },
+    ]);
+  };
 
   if (step === 1) {
     return (
-      <View style={styles.screen}>
-        <LinearGradient
-          colors={[CAPTURE_BG_TOP, CAPTURE_BG_BOTTOM]}
-          style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <CaptureStep
-            onClose={onClose}
-            onCaptured={(uri) => {
-              setImageUri(uri);
-              setStep(2);
-            }}
-          />
-        </LinearGradient>
-      </View>
+      <SafeAreaView style={[styles.screen, { backgroundColor: CAPTURE_BG_BOTTOM }]}>
+        <View style={canvasWrapperStyle}>
+          <LinearGradient colors={[CAPTURE_BG_TOP, CAPTURE_BG_BOTTOM]} style={[styles.canvas, canvasScaleStyle]}>
+            <CaptureStep
+              onClose={onClose}
+              onCaptured={(uri) => {
+                setImageUri(uri);
+                setStep(2);
+              }}
+            />
+          </LinearGradient>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (step === 2) {
     return (
-      <View style={styles.screen}>
-        <ThemedView style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-          <AnalyzingStep imageUri={imageUri} onDone={() => setStep(3)} />
-        </ThemedView>
-      </View>
+      <SafeAreaView style={[styles.screen, { backgroundColor: Colors.white }]}>
+        <View style={canvasWrapperStyle}>
+          <ThemedView style={[styles.canvas, canvasScaleStyle]}>
+            <AnalyzingStep imageUri={imageUri} pending={verifyState.status !== 'success'} />
+          </ThemedView>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  // step 3은 verifyState.status === 'success'일 때만 진입한다(위 useEffect가 성공 시에만 setStep(3)).
+  if (verifyState.status !== 'success') return null;
+
   return (
-    <View style={styles.screen}>
-      <ThemedView style={[styles.canvas, { marginTop: insets.top, marginBottom: insets.bottom }]}>
-        <ReportStep onClose={onClose} onFinish={onFinish} />
-      </ThemedView>
-    </View>
+    <SafeAreaView style={[styles.screen, { backgroundColor: REPORT_BG }]}>
+      <View style={canvasWrapperStyle}>
+        <ThemedView style={[styles.canvas, canvasScaleStyle]}>
+          <ReportStep data={verifyState.data} onClose={onClose} onFinish={onFinish} />
+          {showStreakModal && <StreakBrokenModal onDismiss={() => setShowStreakModal(false)} />}
+        </ThemedView>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -1477,6 +1888,155 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // "셀피 리포트 팝업" > 모달(node 487:273/543) — 리포트 화면(캔버스 402x874) 전체를 덮는 반투명
+  // 백드롭 + 그 위에 뜨는 카드. ReportStep과 같은 캔버스 좌표계 위에 절대 배치된다.
+  streakModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: STREAK_MODAL_BACKDROP,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  // 카드(node 487:543, x:33 y:204 w:331.67 h:413, radius:35.8) — Figma는 배경에 blur(5.11px)
+  // 프로스티드 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로
+  // 근사했다.
+  streakModalCard: {
+    position: 'absolute',
+    left: 33,
+    top: 204,
+    width: 331.67,
+    height: 413,
+    backgroundColor: Colors.white,
+    borderRadius: 36,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  // "아차! 연속 출석에 실패했어요" (node 471:1028, 카드 원점 기준 x:28.5 y:45 w:256 h:25)
+  streakModalTitle: {
+    position: 'absolute',
+    left: 28.5,
+    top: 45,
+    width: 256,
+    fontSize: 20,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_TITLE,
+  },
+  // "다시 출석한다면 다시 얻을 수 있어요." (node 471:1029, x:28.5 y:79 w:246 h:19)
+  streakModalSubtitle: {
+    position: 'absolute',
+    left: 28.5,
+    top: 79,
+    width: 246,
+    fontSize: 15,
+    fontFamily: PRETENDARD_REGULAR,
+    color: STREAK_MODAL_SUBTITLE,
+  },
+  // 연한 블루 배경 패널 (node 471:1030, x:8.5 y:107 w:317 h:139, radius:9) — 요일 배지 행의 배경
+  streakModalPanel: {
+    position: 'absolute',
+    left: 8.5,
+    top: 107,
+    width: 317,
+    height: 139,
+    backgroundColor: STREAK_MODAL_PANEL_BG,
+    borderRadius: 9,
+  },
+  // 요일 배지 행 (node 487:246 등, x:15.84 y:133.58 w:286.25) — 5개 항목 균등 배치
+  streakModalDayRow: {
+    position: 'absolute',
+    left: 15.84,
+    top: 133.58,
+    width: 286.25,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  streakModalDayItem: {
+    width: 53.7,
+    alignItems: 'center',
+    gap: 6,
+  },
+  // 배지 원(53.7x53.7) — 상태별 배경/테두리는 인라인 스타일로 덧붙인다
+  streakModalDayCircle: {
+    width: 53.7,
+    height: 53.7,
+    borderRadius: 26.85,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  streakModalDayCircleDone: {
+    backgroundColor: STREAK_MODAL_DAY_DONE_BG,
+    borderWidth: 1.5,
+    borderColor: STREAK_MODAL_DAY_DONE_BORDER,
+  },
+  streakModalDayCircleMissed: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: STREAK_MODAL_DAY_MISSED_BORDER,
+  },
+  streakModalDayCirclePending: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: STREAK_MODAL_DAY_PENDING_BORDER,
+  },
+  streakModalDayFace: {
+    width: 40,
+    height: 34,
+  },
+  streakModalDayLabel: {
+    fontSize: 13,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_LABEL_MUTED,
+  },
+  streakModalDayLabelMissed: {
+    color: STREAK_MODAL_DAY_MISSED_BORDER,
+  },
+  // 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544, 카드 원점 기준 x:222 y:116 w:14 h:14)
+  streakModalFlag: {
+    position: 'absolute',
+    left: 222,
+    top: 116,
+    width: 14,
+    height: 14,
+  },
+  // "이어서 4일차부터 도전하기" 버튼 (node 471:1032, x:21 y:261 w:283 h:55, radius:26)
+  streakModalPrimaryButton: {
+    position: 'absolute',
+    left: 21,
+    top: 261,
+    width: 283,
+    height: 55,
+    borderRadius: 26,
+    backgroundColor: STREAK_MODAL_PRIMARY_BTN_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakModalPrimaryButtonText: {
+    fontSize: 16,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: Colors.white,
+  },
+  // "1일차부터 다시 시작하기" 버튼 (node 471:1033, x:21 y:331 w:283 h:55, radius:26)
+  streakModalSecondaryButton: {
+    position: 'absolute',
+    left: 21,
+    top: 331,
+    width: 283,
+    height: 55,
+    borderRadius: 26,
+    backgroundColor: STREAK_MODAL_SECONDARY_BTN_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakModalSecondaryButtonText: {
+    fontSize: 16,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_TITLE,
+  },
+
   // 3단계: 검증 리포트 — node 241:604 "iPhone 17 - 14 (검증 리포트)"를 좌표 그대로 옮겼다.
   reportContainer: {
     flex: 1,
@@ -1560,6 +2120,25 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     paddingHorizontal: 18,
     backgroundColor: REPORT_ACCURACY_CARD_BG,
+  },
+  // 로딩/에러/빈 상태(NO_VERIFICATION) 공용 — 링/스트릭 레이아웃 대신 가운데 정렬된 짧은 문구만 보여준다.
+  accuracyCardCentered: {
+    minHeight: 118,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  accuracyEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: REPORT_NAVY,
+    textAlign: 'center',
+  },
+  accuracyEmptyText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: REPORT_DOLPHIN,
+    textAlign: 'center',
   },
   // "div"(node 243:1508, gap:18)
   accuracyTopRow: {
@@ -1762,6 +2341,18 @@ const styles = StyleSheet.create({
   comparisonVerdictIcon: {
     width: 15,
     height: 15,
+  },
+  // skipped 행 전용 — 예보/게이지 대신 스킵 사유를 같은 자리(comparisonMidGroup)에 얹는다.
+  comparisonSkippedReason: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '500',
+    color: REPORT_VALUE_MUTED,
+  },
+  comparisonSkippedDash: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: REPORT_VALUE_MUTED,
   },
   // 인사이트 스파클 필 (node 246:562, padding: 3px 9px, fill: Blue Ribbon 10%, radius: pill)
   // 비교 테이블과의 간격(y:588 - 테이블 하단 ≈9px).

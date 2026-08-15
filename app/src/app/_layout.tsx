@@ -1,8 +1,12 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useState } from "react";
+import { useColorScheme } from "react-native";
 
 import { checkInAttendance, type AttendanceExpInfo } from '@/api/game';
 import { checkHealth } from '@/api/health';
@@ -82,7 +86,7 @@ export default function TabLayout() {
         console.log(`✅ 백엔드 연결 성공: status - ${data.status}`);
       })
       .catch((error) => {
-        console.error('❌ 백엔드 연결 실패:', error.message);
+        console.error("❌ 백엔드 연결 실패:", error.message);
       });
     loadEntryRoute();
   }, []);
@@ -119,7 +123,7 @@ export default function TabLayout() {
   const attendanceResolved = attendanceSeen || attendanceCheckIn.status === 'skip';
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {(entryRoute.kind === 'needs-consent' || entryRoute.kind === 'error') && (
         <OnboardingFlow onComplete={loadEntryRoute} />
@@ -142,7 +146,10 @@ export default function TabLayout() {
       {pastOnboarding && attendanceResolved && (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="my-model" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen
+            name="my-model"
+            options={{ animation: "slide_from_right" }}
+          />
         </Stack>
       )}
     </ThemeProvider>

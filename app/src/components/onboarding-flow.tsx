@@ -1,17 +1,21 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { completeUserOnboarding, saveUserConsent } from '@/api/user';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { Spacing } from '@/constants/theme';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { useTheme } from '@/hooks/use-theme';
+import {
+  initHealthKit,
+  getSleepData,
+  getHrvData,
+  getRestingHeartRateData,
+  uploadSleepSession,
+} from '@/hooks/useHealthData';
 
 // ONB-01~05 온보딩(공통) 흐름 — 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서
 // AppTabs 대신 렌더된다.
@@ -23,6 +27,9 @@ import { useTheme } from '@/hooks/use-theme';
 // 좌표·색상·타이포를 그대로 옮겼고, 부모 테마(다크모드)와 무관하게 항상 Figma 지정 배경(#FFFFFF)
 // 으로 렌더한다. 네 화면 모두 본문(제목/리스트/CTA 등)이 프레임의 자식 레이어가 아니라 같은 Figma
 // 캔버스 위에 프레임과 겹쳐 배치된 loose 오브젝트라, 프레임 원점을 기준으로 좌표를 역산해 옮겼다.
+// ONB-02(SleepStep)의 "연동하기"는 실제 HealthKit 권한을 요청하지 않고 화면만 ONB-03
+// (HealthConnectStep)으로 넘긴다 — 실제 iOS 시스템 권한 팝업은 ONB-03의 "건강 앱 연동하기"를
+// 눌러야 handleConnectHealthKit을 통해 initHealthKit()으로 뜬다.
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 const STEP_COUNT = 4;
@@ -58,11 +65,9 @@ const PRETENDARD_FONTS = {
   [PRETENDARD_BOLD]: require('@/assets/fonts/Pretendard-Bold.otf'),
 };
 
-type HealthKitStatus = 'idle' | 'connected' | 'skipped';
-
 // "온보딩 2"(node 256:573) 지표 리스트 문구·순서 그대로. 아이콘은 4항목 모두 동일한 흰 체크
 // (componentId 243:638, app/assets/images/figma-icon-onboarding-check.png)라 icon/iconColor는
-// HealthAccessModal(Figma 데이터 없는 별도 화면) 표시용으로만 쓰인다.
+// 참고용으로만 쓰인다.
 const SLEEP_METRICS = [
   { label: '야간 각성 횟수', icon: '👁️', iconColor: '#FF9F0A' },
   { label: '깊은 수면·REM·코어', icon: '🌙', iconColor: '#5E5CE6' },
@@ -95,37 +100,6 @@ const HEALTH_DATA_ITEMS = [
     icon: require('@/assets/images/figma-icon-onboarding-health-heart.png'),
   },
 ] as const;
-
-function PrimaryButton({
-  label,
-  onPress,
-  disabled,
-  fullWidth = true,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  fullWidth?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => pressed && !disabled && styles.pressed}>
-      <ThemedView
-        type="text"
-        style={[
-          styles.primaryButton,
-          !fullWidth && styles.primaryButtonCompact,
-          disabled && styles.buttonDisabled,
-        ]}>
-        <ThemedText themeColor="background" style={styles.primaryButtonText}>
-          {label}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-}
 
 // ONB-01("온보딩 1", node 252:139): 앱 최초 실행 시 서비스 가치를 전달한다.
 // 텍스트/색상/좌표는 모두 Figma 노드 값을 그대로 옮겼고, 부모 테마와 무관하게 항상
@@ -269,20 +243,11 @@ function PrivacyStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
   );
 }
 
-// ONB-02("온보딩 2", node 256:573): HealthKit 수면 데이터 읽기 권한을 요청한다.
+// ONB-02("온보딩 2", node 256:573): HealthKit 연동 안내 화면. 실제 권한 요청은 하지 않고
+// "연동하기" 버튼을 누르면 ONB-03(HealthConnectStep)으로 화면만 이동한다 — 실제 iOS 시스템
+// 권한 팝업은 ONB-03의 "건강 앱 연동하기"를 눌러야 뜬다.
 // 텍스트/색상/좌표/에셋은 모두 Figma 노드 값을 그대로 옮겼다.
-function SleepStep({
-  status,
-  onOpenHealthAccess,
-  onBack,
-}: {
-  status: HealthKitStatus;
-  onOpenHealthAccess: () => void;
-  onBack: () => void;
-}) {
-  const connectLabel = status === 'connected' ? '연결됨' : '연동하기';
-  const connected = status === 'connected';
-
+function SleepStep({ onOpenHealthAccess, onBack }: { onOpenHealthAccess: () => void; onBack: () => void }) {
   return (
     <View style={styles.figmaCanvas}>
       <FigmaStepHeader onBack={onBack} filledSegments={3} />
@@ -338,28 +303,28 @@ function SleepStep({
       {/* "연동하기" 버튼 (node 260:640, x:231 y:707 w:127 h:50, radius:26.5) */}
       <Pressable
         onPress={onOpenHealthAccess}
-        disabled={connected}
-        style={({ pressed }) => [
-          styles.sleepConnectButton,
-          connected && styles.buttonDisabled,
-          pressed && !connected && styles.pressed,
-        ]}>
-        <Text style={styles.sleepConnectButtonText}>{connectLabel}</Text>
+        style={({ pressed }) => [styles.sleepConnectButton, pressed && styles.pressed]}>
+        <Text style={styles.sleepConnectButtonText}>연동하기</Text>
       </Pressable>
     </View>
   );
 }
 
 // ONB-03("온보딩 3", node 260:643): HealthKit 권한 상세 확인 + 최종 CTA.
-// 본문(제목·설명·"읽어올 데이터" 카드·CTA)은 프레임의 자식이 아니라 같은 캔버스에서 프레임과
-// 겹쳐 배치된 loose 오브젝트(node 261:676/677/678/699)였다 — 프레임 원점 기준 좌표로 역산해 옮겼다.
+// 본문(제목·설명·읽어올 데이터 리스트·CTA)은 프레임의 자식이 아니라 같은 캔버스에서 프레임과
+// 겹쳐 배치된 loose 오브젝트(node 261:676/677/699, 541:2864)였다 — 프레임 원점 기준 좌표로
+// 역산해 옮겼다. "건강 앱 연동하기"를 눌러야 비로소 실제 iOS 권한 팝업이 뜬다(onConnect).
+// "나중에 할게요"는 권한 요청 없이 바로 온보딩을 완료시킨다(onSkip). 두 버튼 모두 완료 처리
+// 중에는 completing으로 중복 탭을 막는다.
 function HealthConnectStep({
   onBack,
-  onFinish,
+  onConnect,
+  onSkip,
   completing,
 }: {
   onBack: () => void;
-  onFinish: () => void;
+  onConnect: () => void;
+  onSkip: () => void;
   completing: boolean;
 }) {
   return (
@@ -374,7 +339,7 @@ function HealthConnectStep({
       </Text>
 
       {/* 읽어올 데이터 리스트 (node 541:2864 + 아이콘 rect 4개, x:45 y:287) — 카드 배경 없이
-          침대/하트 아이콘 + 제목/부제 두 줄로 구성된다(구 카드+체크박스 플레이스홀더를 대체). */}
+          침대/하트 아이콘 + 제목/부제 두 줄로 구성된다. */}
       <View style={styles.healthList}>
         {HEALTH_DATA_ITEMS.map((item) => (
           <View key={item.title} style={styles.healthListRow}>
@@ -387,11 +352,12 @@ function HealthConnectStep({
         ))}
       </View>
 
-      {/* CTA (node 541:2855, x:28 y:705 w:345, gap:8) — 연결/스킵 모두 온보딩을 완료시킨다
-          (ONB-02 HealthAccessModal의 허용/거부 수렴 패턴과 동일). 완료 처리 중에는 중복 탭 방지. */}
+      {/* CTA (node 541:2855, x:28 y:705 w:345, gap:8) — "건강 앱 연동하기"는 실제 HealthKit
+          권한 팝업을 띄운 뒤 온보딩을 완료시키고, "나중에 할게요"는 권한 요청 없이 바로
+          온보딩을 완료시킨다. 완료 처리 중에는 중복 탭 방지. */}
       <View style={styles.healthCta}>
         <Pressable
-          onPress={onFinish}
+          onPress={onConnect}
           disabled={completing}
           style={({ pressed }) => [
             styles.healthPrimaryButton,
@@ -401,7 +367,7 @@ function HealthConnectStep({
           <Text style={styles.healthPrimaryButtonText}>{completing ? '처리 중...' : '건강 앱 연동하기'}</Text>
         </Pressable>
         <Pressable
-          onPress={onFinish}
+          onPress={onSkip}
           disabled={completing}
           style={({ pressed }) => [
             styles.healthGhostButton,
@@ -412,112 +378,6 @@ function HealthConnectStep({
         </Pressable>
       </View>
     </View>
-  );
-}
-
-// 와이어프레임 3번째 이미지: '연동하기'를 누르면 뜨는 iOS 건강 접근 권한 시트를 본뜬 커스텀 모달.
-function HealthAccessModal({
-  visible,
-  onAllow,
-  onDeny,
-}: {
-  visible: boolean;
-  onAllow: () => void;
-  onDeny: () => void;
-}) {
-  const theme = useTheme();
-  const [toggles, setToggles] = useState<boolean[]>(() => SLEEP_METRICS.map(() => true));
-  const allOn = toggles.every(Boolean);
-  const anyOn = toggles.some(Boolean);
-
-  const setAll = (value: boolean) => setToggles(SLEEP_METRICS.map(() => value));
-  const toggleAt = (index: number) =>
-    setToggles((prev) => prev.map((value, i) => (i === index ? !value : value)));
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onDeny}>
-      <View style={styles.modalBackdrop}>
-        <ThemedView style={styles.modalSheet}>
-          <View style={[styles.modalGrabber, { backgroundColor: theme.backgroundSelected }]} />
-
-          <View style={[styles.modalNavBar, { borderBottomColor: theme.backgroundElement }]}>
-            <ThemedText type="smallBold">건강 접근</ThemedText>
-          </View>
-
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalScrollContent}
-            showsVerticalScrollIndicator={false}>
-            <View style={styles.modalHeartCircle}>
-              <ThemedText style={styles.modalHeartIcon}>♥</ThemedText>
-            </View>
-
-            <ThemedText type="subtitle" style={styles.centerText}>
-              건강
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
-              &apos;Sleep2Skin&apos;이 사용자의 건강 데이터에 접근하여 업데이트하려고 합니다.
-            </ThemedText>
-
-            <ThemedView type="backgroundElement" style={styles.modalSection}>
-              <Pressable
-                onPress={() => setAll(!allOn)}
-                style={({ pressed }) => [styles.modalSectionRow, pressed && styles.pressed]}>
-                <ThemedText type="smallBold" style={styles.modalAllOnLabel}>
-                  모두 켜기
-                </ThemedText>
-                <Switch
-                  value={allOn}
-                  onValueChange={setAll}
-                  trackColor={{ true: '#34C759', false: theme.backgroundSelected }}
-                />
-              </Pressable>
-            </ThemedView>
-
-            <ThemedText type="small" themeColor="textSecondary" style={styles.modalSectionLabel}>
-              &apos;Sleep2Skin&apos;의 읽기 항목
-            </ThemedText>
-
-            <ThemedView type="backgroundElement" style={styles.modalSection}>
-              {SLEEP_METRICS.map((metric, index) => (
-                <View key={metric.label}>
-                  <View style={styles.modalSectionRow}>
-                    <View style={[styles.modalIconBadge, { backgroundColor: metric.iconColor }]}>
-                      <ThemedText style={styles.modalIconGlyph}>{metric.icon}</ThemedText>
-                    </View>
-                    <ThemedText type="small" style={styles.modalRowLabel}>
-                      {metric.label}
-                    </ThemedText>
-                    <Switch
-                      value={toggles[index]}
-                      onValueChange={() => toggleAt(index)}
-                      trackColor={{ true: '#34C759', false: theme.backgroundSelected }}
-                    />
-                  </View>
-                  {index < SLEEP_METRICS.length - 1 && (
-                    <View
-                      style={[styles.modalRowDivider, { backgroundColor: theme.backgroundSelected }]}
-                    />
-                  )}
-                </View>
-              ))}
-            </ThemedView>
-          </ScrollView>
-
-          <View style={styles.modalActions}>
-            <PrimaryButton label="적용" onPress={onAllow} disabled={!anyOn} />
-            <Pressable
-              onPress={onDeny}
-              hitSlop={8}
-              style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedText type="link" themeColor="textSecondary" style={styles.centerText}>
-                적용 안 함
-              </ThemedText>
-            </Pressable>
-          </View>
-        </ThemedView>
-      </View>
-    </Modal>
   );
 }
 
@@ -538,38 +398,71 @@ export function OnboardingFlow({
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(PRETENDARD_FONTS);
   const [step, setStep] = useState(initialStep);
-  const [healthStatus, setHealthStatus] = useState<HealthKitStatus>('idle');
-  const [healthModalVisible, setHealthModalVisible] = useState(false);
   const [completing, setCompleting] = useState(false);
 
-  // ONB-03 CTA(연결/스킵 공용) — 온보딩 완료 시점에 개인정보 동의와 온보딩 완료 처리를 순서대로 호출한다.
-  // API 실패는 axios 인터셉터가 이미 로깅하므로, 실패해도 온보딩 자체는 막지 않고 앱으로 진입시킨다.
-  const handleFinishOnboarding = async () => {
-    if (completing) return;
-    setCompleting(true);
+  // 계정 상태 완료 처리(개인정보 동의 + 온보딩 완료 플래그) — HealthKit 연결/스킵 두 경우 모두
+  // 마지막에 호출한다. API 실패는 axios 인터셉터가 이미 로깅하므로, 실패해도 온보딩 자체는
+  // 막지 않고 앱으로 진입시킨다.
+  const finishAccountSetup = async () => {
     try {
       await saveUserConsent(TEMP_USER_ID);
       await completeUserOnboarding(TEMP_USER_ID);
     } catch {
       // no-op: 에러는 axios 인터셉터가 이미 로깅했다.
-    } finally {
-      setCompleting(false);
-      onComplete();
     }
   };
 
-  const handleAllowHealthAccess = () => {
-    // TODO(ONB-02): 실제 HealthKit 읽기 권한 요청(react-native-health 등)으로 교체한다.
-    setHealthStatus('connected');
-    setHealthModalVisible(false);
-    setStep(3);
+  // ONB-03 "건강 앱 연동하기" — 여기서 실제 iOS 권한 팝업이 뜬다. 권한 응답 후(성공이든 실패든)
+  // 수면/HRV/안정시 심박 데이터를 조회해 백엔드로 업로드하고, 그 다음에야 계정 완료 처리
+  // (동의/온보딩완료)를 진행한다.
+  const handleConnectHealthKit = async () => {
+    if (completing) return;
+    setCompleting(true);
+
+    const error = await initHealthKit();
+    if (error) {
+      console.log('❌ HealthKit 권한 요청 실패:', error);
+    }
+
+    try {
+      const data = await getSleepData();
+      console.log('✅ 수면 데이터 가져오기 성공:', data);
+    } catch (e) {
+      console.log('❌ 수면 데이터 가져오기 실패:', e);
+    }
+
+    try {
+      const hrvData = await getHrvData();
+      console.log('✅ HRV 데이터 가져오기 성공:', hrvData);
+    } catch (e) {
+      console.log('❌ HRV 데이터 가져오기 실패:', e);
+    }
+
+    try {
+      const restingHrData = await getRestingHeartRateData();
+      console.log('✅ 안정시 심박수 가져오기 성공:', restingHrData);
+    } catch (e) {
+      console.log('❌ 안정시 심박수 가져오기 실패:', e);
+    }
+
+    // uploadSleepSession은 내부에서 모든 에러를 처리하므로 실패해도 다음 단계는 항상 진행된다.
+    await uploadSleepSession();
+
+    await finishAccountSetup();
+
+    setCompleting(false);
+    onComplete();
   };
 
-  const handleDenyHealthAccess = () => {
-    // 연결(yes)·미연결(no) 모두 다음 단계로 수렴한다 (docs ONB-02 비고).
-    setHealthStatus('skipped');
-    setHealthModalVisible(false);
-    setStep(3);
+  // ONB-03 "나중에 할게요" — HealthKit 권한을 요청하지 않고 계정 완료 처리만 한 뒤 스킵한다.
+  const handleSkipHealthKit = async () => {
+    if (completing) return;
+    setCompleting(true);
+
+    await finishAccountSetup();
+
+    setCompleting(false);
+    onComplete();
   };
 
   // Figma 지정 Pretendard 폰트가 로드되기 전엔 시스템 폰트로 잘못된 크기가 잠깐 그려질 수 있으므로,
@@ -587,23 +480,18 @@ export function OnboardingFlow({
           {step === 0 && <ValueStep onNext={() => setStep(1)} />}
           {step === 1 && <PrivacyStep onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && (
-            <SleepStep
-              status={healthStatus}
-              onOpenHealthAccess={() => setHealthModalVisible(true)}
-              onBack={() => setStep(1)}
-            />
+            <SleepStep onOpenHealthAccess={() => setStep(3)} onBack={() => setStep(1)} />
           )}
           {step === 3 && (
-            <HealthConnectStep onBack={() => setStep(2)} onFinish={handleFinishOnboarding} completing={completing} />
+            <HealthConnectStep
+              onBack={() => setStep(2)}
+              onConnect={handleConnectHealthKit}
+              onSkip={handleSkipHealthKit}
+              completing={completing}
+            />
           )}
         </ThemedView>
       </View>
-
-      <HealthAccessModal
-        visible={healthModalVisible}
-        onAllow={handleAllowHealthAccess}
-        onDeny={handleDenyHealthAccess}
-      />
     </SafeAreaView>
   );
 }
@@ -622,23 +510,8 @@ const styles = StyleSheet.create({
     height: CANVAS_HEIGHT,
     overflow: 'hidden',
   },
-  centerText: {
-    textAlign: 'center',
-  },
   pressed: {
     opacity: 0.7,
-  },
-  primaryButton: {
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  primaryButtonCompact: {
-    paddingHorizontal: Spacing.five,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   buttonDisabled: {
     opacity: 0.4,
@@ -1075,7 +948,7 @@ const styles = StyleSheet.create({
     width: 345,
     gap: 8,
   },
-  // "건강 앱 연결하기" 버튼 (node 261:700, height:52, fill #031949, radius:10)
+  // "건강 앱 연동하기" 버튼 (node 261:700, height:52, fill #031949, radius:10)
   healthPrimaryButton: {
     height: 52,
     borderRadius: 10,
@@ -1099,94 +972,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: PRETENDARD_MEDIUM,
     color: HEALTH_TEXT_SUBTITLE,
-  },
-
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    width: '100%',
-    maxHeight: '88%',
-    borderTopLeftRadius: Spacing.four,
-    borderTopRightRadius: Spacing.four,
-    overflow: 'hidden',
-  },
-  modalGrabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 5,
-    borderRadius: Spacing.half,
-    marginTop: Spacing.two,
-  },
-  modalNavBar: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalScroll: {
-    flexGrow: 0,
-  },
-  modalScrollContent: {
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  modalHeartCircle: {
-    alignSelf: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FF3B30',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.one,
-  },
-  modalHeartIcon: {
-    color: '#ffffff',
-    fontSize: 26,
-  },
-  modalSection: {
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-    overflow: 'hidden',
-  },
-  modalSectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-  },
-  modalAllOnLabel: {
-    flex: 1,
-    color: '#3C87F7',
-  },
-  modalSectionLabel: {
-    marginTop: Spacing.three,
-    paddingHorizontal: Spacing.one,
-    textTransform: 'uppercase',
-  },
-  modalIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: Spacing.two,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalIconGlyph: {
-    fontSize: 14,
-  },
-  modalRowLabel: {
-    flex: 1,
-  },
-  modalRowDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.three + 28 + Spacing.three,
-  },
-  modalActions: {
-    gap: Spacing.two,
-    padding: Spacing.four,
-    paddingTop: Spacing.two,
   },
 });

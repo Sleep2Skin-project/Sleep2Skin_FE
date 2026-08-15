@@ -1,12 +1,16 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useState } from "react";
+import { useColorScheme } from "react-native";
 
-import { checkHealth } from '@/api/health';
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-import { OnboardingFlow } from '@/components/onboarding-flow';
+import { checkHealth } from "@/api/health";
+import { AnimatedSplashOverlay } from "@/components/animated-icon";
+import AppTabs from "@/components/app-tabs";
+import { OnboardingFlow } from "@/components/onboarding-flow";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -22,14 +26,18 @@ export default function TabLayout() {
         console.log(`✅ 백엔드 연결 성공: status - ${data.status}`);
       })
       .catch((error) => {
-        console.error('❌ 백엔드 연결 실패:', error.message);
+        console.error("❌ 백엔드 연결 실패:", error.message);
       });
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      {onboarded ? <AppTabs /> : <OnboardingFlow onComplete={() => setOnboarded(true)} />}
+      {onboarded ? (
+        <AppTabs />
+      ) : (
+        <OnboardingFlow onComplete={() => setOnboarded(true)} />
+      )}
     </ThemeProvider>
   );
 }

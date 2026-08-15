@@ -8,7 +8,16 @@
     "scheme": "app",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.sleep2skin.app",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "수면 데이터를 분석해 피부 상태를 예측하기 위해 건강 데이터를 읽어옵니다.",
+        "NSHealthUpdateUsageDescription": "앱에서 건강 데이터를 기록하기 위해 사용합니다."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.background-delivery": true
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +26,9 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [],
+      "package": "com.sleep2skin.app"
     },
     "web": {
       "output": "static",
@@ -47,7 +58,8 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      ["@kingstinct/react-native-healthkit"]
     ],
     "experiments": {
       "typedRoutes": true,

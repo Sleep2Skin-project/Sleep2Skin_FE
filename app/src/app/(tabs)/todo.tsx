@@ -1,21 +1,22 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import type { AttendanceExpInfo } from '@/api/game';
+import {
+  getDailyTodos,
+  TodoActionApiError,
+  updateTodoStatus,
+  type TodoAvoidItem,
+  type TodoChecklistItem,
+} from '@/api/todo';
+import { ExpGainPopup } from '@/components/exp-gain-popup';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
-import { TODO_SUMMARY_MOCK, type AvoidListItem, type ChecklistItemResponse } from '@/constants/mockData';
+import { TEMP_USER_ID } from '@/constants/config';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { toggleChecklistItem, useChecklistCheckedMap } from '@/hooks/use-checklist-store';
-
-// "+ 5 exp" 배지 전용 픽셀 폰트(node 434:1251) — 이 화면에만 로컬로 번들링한다(다른 화면 영향 없음,
-// 온보딩(onboarding-flow.tsx)의 Pretendard 번들링과 동일한 패턴).
-const PRESS_START_2P = 'PressStart2P-Regular';
-const EXP_BADGE_FONTS = {
-  [PRESS_START_2P]: require('@/assets/fonts/PressStart2P-Regular.ttf'),
-};
 
 // AvoidDetailModal 전용 Pretendard 폰트(4종) — 온보딩(onboarding-flow.tsx)과 동일한 로컬 번들링 패턴.
 const PRETENDARD_LIGHT = 'Pretendard-Light';
@@ -32,11 +33,19 @@ const AVOID_DETAIL_FONTS = {
 // TODO — Figma 'Ui - 복사' 파일 노드 176:1165("iPhone 17 - 12")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 176:1165) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
-// 실제 추천 엔진·자체 DB가 아직 없어 목록 값은 src/constants/mockData.ts의 TODO_SUMMARY_MOCK을 사용한다.
 //
-// 참고: Figma 프레임 안에는 "오늘 밤 체크리스트" 3개 항목이 위치만 다르게 통째로 한 번 더
-// 중복 배치되어 있었다(디자이너 작업 중 남은 복제본으로 보임, node 187:2527). 실제 앱에서
-// 같은 항목을 두 번 보여줄 수 없으므로 중복본은 제외하고 한 세트만 반영했다.
+// GET /api/v1/todo(TODO-02~05)로 실연동한다(api/todo.ts). avoidItems와 checklistItems는 필드가
+// 서로 다른 별개 배열이다 — avoidItems는 causeLabel(태그)+reason(롱프레스 설명)만, checklistItems는
+// status(PENDING/DONE)만 갖는다(체크박스 토글 대상은 checklistItems뿐, avoidItems엔 애초에
+// 체크박스 자체가 없다).
+//
+// 체크 토글은 PATCH /api/v1/todo/{id}(TODO-05)로 실연동한다(api/todo.ts의 updateTodoStatus).
+// 응답 대기 중 어색하지 않도록 낙관적 업데이트(먼저 화면부터 바꾸고, 실패하면 되돌림)를 쓴다.
+// exp가 실제로 움직였을 때(gained !== 0, 플러스든 마이너스든)만 ExpGainPopup을 띄운다 — 이
+// 팝업은 HOME-04(출석 체크인)와 완전히 같은 exp 모양(AttendanceExpInfo)을 공유하는 컴포넌트다.
+// 다른 화면과 공유하는 전역 store(use-checklist-store.ts)는 여전히 구 mock(TODO_SUMMARY_MOCK)
+// 기반이라 여기서는 쓰지 않는다 — 실 API의 id(숫자)와 mock의 id(문자열 슬러그)가 서로 달라
+// 지금 연결하면 MY 탭의 "오늘의 투두 n/5"가 오히려 깨진다(이 화면 자체 상태로만 관리).
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -46,37 +55,71 @@ const AVOID_DETAIL_FONTS = {
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
+// "오늘은 피하세요" 상세 모달 하단 멘트 — API에 없는 고정 CTA 문구(항목마다 다른 데이터가 아니라
+// 화면 자체의 안내 문구라 상수로 둔다).
+const AVOID_MODAL_FOOTER = '피부를 위해 피해주세요.';
+
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+type TodoScreenState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_sleep_data'; message: string | null }
+  | { status: 'no_recommendations'; message: string | null }
+  | { status: 'available'; avoidItems: TodoAvoidItem[]; checklistItems: TodoChecklistItem[] };
+
+// TODO-01 최상단 요약 멘트 — 서버가 문구를 내려주지 않으므로 데이터 유무에 따라 프론트가 직접
+// 고른다. 세 문구 모두 이 함수 하나로 관리해 empty-state 본문과 최상단 서브헤딩이 항상 같은
+// 말을 하도록 맞춘다.
+function buildTodoSummaryMessage(state: TodoScreenState): string | null {
+  switch (state.status) {
+    case 'available':
+      return '오늘의 피부를 위한 미션';
+    case 'no_sleep_data':
+      return state.message ?? '수면 데이터를 동기화해주세요';
+    case 'no_recommendations':
+      return state.message ?? '오늘은 특별히 관리할 항목이 없어요! 완벽합니다!';
+    default:
+      return null;
+  }
+}
+
 function ChecklistRow({
   item,
   checked,
+  pending,
   onToggle,
-  expBadgeFontReady,
 }: {
-  item: ChecklistItemResponse;
+  item: TodoChecklistItem;
   checked: boolean;
+  /** PATCH 응답 대기 중인 항목 — 중복 탭으로 인한 경쟁 요청을 막고, 대기 중임을 옅게 보여준다 */
+  pending: boolean;
   onToggle: () => void;
-  expBadgeFontReady: boolean;
 }) {
   return (
     <Pressable
       onPress={onToggle}
+      disabled={pending}
       style={({ pressed }) => [
         styles.checklistItem,
         checked ? styles.checklistItemChecked : styles.checklistItemUnchecked,
         pressed && styles.pressed,
+        pending && styles.checklistItemPending,
       ]}>
       <View style={styles.checkboxSlot}>
         <View style={[styles.checkbox, checked ? styles.checkboxChecked : styles.checkboxUnchecked]}>
           {checked && <ThemedText style={styles.checkmark}>✓</ThemedText>}
         </View>
       </View>
-      <ThemedText style={styles.checklistItemTitle}>{item.title}</ThemedText>
-      {/* "+ 5 exp" 배지 (node 434:1251, Press Start 2P 12px, #3366FF) — Figma 시안엔 맨 위 항목
-          하나에만 예시로 붙어 있어, item.expLabel이 있을 때만 그려진다. 픽셀 폰트 로드 전엔 시스템
-          폰트로 잠깐 바뀌어 보이는 걸 막기 위해 폰트 준비 전에는 아예 렌더하지 않는다. */}
-      {item.expLabel && expBadgeFontReady && (
-        <ThemedText style={styles.checklistItemExpBadge}>{item.expLabel}</ThemedText>
-      )}
+      <ThemedText style={[styles.checklistItemTitle, checked && styles.checklistItemTitleChecked]}>
+        {item.title}
+      </ThemedText>
     </Pressable>
   );
 }
@@ -84,82 +127,55 @@ function ChecklistRow({
 // "오늘은 피하세요" 항목 상세 모달 — Figma 'Ui (복사)' 파일 노드 541:3131(카드 그룹, 소속 프레임
 // "iPhone 17 - 8" #541:3068 원점 기준 x:26 y:137)을 그대로 옮긴 것. 일간 리포트의
 // SleepScoreGamificationModal과 동일한 패턴(402x874 고정 캔버스 + useDesignScale + Modal 백드롭)을
-// 쓴다 — RN Modal이 화면 전체를 덮으므로 부모(todo.tsx)가 ScrollView라도 캔버스 절대좌표를 그대로
-// 쓸 수 있다. 문구는 mockData.ts의 AvoidListItem.detail을 그대로 렌더할 뿐 이 컴포넌트엔 하드코딩된
-// 문구가 없다 — 실제 문구 교체는 mockData.ts TODO 블록 참고.
-// 카드 padding(37px 좌우) 안쪽 실제 사용 가능 폭 — 제목 글자 크기 계산과 설명 줄 hanging indent에
-// 공통으로 쓴다.
+// 쓴다. 예전엔 mockData.ts의 rankLabel/description/footer 3개 필드를 썼지만, 실제 API는
+// causeLabel + reason 2개뿐이라(footer 같은 고정 CTA는 AVOID_MODAL_FOOTER 상수로 대체) 그에 맞게
+// 필드를 줄였다.
 const AVOID_MODAL_CONTENT_WIDTH = 273;
 
 // 제목 글자 크기를 항목 길이에 맞춰 계산한다. RN의 adjustsFontSizeToFit/minimumFontScale은
 // react-native-web(이 프로젝트의 셀피 웹 테스트 환경)에서 동작하지 않아 — numberOfLines={1}만
 // 적용되고 실제 축소는 무시돼 그대로 "..."로 잘렸다 — 웹/네이티브 모두 동작하도록 순수 JS로
-// 직접 계산한다. "강한 각질 제거"(8자) 같은 짧은 제목은 Figma 원본 25px 그대로 나오고, 긴
-// 제목만 폭에 맞춰 줄어든다. 그래도 안 맞을 만큼 긴 제목이 나중에 API로 들어오면 — 잘리는 것보단
-// 나으므로 — 최소 크기(14px) 밑으로는 줄이지 않고 대신 자연스럽게 다음 줄로 넘어가게 둔다
-// (numberOfLines를 걸지 않음 — 내용이 잘리는 것만은 피해야 한다).
+// 직접 계산한다.
 function getAvoidModalTitleFontSize(title: string): number {
-  // 글자당 폭을 fontSize의 1.15배로 넉넉히 잡아(Pretendard Bold 한글 기준 안전 여유) 그 폭에
-  // title.length자가 딱 맞는 fontSize를 역산한다.
   const fittedSize = Math.floor(AVOID_MODAL_CONTENT_WIDTH / (title.length * 1.15));
   return Math.max(14, Math.min(25, fittedSize));
 }
 
-function AvoidDetailModal({ item, onClose }: { item: AvoidListItem | null; onClose: () => void }) {
+function AvoidDetailModal({ item, onClose }: { item: TodoAvoidItem | null; onClose: () => void }) {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(AVOID_DETAIL_FONTS);
   const visible = item !== null;
 
-  // 폰트 로드 전엔 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 줄바꿈이 튀는 걸 막는다.
   if (!visible || !fontsLoaded || !item) return null;
 
   const titleFontSize = getAvoidModalTitleFontSize(item.title);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      {/* 백드롭 (node 541:3130, rgba(255,255,255,0.4) — 다른 모달들과 달리 어두운 딤이 아니라
-          밝은 반투명 흰색이다, Figma 원본 그대로) — 탭하면 닫힌다. */}
       <Pressable style={styles.avoidModalBackdrop} onPress={onClose}>
         <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
           <View style={[styles.avoidModalCanvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
-            {/* 카드 (node 541:3134, x:26 y:229 w:347, radius:30, border 2px #3060EA) — Figma는
-                title/rankLabel/description을 카드 안에서 각각 고정 절대좌표로 배치했지만, 그건
-                "강한 각질 제거"(짧은 제목, 한 줄)만 가정한 좌표라 "취침 전 스마트폰 장시간 사용"처럼
-                제목이 두 줄로 넘어가는 항목에서는 아래 요소들과 겹쳐 보였다. 그래서 절대좌표 대신
-                세로 flex 컬럼으로 바꿔, 제목이 몇 줄이 되든 뒤 요소가 항상 그 아래로 자연스럽게
-                밀려나도록 한다. 카드 높이도 고정값(378) 대신 내용에 맞춰 자동으로 늘어난다.
-                탭해도 안 닫히도록 배경 대신 Pressable로 감싼다. */}
             <Pressable style={styles.avoidModalCard} onPress={() => {}}>
-              {/* "오늘은 피하세요" 배지 (node 541:3135/3141, w:136 h:33, fill #407AF7) */}
               <View style={styles.avoidModalBadge}>
                 <Text style={styles.avoidModalBadgeText}>오늘은 피하세요</Text>
               </View>
 
-              {/* 항목 제목 (node 541:3136) — getAvoidModalTitleFontSize로 계산한 크기를 쓴다(위
-                  함수 주석 참고). "강한 각질 제거"처럼 짧은 제목은 Figma 원본 25px 그대로 나온다. */}
               <Text style={[styles.avoidModalTitle, { fontSize: titleFontSize, lineHeight: titleFontSize * 1.2 }]}>
                 {item.title}
               </Text>
 
-              {/* 순위 라벨 (node 541:3137, color #3270F5) */}
-              <Text style={styles.avoidModalRankLabel}>{item.detail.rankLabel}</Text>
+              {/* causeLabel(원인 태그) — 예전 rankLabel 자리 */}
+              <Text style={styles.avoidModalRankLabel}>{item.causeLabel}</Text>
 
-              {/* 설명 (node 541:3138) — "-" 기호와 문장을 같은 Text가 아니라 별도 컬럼으로 나눠,
-                  문장이 폭에 안 맞아 다음 줄로 넘어갈 때도 항상 "-" 오른쪽(문장이 시작한 자리)에서
-                  시작하도록 한다(행잉 인덴트). 이전에는 Figma가 손으로 미리 3줄로 쪼개둔 문자열에
-                  줄마다 공백을 다르게 넣어 흉내 냈는데, 실제 폭에서 자동 줄바꿈이 한 번 더 일어나면
-                  그 공백이 안 먹혀 줄마다 시작 위치가 제각각이었다. */}
+              {/* reason(롱프레스 설명) — 예전 description 자리, 행잉 인덴트 동일 유지 */}
               <View style={styles.avoidModalDescriptionRow}>
                 <Text style={styles.avoidModalDescriptionDash}>-</Text>
-                <Text style={styles.avoidModalDescriptionText}>{item.detail.description}</Text>
+                <Text style={styles.avoidModalDescriptionText}>{item.reason}</Text>
               </View>
 
-              {/* 하단 멘트 (node 541:3139) */}
-              <Text style={styles.avoidModalFooter}>{item.detail.footer}</Text>
+              <Text style={styles.avoidModalFooter}>{AVOID_MODAL_FOOTER}</Text>
             </Pressable>
 
-            {/* 닫기 버튼 (node 541:3142, x:322 y:265 w:20 h:19) — 카드 높이가 늘어나도 카드 상단
-                모서리 기준 위치는 그대로라 캔버스 절대좌표를 유지해도 된다. */}
             <Pressable onPress={onClose} hitSlop={12} style={styles.avoidModalCloseButton}>
               <Image
                 source={require('@/assets/images/figma-icon-avoid-detail-close.svg')}
@@ -176,84 +192,179 @@ function AvoidDetailModal({ item, onClose }: { item: AvoidListItem | null; onClo
 
 export default function TodoScreen() {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
-  const [expBadgeFontReady] = useFonts(EXP_BADGE_FONTS);
-  // MY 탭의 "오늘의 투두 n/5" 요약과 실시간으로 맞아떨어져야 해서 로컬 useState 대신 화면 간
-  // 공유 store(use-checklist-store.ts)를 쓴다.
-  const checkedMap = useChecklistCheckedMap();
-  const [selectedAvoidItem, setSelectedAvoidItem] = useState<AvoidListItem | null>(null);
+  const [state, setState] = useState<TodoScreenState>({ status: 'loading' });
+  const [selectedAvoidItem, setSelectedAvoidItem] = useState<TodoAvoidItem | null>(null);
+  // 체크리스트만 별도 state로 들고 있는다 — PATCH 성공/실패에 따라 개별 항목의 status를 그때그때
+  // 덮어써야 해서(낙관적 업데이트 → 서버 값으로 확정, 또는 실패 시 되돌리기) state의 'available'
+  // 케이스 안에 얼려두지 않는다. avoidItems는 토글 대상이 아니라 계속 state에서 파생해서 쓴다.
+  const [checklistItems, setChecklistItems] = useState<TodoChecklistItem[]>([]);
+  // 지금 PATCH 응답을 기다리는 항목 id — 중복 탭 방지 + 대기 중 시각 표시용.
+  const [pendingId, setPendingId] = useState<number | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  // gained !== 0일 때만 채워진다(HOME-04와 공유하는 ExpGainPopup에 그대로 넘긴다).
+  const [expPopup, setExpPopup] = useState<AttendanceExpInfo | null>(null);
 
-  const completed = useMemo(() => Object.values(checkedMap).filter(Boolean).length, [checkedMap]);
-  const total = TODO_SUMMARY_MOCK.checklist.length;
+  useEffect(() => {
+    getDailyTodos(getTodayDateString(), TEMP_USER_ID)
+      .then(({ data }) => {
+        if (data.status === 'NO_SLEEP_DATA') {
+          setState({ status: 'no_sleep_data', message: data.message });
+          return;
+        }
+        // AVAILABLE인데 두 배열이 모두 비어 있으면 "처방할 게 없는 날"(케이스 B) — 예보가 없는
+        // 케이스 A(NO_SLEEP_DATA)와 문구를 절대 섞지 않는다.
+        if (data.avoidItems.length === 0 && data.checklistItems.length === 0) {
+          setState({ status: 'no_recommendations', message: data.message });
+          return;
+        }
+        setState({ status: 'available', avoidItems: data.avoidItems, checklistItems: data.checklistItems });
+        setChecklistItems(data.checklistItems);
+      })
+      .catch(() => setState({ status: 'error' }));
+  }, []);
+
+  const avoidItems = state.status === 'available' ? state.avoidItems : [];
+
+  const completed = useMemo(() => checklistItems.filter((item) => item.status === 'DONE').length, [checklistItems]);
+  const total = checklistItems.length;
   const progress = total === 0 ? 0 : completed / total;
+
+  const summaryMessage = buildTodoSummaryMessage(state);
+
+  async function handleToggle(item: TodoChecklistItem) {
+    if (pendingId !== null) return;
+
+    const previousStatus = item.status;
+    const nextStatus: TodoChecklistItem['status'] = previousStatus === 'DONE' ? 'PENDING' : 'DONE';
+
+    // 낙관적 업데이트 — 응답을 기다리지 않고 먼저 화면을 바꿔 대기가 어색하지 않게 한다.
+    setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: nextStatus } : it)));
+    setPendingId(item.id);
+    setToggleError(null);
+
+    try {
+      const { data } = await updateTodoStatus(item.id, nextStatus, TEMP_USER_ID);
+      // 서버가 돌려준 진짜 status로 다시 덮어쓴다 — 낙관적 값과 다를 일은 거의 없지만 서버가 최종 진실.
+      setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: data.status } : it)));
+      // exp는 상태가 "실제로" 바뀔 때만 움직인다 — gained가 0(같은 상태 재요청 등)이면 아무것도 안 띄운다.
+      // gained가 음수(되돌리기로 인한 회수)여도 정상 케이스이므로 부호와 무관하게 0이 아니면 띄운다.
+      if (data.exp.gained !== 0) {
+        setExpPopup(data.exp);
+      }
+    } catch (error) {
+      // 실패 시 낙관적 업데이트를 되돌린다.
+      setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: previousStatus } : it)));
+      if (error instanceof TodoActionApiError && error.code === 'ACTION_NOT_CHECKABLE') {
+        setToggleError('이 항목은 체크할 수 없어요');
+      } else {
+        setToggleError('상태 변경에 실패했어요');
+      }
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
           <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
-          {/* 배경 (fill #DFEAFF) */}
-          <View style={StyleSheet.absoluteFill} />
+            {/* 배경 (fill #DFEAFF) */}
+            <View style={StyleSheet.absoluteFill} />
 
-          {/* Spiral Notepad 아이콘 + "오늘의 투두리스트" (node 176:1228, x:71 y:71 w:168 h:26) */}
-          <Image
-            source={require('@/assets/images/figma-icon-notepad.png')}
-            style={styles.notepadIcon}
-            contentFit="contain"
-          />
-          <ThemedText style={styles.pageTitle}>오늘의 투두리스트</ThemedText>
+            {/* Spiral Notepad 아이콘 + "오늘의 투두리스트" (node 176:1228, x:71 y:71 w:168 h:26) */}
+            <Image
+              source={require('@/assets/images/figma-icon-notepad.png')}
+              style={styles.notepadIcon}
+              contentFit="contain"
+            />
+            <ThemedText style={styles.pageTitle}>오늘의 투두리스트</ThemedText>
 
-          {/* 유령 캐릭터 (node 187:2526, x:309 y:55 w:89 h:89) */}
-          <Image
-            source={require('@/assets/images/figma-icon-ghost-todo.png')}
-            style={styles.ghostImage}
-            contentFit="contain"
-          />
+            {/* 유령 캐릭터 (node 187:2526, x:309 y:55 w:89 h:89) */}
+            <Image
+              source={require('@/assets/images/figma-icon-ghost-todo.png')}
+              style={styles.ghostImage}
+              contentFit="contain"
+            />
 
-          {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) */}
-          <ThemedText style={styles.progressLabel}>진행도</ThemedText>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-          </View>
-          <ThemedText style={styles.progressCount}>
-            {completed}/{total}
-          </ThemedText>
+            {(state.status === 'loading' || state.status === 'error') && (
+              <ThemedText style={styles.statusText}>
+                {state.status === 'loading' ? '불러오는 중...' : '투두 목록을 불러오지 못했어요'}
+              </ThemedText>
+            )}
 
-          {/* "오늘은 피하세요" 카드 (node 432:1183, x:4 y:124 w:400, 항목 3개로 늘어 높이는
-              내용에 맞춰 자동으로 늘어난다 — 고정 높이를 주지 않음) */}
-          <View style={styles.avoidCard}>
-            <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
-            <View style={styles.avoidList}>
-              {TODO_SUMMARY_MOCK.avoidList.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setSelectedAvoidItem(item)}
-                  style={({ pressed }) => [styles.avoidItem, pressed && styles.pressed]}>
-                  <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
-                  <ThemedText style={styles.avoidItemReason}>{item.reason}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+            {/* 두 가지 빈 상태(케이스 A/B) — 서로 다른 문구로 각각 렌더링한다. 진행도/카드/체크리스트는
+                보여줄 데이터가 없으므로 아예 그리지 않는다. */}
+            {(state.status === 'no_sleep_data' || state.status === 'no_recommendations') && (
+              <View style={styles.emptyState}>
+                <ThemedText style={styles.emptyStateText}>{summaryMessage}</ThemedText>
+              </View>
+            )}
 
-          {/* "오늘 밤 체크리스트" 섹션 (node 432:1155, x:18 y:431 w:363) — 새 시안에서는 구분선이
-              사라지고, 위 카드가 항목 3개만큼 늘어난 높이에 맞춰 곧바로 이어진다. */}
-          <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
-          <View style={styles.checklistList}>
-            {TODO_SUMMARY_MOCK.checklist.map((item) => (
-              <ChecklistRow
-                key={item.id}
-                item={item}
-                checked={checkedMap[item.id] ?? false}
-                onToggle={() => toggleChecklistItem(item.id)}
-                expBadgeFontReady={expBadgeFontReady}
-              />
-            ))}
-          </View>
+            {state.status === 'available' && (
+              <>
+                {/* TODO-01 요약 멘트 — 서버가 안 주므로 프론트가 직접 렌더링 */}
+                <ThemedText style={styles.summarySubtitle}>{summaryMessage}</ThemedText>
+
+                {checklistItems.length > 0 && (
+                  <>
+                    {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) — DONE 개수는 서버가
+                        내려주지 않아 checklistItems를 순회하며 프론트가 직접 센다. */}
+                    <ThemedText style={styles.progressLabel}>진행도</ThemedText>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                    </View>
+                    <ThemedText style={styles.progressCount}>
+                      {completed}/{total}
+                    </ThemedText>
+                    {toggleError && <ThemedText style={styles.toggleErrorText}>{toggleError}</ThemedText>}
+                  </>
+                )}
+
+                {avoidItems.length > 0 && (
+                  <View style={styles.avoidCard}>
+                    <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
+                    <View style={styles.avoidList}>
+                      {avoidItems.map((item) => (
+                        <Pressable
+                          key={item.id}
+                          onLongPress={() => setSelectedAvoidItem(item)}
+                          delayLongPress={350}
+                          style={({ pressed }) => [styles.avoidItem, pressed && styles.pressed]}>
+                          <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
+                          <View style={styles.avoidItemCauseTag}>
+                            <ThemedText style={styles.avoidItemCauseTagText}>{item.causeLabel}</ThemedText>
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {checklistItems.length > 0 && (
+                  <>
+                    <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
+                    <View style={styles.checklistList}>
+                      {checklistItems.map((item) => (
+                        <ChecklistRow
+                          key={item.id}
+                          item={item}
+                          checked={item.status === 'DONE'}
+                          pending={pendingId === item.id}
+                          onToggle={() => handleToggle(item)}
+                        />
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
           </View>
         </View>
       </ScrollView>
 
       <AvoidDetailModal item={selectedAvoidItem} onClose={() => setSelectedAvoidItem(null)} />
+      {expPopup && <ExpGainPopup exp={expPopup} onClose={() => setExpPopup(null)} />}
     </SafeAreaView>
   );
 }
@@ -308,11 +419,46 @@ const styles = StyleSheet.create({
     height: 89,
   },
 
+  // 로딩/에러 상태 텍스트 — Figma 노드 없음, 타이틀 아래 여백에 얹는다.
+  statusText: {
+    position: 'absolute',
+    left: 27,
+    top: 110,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: 'rgba(55, 56, 60, 0.61)',
+  },
+  // 두 빈 상태(NO_SLEEP_DATA / AVAILABLE+빈 배열) 공용 안내 블록 — Figma 노드 없음.
+  emptyState: {
+    position: 'absolute',
+    left: 27,
+    top: 130,
+    width: 348,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    lineHeight: 23,
+    fontWeight: '600',
+    color: 'rgba(55, 56, 60, 0.61)',
+  },
+  // TODO-01 요약 멘트("오늘의 피부를 위한 미션") — 서버가 안 주는 문구라 Figma 고정 노드가 없다.
+  // 타이틀 바로 아래, 진행도 줄 위에 얹는다.
+  summarySubtitle: {
+    position: 'absolute',
+    left: 27,
+    top: 100,
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: 'rgba(55, 56, 60, 0.61)',
+  },
+
   // "진행도" (node 176:1229, x:78 y:107 w:103 h:17)
   progressLabel: {
     position: 'absolute',
     left: 78,
-    top: 107,
+    top: 122,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
@@ -322,7 +468,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     position: 'absolute',
     left: 127,
-    top: 113,
+    top: 128,
     width: 95,
     height: 7,
     borderRadius: 6,
@@ -339,18 +485,28 @@ const styles = StyleSheet.create({
   progressCount: {
     position: 'absolute',
     left: 227,
-    top: 109,
+    top: 124,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
     color: '#000000',
+  },
+  // PATCH 실패 안내 — Figma 노드 없음, 진행도 줄 아래 여백에 얹는다. 다음 토글 시도에서 지워진다.
+  toggleErrorText: {
+    position: 'absolute',
+    left: 78,
+    top: 140,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: '#E52222',
   },
 
   // "div" 오늘은 피하세요 카드 (node 187:2505, x:9 y:125 w:400 h:216, radius:16)
   avoidCard: {
     position: 'absolute',
     left: 9,
-    top: 125,
+    top: 150,
     width: 400,
     borderRadius: 16,
     padding: 16,
@@ -376,7 +532,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 13,
     paddingHorizontal: 15,
-    gap: 3,
+    gap: 6,
   },
   // (node 187:2516/187:2521, w:338 h:18)
   avoidItemTitle: {
@@ -385,16 +541,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // (node 187:2518/187:2523, w:338 h:19)
-  avoidItemReason: {
-    fontSize: 12.5,
-    lineHeight: 19,
-    fontWeight: '400',
-    color: 'rgba(55, 56, 60, 0.61)',
+  // causeLabel 태그 — 예전엔 캡션 텍스트 한 줄이었지만, API가 명확히 "태그"로 규정한 필드라
+  // 배지 모양으로 감싼다(롱프레스로 더 긴 reason을 볼 수 있다는 걸 시각적으로도 암시).
+  avoidItemCauseTag: {
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(255, 66, 66, 0.1)',
+  },
+  avoidItemCauseTagText: {
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: '#E52222',
   },
 
-  // "오늘 밤 체크리스트" (node 432:1157, x:18 y:431 w:363) — 새 시안에서는 구분선 없이 "오늘은
-  // 피하세요" 카드(항목 3개, 자동 높이) 바로 아래로 이어진다.
+  // "오늘 밤 체크리스트" (node 432:1157, x:18 y:431 w:363)
   checklistTitle: {
     position: 'absolute',
     left: 21,
@@ -430,6 +593,10 @@ const styles = StyleSheet.create({
   checklistItemUnchecked: {
     backgroundColor: '#FFFFFF',
     borderColor: 'rgba(112, 115, 124, 0.22)',
+  },
+  // PATCH 응답 대기 중인 항목 — 낙관적으로 이미 바뀐 상태를 보여주되, 처리 중임을 옅게 티 낸다.
+  checklistItemPending: {
+    opacity: 0.55,
   },
   // 체크 여부와 무관하게 항상 24x24 자리(unchecked 크기 기준)를 차지해, 체크박스가
   // 20x20으로 작아져도 카드(행) 높이가 함께 줄어들지 않도록 고정한다.
@@ -470,13 +637,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // "+ 5 exp" 배지 (node 434:1251, Press Start 2P 12px, #3366FF) — 제목이 flex:1이라 남는 공간만
-  // 차지하고, 배지는 줄어들지 않고 항상 제 크기로 오른쪽에 붙는다.
-  checklistItemExpBadge: {
-    flexShrink: 0,
-    fontSize: 12,
-    fontFamily: PRESS_START_2P,
-    color: '#3366FF',
+  // DONE 항목은 취소선으로 완료를 표시한다(체크박스 색만으로는 스크롤 중 눈에 덜 띄어서 보강).
+  checklistItemTitleChecked: {
+    textDecorationLine: 'line-through',
+    color: 'rgba(23, 23, 23, 0.55)',
   },
 
   // ── AvoidDetailModal (node 541:3131) ────────────────────────────────────
@@ -491,10 +655,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   // 카드 (node 541:3134, x:26 y:229 w:347, radius:30, border 2px #3060EA) — 세로 flex 컬럼으로
-  // 자식을 쌓는다(위 JSX 주석 참고). paddingTop 28은 카드 상단에서 배지 상단까지의 원래 간격
-  // (257-229), paddingHorizontal 37은 배지/제목/순위 라벨의 원래 좌측 여백(36.82)에 맞춘 값 —
-  // 설명(원래 29.74)만 약 7px 안쪽으로 들어오지만 눈에 띄지 않는 차이라 통일했다. paddingBottom
-  // 44는 원래 하단 멘트 아래 여백(607-563)을 근사한 값.
+  // 자식을 쌓는다(제목이 몇 줄이 되든 뒤 요소가 항상 그 아래로 자연스럽게 밀려나도록).
   avoidModalCard: {
     position: 'absolute',
     left: 26,
@@ -508,8 +669,7 @@ const styles = StyleSheet.create({
     paddingBottom: 44,
     paddingHorizontal: 37,
   },
-  // "오늘은 피하세요" 배지 (node 541:3135, w:136 h:33, fill #407AF7, radius:16) — 글자를 flex로
-  // 중앙 정렬해 배지 안에서 어긋나 보이지 않게 한다.
+  // "오늘은 피하세요" 배지 (node 541:3135, w:136 h:33, fill #407AF7, radius:16)
   avoidModalBadge: {
     width: 136,
     height: 33,
@@ -518,24 +678,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // 배지 텍스트 (node 541:3141, Pretendard Medium 17px, 흰색)
   avoidModalBadgeText: {
     fontSize: 17,
     fontFamily: PRETENDARD_MEDIUM,
     color: '#FFFFFF',
   },
-  // 항목 제목 (node 541:3136, Pretendard Bold) — fontSize/lineHeight는 getAvoidModalTitleFontSize
-  // 계산값을 인라인으로 얹는다(위 JSX 참고). width를 카드 내용 폭에 고정해 실제 줄바꿈 판단이
-  // getAvoidModalTitleFontSize가 가정한 폭(AVOID_MODAL_CONTENT_WIDTH)과 어긋나지 않게 한다.
-  // 원래 간격(badge 하단→제목 상단, 18px)만큼 marginTop을 준다.
   avoidModalTitle: {
     marginTop: 18,
     width: AVOID_MODAL_CONTENT_WIDTH,
     fontFamily: PRETENDARD_BOLD,
     color: '#171717',
   },
-  // 순위 라벨 (node 541:3137, Pretendard SemiBold 21px, lineHeight:27px, #3270F5, 제목 하단과 원래
-  // 간격 10px)
+  // causeLabel 위치 (예전 rankLabel 자리, node 541:3137, Pretendard SemiBold 21px, lineHeight:27px)
   avoidModalRankLabel: {
     marginTop: 10,
     fontSize: 21,
@@ -543,9 +697,8 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_SEMIBOLD,
     color: '#3270F5',
   },
-  // 설명 (node 541:3138, Pretendard Medium 21px, lineHeight:31px, #404040, 순위 라벨 하단과 원래
-  // 간격 34px) — "-"와 문장을 좌우로 나눠, 문장이 줄바꿈돼도 항상 "-" 오른쪽 열에서 시작하게
-  // 한다(행잉 인덴트, 위 JSX 주석 참고).
+  // reason 위치 (예전 description 자리, node 541:3138, Pretendard Medium 21px, lineHeight:31px) —
+  // "-"와 문장을 좌우로 나눠, 문장이 줄바꿈돼도 항상 "-" 오른쪽 열에서 시작하게 한다(행잉 인덴트).
   avoidModalDescriptionRow: {
     marginTop: 34,
     flexDirection: 'row',
@@ -564,8 +717,7 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_MEDIUM,
     color: '#404040',
   },
-  // 하단 멘트 (node 541:3139, Pretendard Light 17px, lineHeight:21px, 중앙 정렬, 설명 하단과 원래
-  // 간격 39px)
+  // 하단 멘트 (node 541:3139, Pretendard Light 17px, lineHeight:21px, 중앙 정렬)
   avoidModalFooter: {
     marginTop: 39,
     textAlign: 'center',

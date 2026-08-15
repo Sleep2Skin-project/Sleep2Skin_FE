@@ -521,10 +521,23 @@ function HealthAccessModal({
   );
 }
 
-export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
+export function OnboardingFlow({
+  onComplete,
+  initialStep = 0,
+}: {
+  onComplete: () => void;
+  /**
+   * GET /api/v1/users/me(ONB-01)의 consentAgreed:true + onboardingCompleted:false 조합("온보딩
+   * 이어서 진행")을 위한 시작 지점. 이 화면엔 서버가 추적하는 단계별 진행 상태가 없어 정교한
+   * 재개는 불가능하지만, consentAgreed가 이미 true라는 건 동의(=이 플로우의 최종 액션)가 이미
+   * 기록됐다는 뜻이므로 ValueStep(0)/PrivacyStep(1, 개인정보 공지)을 건너뛰고 SleepStep(2)부터
+   * 다시 보여준다 — _layout.tsx가 이 값을 계산해서 넘긴다.
+   */
+  initialStep?: number;
+}) {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(PRETENDARD_FONTS);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(initialStep);
   const [healthStatus, setHealthStatus] = useState<HealthKitStatus>('idle');
   const [healthModalVisible, setHealthModalVisible] = useState(false);
   const [completing, setCompleting] = useState(false);

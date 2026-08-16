@@ -37,6 +37,18 @@ export const LEVEL_EXP_MAX: Record<number, number> = {
   5: 300,
 };
 
+// 레벨별 캐릭터 이미지 — 레벨4는 기존 figma-character.png와 픽셀 동일 이미지지만, 5종 모두
+// 이 맵 하나로 통일해 관리한다. 홈 화면(index.tsx)과 마이 탭(my.tsx) 둘 다 GET
+// /api/v1/users/me의 level로 이 맵에서 같은 이미지를 골라 쓴다 — 두 화면에 각자 하드코딩하면
+// "레벨은 다른데 캐릭터 그림만 안 바뀌는" 어긋남이 생기기 쉬워 여기 하나로 모았다.
+export const LEVEL_CHARACTER_IMAGES: Record<number, number> = {
+  1: require('@/assets/images/figma-character-level-1.png'),
+  2: require('@/assets/images/figma-character-level-2.png'),
+  3: require('@/assets/images/figma-character-level-3.png'),
+  4: require('@/assets/images/figma-character-level-4.png'),
+  5: require('@/assets/images/figma-character-level-5.png'),
+};
+
 export const HOME_SUMMARY_MOCK: HomeSummaryResponse = {
   date: { label: '8월 6일 목요일' },
   greeting: { message: '좋은 아침이에요', emoji: '🌞' },

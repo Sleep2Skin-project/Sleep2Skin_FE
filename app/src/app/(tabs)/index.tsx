@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getLevelExpDisplay } from '@/api/game';
 import {
   getSkinForecast,
   getSkinModel,
@@ -21,7 +22,7 @@ import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { HOME_SUMMARY_MOCK, LEVEL_EXP_MAX } from '@/constants/mockData';
+import { HOME_SUMMARY_MOCK, LEVEL_CHARACTER_IMAGES } from '@/constants/mockData';
 import { useDesignScale } from '@/hooks/use-design-scale';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
@@ -49,36 +50,9 @@ const EXP_TEXT_FONTS = {
 const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 
-// 레벨별 캐릭터 이미지(mockData.ts의 옛 TODO 블록 참고) — 레벨4는 기존 figma-character.png와
-// 픽셀 동일 이미지지만, 5종 모두 이 맵 하나로 통일해 관리한다.
-const LEVEL_CHARACTER_IMAGES: Record<number, number> = {
-  1: require('@/assets/images/figma-character-level-1.png'),
-  2: require('@/assets/images/figma-character-level-2.png'),
-  3: require('@/assets/images/figma-character-level-3.png'),
-  4: require('@/assets/images/figma-character-level-4.png'),
-  5: require('@/assets/images/figma-character-level-5.png'),
-};
-
 // MY-01(GET /api/v1/users/me)과 동일한 프로필 응답에서 레벨/exp를 가져온다(마이 탭 my.tsx와
 // 같은 패턴). 이 API엔 빈 상태가 없어 loading/error/available 세 상태만 관리하면 된다.
 type ProfileState = { status: 'loading' } | { status: 'error' } | { status: 'available'; profile: UserMeData };
-
-/**
- * 레벨 내 exp 진행률 계산. 서버는 totalExp(누적)와 nextLevelExp(다음 레벨 컷오프 절대값,
- * 만렙이면 null)만 주므로, LEVEL_EXP_MAX(레벨별 필요 exp 표)로 "이번 레벨 시작 exp"를 역산해
- * current/max 형태로 바꾼다(my.tsx의 calculateRemainingExp와 같은 계산 축, 표현만 다름).
- * 만렙(nextLevelExp === null)이면 꽉 찬 막대(max/max)로 보여준다.
- */
-function getLevelExpDisplay(profile: UserMeData | null): { current: number; max: number; percent: number } {
-  const level = profile?.level ?? 1;
-  const max = LEVEL_EXP_MAX[level] ?? LEVEL_EXP_MAX[1];
-  if (!profile || profile.nextLevelExp === null) {
-    return { current: max, max, percent: 100 };
-  }
-  const levelStartExp = profile.nextLevelExp - max;
-  const current = Math.min(Math.max(profile.totalExp - levelStartExp, 0), max);
-  return { current, max, percent: (current / max) * 100 };
-}
 
 const FORECAST_METRIC_LABELS = {
   darkCircle: '다크서클',
@@ -112,21 +86,23 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
-/** grade는 백엔드가 자유 문자열로 내려줘 고정 enum이 없다 — 흔한 위험/주의 키워드만 색으로 매칭하고 나머지는 안전으로 취급한다. */
-function gradeToColor(grade: string): string {
+/**
+ * grade는 백엔드가 자유 문자열로 내려줘 고정 enum이 없다(한글 "안정"/영문 "STABLE"처럼 표기가
+ * 섞여 올 수 있음). 디자인 시안 4단계(위험-빨강 / 주의-주황 / 보통-초록 / 안정-파랑) 기준으로
+ * 키워드 매칭해 라벨은 한글로, 색은 시안 배색으로 통일한다. 매칭되는 키워드가 없으면 원문
+ * grade를 그대로 보여주고 색은 안전 쪽(success)으로 폴백한다.
+ */
+const GRADE_RULES: { keywords: string[]; label: string; color: string }[] = [
+  { keywords: ['위험', 'DANGER', 'BAD'], label: '위험', color: Colors.danger },
+  { keywords: ['주의', '경고', 'WARN', 'CAUTION'], label: '주의', color: Colors.warning },
+  { keywords: ['안정', 'STABLE'], label: '안정', color: Colors.accentBlue },
+  { keywords: ['보통', 'NORMAL', 'MODERATE'], label: '보통', color: Colors.success },
+];
+
+function resolveGrade(grade: string): { label: string; color: string } {
   const normalized = grade.toUpperCase();
-  if (normalized.includes('위험') || normalized.includes('DANGER') || normalized.includes('BAD')) {
-    return Colors.danger;
-  }
-  if (
-    normalized.includes('주의') ||
-    normalized.includes('경고') ||
-    normalized.includes('WARN') ||
-    normalized.includes('CAUTION')
-  ) {
-    return Colors.warning;
-  }
-  return Colors.success;
+  const matched = GRADE_RULES.find((rule) => rule.keywords.some((keyword) => normalized.includes(keyword.toUpperCase())));
+  return matched ?? { label: grade, color: Colors.success };
 }
 
 function buildForecastRows(forecast: SkinForecastDetail) {
@@ -135,23 +111,32 @@ function buildForecastRows(forecast: SkinForecastDetail) {
     ['complexion', forecast.complexion],
     ['barrier', forecast.barrier],
   ];
-  return entries.map(([key, metric]) => ({
-    key,
-    label: FORECAST_METRIC_LABELS[key],
-    value: metric?.score ?? 0,
-    status: metric?.grade ?? '측정 불가',
-    color: metric ? gradeToColor(metric.grade) : UNAVAILABLE_METRIC_COLOR,
-  }));
+  return entries.map(([key, metric]) => {
+    const grade = metric ? resolveGrade(metric.grade) : null;
+    return {
+      key,
+      label: FORECAST_METRIC_LABELS[key],
+      value: metric?.score ?? 0,
+      status: grade?.label ?? '측정 불가',
+      color: grade?.color ?? UNAVAILABLE_METRIC_COLOR,
+    };
+  });
 }
 
-function buildTooltipLines(state: InterpretationState): string[] {
-  if (state.status === 'loading') return ['불러오는 중...'];
-  if (state.status === 'error') return ['수면 통역을 불러오지 못했어요'];
-  if (state.status === 'no_data') return [state.message];
+/**
+ * headline은 항상 완결된 문장(수치+피부과학 팁)이라 그대로 본문으로 쓴다.
+ * focus.label은 "깊은 수면"처럼 완결되지 않은 짧은 명사구라, headline 아래 세 번째
+ * 문장처럼 이어붙이면 말이 끊겨 보인다. 그래서 문장으로 취급하지 않고 별도 칩(pill)
+ * 라벨로 렌더링한다(아래 JSX의 tooltipFocusChip).
+ */
+function buildTooltipContent(state: InterpretationState): { headline: string; focusLabel: string | null } {
+  if (state.status === 'loading') return { headline: '불러오는 중...', focusLabel: null };
+  if (state.status === 'error') return { headline: '수면 통역을 불러오지 못했어요', focusLabel: null };
+  if (state.status === 'no_data') return { headline: state.message, focusLabel: null };
   const { interpretation } = state;
   return interpretation.tone === 'PRAISE'
-    ? [interpretation.headline]
-    : [interpretation.headline, interpretation.focus.label];
+    ? { headline: interpretation.headline, focusLabel: null }
+    : { headline: interpretation.headline, focusLabel: interpretation.focus.label };
 }
 
 /**
@@ -285,6 +270,7 @@ export default function HomeScreen() {
 
   const profile = profileState.status === 'available' ? profileState.profile : null;
   const level = profile?.level ?? 1;
+  const tooltipContent = buildTooltipContent(interpretationState);
   const expDisplay = getLevelExpDisplay(profile);
   const characterImage = LEVEL_CHARACTER_IMAGES[level] ?? LEVEL_CHARACTER_IMAGES[1];
 
@@ -331,11 +317,12 @@ export default function HomeScreen() {
                 end={{ x: 1, y: 1 }}>
                 <View style={styles.tooltipIconSlot} />
                 <View style={styles.tooltipTextBlock}>
-                  {buildTooltipLines(interpretationState).map((line, index) => (
-                    <ThemedText key={index} style={styles.tooltipText}>
-                      {line}
-                    </ThemedText>
-                  ))}
+                  <ThemedText style={styles.tooltipText}>{tooltipContent.headline}</ThemedText>
+                  {tooltipContent.focusLabel && (
+                    <View style={styles.tooltipFocusChip}>
+                      <ThemedText style={styles.tooltipFocusChipText}>#{tooltipContent.focusLabel}</ThemedText>
+                    </View>
+                  )}
                 </View>
               </LinearGradient>
             </Pressable>
@@ -548,6 +535,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700',
     color: '#1C2430',
+  },
+  // focus.label("깊은 수면" 같은 짧은 명사구)을 headline 아래 세 번째 문장처럼 잇지 않고
+  // 독립된 태그로 보여주는 칩. alignSelf: 'flex-start'로 글자 길이만큼만 감싸 카드 폭을
+  // 다 채우지 않게 한다.
+  tooltipFocusChip: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(51, 102, 255, 0.14)',
+  },
+  tooltipFocusChipText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    color: Colors.accentBlue,
   },
   // Person In Bed (node 187:2702, x:198 y:186 w:27 h:27) — 프레임 루트의 독립 레이어(플로팅)
   tooltipIcon: {

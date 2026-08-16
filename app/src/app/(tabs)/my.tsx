@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { calculateRemainingExp } from '@/api/game';
+import { calculateRemainingExp, getLevelExpDisplay } from '@/api/game';
 import { getDailyTodos } from '@/api/todo';
 import {
   calculateVerificationTrustLevel,
@@ -17,7 +17,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { LEVEL_EXP_MAX } from '@/constants/mockData';
+import { LEVEL_CHARACTER_IMAGES, LEVEL_EXP_MAX } from '@/constants/mockData';
 import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
 import { isWeekdayInTrailingStreak, toMondayFirstWeekdayIndex } from '@/utils/week-streak';
@@ -178,8 +178,17 @@ function pointAtDistance(distance: number): { x: number; y: number } {
   return { x: remaining, y: EXP_BAR_ROW3_TOP + EXP_BAR_THICKNESS + 2 };
 }
 
-function LevelSegmentBar({ currentLevel }: { currentLevel: number }) {
-  const filledLength = (currentLevel / LEVEL_COUNT) * EXP_BAR_TOTAL_LENGTH;
+/**
+ * level(정수)만으로 통째로 한 칸씩 채우던 것을, 그 레벨 구간 안에서 실제 exp 비율(progressPercent,
+ * 0~100 — 홈 화면과 같은 getLevelExpDisplay 소스)만큼 미세하게 차오르도록 계산한다.
+ * ((레벨 - 1) + progressPercent/100) / LEVEL_COUNT — 레벨 N 안에서 exp가 0%면 (N-1)칸까지만,
+ * 100%(=다음 레벨 직전)면 N칸까지 찬 것처럼 보이다가 실제로 레벨업하는 순간 다음 칸으로 넘어간다.
+ * 단, "^" 경계 표시(reached)는 exp 비율과 무관하게 실제로 그 레벨을 넘었는지만 봐야 하므로
+ * 정수 level을 그대로 쓴다(아래 dividers.map 참고) — progressPercent로 계산하면 안 됨.
+ */
+function LevelSegmentBar({ level, progressPercent }: { level: number; progressPercent: number }) {
+  const levelProgress = level - 1 + progressPercent / 100;
+  const filledLength = clamp((levelProgress / LEVEL_COUNT) * EXP_BAR_TOTAL_LENGTH, 0, EXP_BAR_TOTAL_LENGTH);
 
   const row1Filled = clamp(filledLength, 0, EXP_BAR_ROW_WIDTH);
   const rightConnStart = EXP_BAR_ROW_WIDTH;
@@ -221,7 +230,7 @@ function LevelSegmentBar({ currentLevel }: { currentLevel: number }) {
 
       {dividers.map((divider) => {
         const point = pointAtDistance((divider / LEVEL_COUNT) * EXP_BAR_TOTAL_LENGTH);
-        const reached = divider <= currentLevel - 1;
+        const reached = divider <= level - 1;
         return (
           <Text
             key={divider}
@@ -328,6 +337,10 @@ export default function MyScreen() {
   const profile = profileState.status === 'available' ? profileState.profile : null;
   const level = profile?.level ?? 1;
   const remainingExp = profile ? calculateRemainingExp(profile) : null;
+  // 홈 화면(index.tsx)의 exp 게이지와 같은 소스 — 레벨 바가 그 레벨 안에서 실제 exp 비율만큼
+  // 미세하게 차오르게 하는 데 쓴다(아래 LevelSegmentBar).
+  const expDisplay = getLevelExpDisplay(profile);
+  const characterImage = LEVEL_CHARACTER_IMAGES[level] ?? LEVEL_CHARACTER_IMAGES[1];
   // 로딩/에러 중엔 streakCount 0으로 취급 — buildWeekStreakDays가 전부 upcoming(오늘만
   // todayPending)으로 안전하게 그린다.
   const weekStreakDays = buildWeekStreakDays(profile?.streakCount ?? 0);
@@ -405,9 +418,10 @@ export default function MyScreen() {
 
           {/* 캐릭터 그림자 (node 541:2984, blur 근사) */}
           <View style={styles.characterShadow} />
-          {/* 캐릭터 (node 551:1316) — 홈 화면(index.tsx)과 동일한 이미지를 그대로 재사용해
-              "홈 화면에 있는 현재 캐릭터"와 항상 같은 그림이 보이도록 한다. */}
-          <Image source={require('@/assets/images/figma-character.png')} style={styles.characterImage} contentFit="contain" />
+          {/* 캐릭터 (node 551:1316) — 홈 화면(index.tsx)과 동일한 LEVEL_CHARACTER_IMAGES 맵을 써서
+              레벨(level)에 맞는 이미지를 고른다 — 항상 "홈 화면에 있는 현재 캐릭터"와 같은
+              그림이 보이도록 한다. */}
+          <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
 
           {/* 날짜 내비게이션 (node 541:3016/3017/3019) — 실제 날짜별 데이터가 없어 화살표는
               장식용이고 탭해도 아무 동작이 없다(다른 화면들의 정적 목업과 동일한 취급). */}
@@ -448,7 +462,7 @@ export default function MyScreen() {
           {/* "+ EXP" 섹션 제목 (node 541:3021) */}
           <Text style={styles.expSectionTitle}>+ EXP</Text>
           {/* EXP 구간 막대 (node 541:3024~3034) — 위 LevelSegmentBar 주석 참고, 실 레벨(level) 사용 */}
-          <LevelSegmentBar currentLevel={level} />
+          <LevelSegmentBar level={level} progressPercent={expDisplay.percent} />
           {/* 다음 레벨까지 남은 exp — Figma 노드 없음. nextLevelExp가 null(만렙)이면 "MAX 레벨"로
               방어한다(출석체크 팝업(attendance-flow.tsx)의 동일 규칙과 같은 calculateRemainingExp
               사용, api/game.ts). 로딩 중엔 아무것도 보여주지 않는다(어중간한 값을 보여주지 않기 위함). */}

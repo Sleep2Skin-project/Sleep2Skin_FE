@@ -1,11 +1,12 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { calculateRemainingExp } from '@/api/game';
+import { getDailyTodos } from '@/api/todo';
 import {
   calculateVerificationTrustLevel,
   deleteUserMe,
@@ -16,10 +17,10 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { LEVEL_EXP_MAX, TODO_SUMMARY_MOCK } from '@/constants/mockData';
+import { LEVEL_EXP_MAX } from '@/constants/mockData';
 import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { useChecklistCheckedMap, resetChecklistStore } from '@/hooks/use-checklist-store';
+import { isWeekdayInTrailingStreak, toMondayFirstWeekdayIndex } from '@/utils/week-streak';
 
 // MY — Figma 'Ui (복사)' 파일 노드 541:2981("iPhone 17 - 22")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -71,6 +72,17 @@ type DataStatusState =
   | { status: 'no_data'; message: string | null }
   | { status: 'available'; lastReceivedAt: string };
 
+// "오늘의 투두 n/5" — GET /api/v1/todo(TODO 탭과 같은 API)를 여기서도 독립적으로 호출해 채운다.
+// todo.tsx는 실 API의 숫자 id를 자체 로컬 state로만 관리하므로(주석 참고, 문자열 슬러그 기반
+// 구 mock store와 id 체계가 달라 공유 store를 쓰지 않기로 함) 이 화면은 todo 탭 방문 여부와
+// 무관하게 스스로 오늘 치 checklistItems를 불러와 DONE 개수를 센다. AVAILABLE/NO_SLEEP_DATA
+// 둘 다 checklistItems 배열을 갖고 있어(비어있을 수 있음) 두 상태를 구분할 필요 없이 하나로
+// 묶는다 — 여기서 필요한 건 오직 진행률 숫자뿐, empty-state 문구는 todo 탭의 몫이다.
+type TodoProgressState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'available'; completed: number; total: number };
+
 // lastReceivedAt은 "마지막으로 잔 날"이 아니라 "서버가 데이터를 받은 시각"이므로 그 의미가
 // 드러나도록 날짜+시:분까지 KST로 포맷한다. 파싱 실패는 원본 문자열을 그대로 보여줘 방어한다.
 function formatSyncTimestamp(iso: string): string {
@@ -89,26 +101,37 @@ function formatSyncTimestamp(iso: string): string {
 // 이 앱의 실제 업로드 정책("앱을 켤 때마다 업로드")을 고정 문구로 그대로 노출한다(MY-02 규칙 2).
 const SYNC_POLICY_TEXT = '앱을 켤 때마다 자동으로 최신 수면 데이터를 가져와요';
 
-// 이번 주 출석 스트릭 띠(node 541:2985) — 게이미케이션/출석 API가 아직 없어(ATT-01
-// attendance-flow.tsx와 동일한 사정) Figma 시안이 보여주는 예시 값을 그대로 하드코딩한다.
-// 완료(파랑)/오늘(빨강, "N일" + 위쪽 세모 표시)/예정(회색, "N일") 세 상태뿐이고 실제 날짜별
-// 로직과는 무관한 정적 목업 — 출석 API가 생기면 이 배열을 응답 데이터로 교체할 것.
-type WeekStreakState = 'done' | 'today' | 'upcoming';
-const WEEK_STREAK_MOCK: { label: string; state: WeekStreakState }[] = [
-  { label: '완료', state: 'done' },
-  { label: '완료', state: 'done' },
-  { label: '완료', state: 'done' },
-  { label: '4일', state: 'today' },
-  { label: '5일', state: 'upcoming' },
-  { label: '완료', state: 'done' },
-  { label: '완료', state: 'done' },
-];
+// 이번 주 출석 스트릭 띠(node 541:2985) — MY-01(GET /api/v1/users/me)의 streakCount를
+// week-streak.ts(isWeekdayInTrailingStreak)로 이번 주 월~일 그리드에 투영해 실연동한다(정확한
+// 요일별 이력 API는 없어 "오늘 포함 최근 streakCount일" 꼬리를 그리는 방식 — 자세한 설명은
+// week-streak.ts 상단 주석 참고). 완료(파랑)/오늘인데 아직 스트릭에 안 들어간 경우(빨강, 위쪽
+// 세모 표시)/예정 또는 미완료(회색) 세 가지 시각 상태로 그린다.
+type WeekStreakState = 'done' | 'todayPending' | 'upcoming';
 
 const WEEK_STREAK_COLORS: Record<WeekStreakState, { ring: string; circleBg: string }> = {
   done: { ring: '#058BFC', circleBg: '#8ECDFF' },
-  today: { ring: '#F91D33', circleBg: '#FFFFFF' },
+  todayPending: { ring: '#F91D33', circleBg: '#FFFFFF' },
   upcoming: { ring: '#949597', circleBg: '#FFFFFF' },
 };
+
+const WEEKDAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'] as const;
+
+/**
+ * streakCount를 이번 주 7칸으로 투영한다. 오늘 이후 요일은 항상 upcoming. 오늘까지(포함)는
+ * "오늘로부터 며칠 전인지"가 streakCount 미만이면 done — 단, 오늘 자신이 아직 스트릭에 포함되지
+ * 않은 극히 드문 경우(streakCount가 0이거나 오늘이 그 안 든 경우 — 앱 진입 시 자동 출석
+ * 체크인이 이미 실행되므로 사실상 거의 발생하지 않음)만 todayPending으로 강조한다.
+ */
+function buildWeekStreakDays(streakCount: number): { label: string; state: WeekStreakState; isToday: boolean }[] {
+  const todayIndex = toMondayFirstWeekdayIndex(new Date());
+  return WEEKDAY_LABELS.map((label, index) => {
+    const isToday = index === todayIndex;
+    if (index > todayIndex) return { label, state: 'upcoming' as const, isToday };
+    const done = isWeekdayInTrailingStreak(index, todayIndex, streakCount);
+    if (isToday) return { label, state: done ? ('done' as const) : ('todayPending' as const), isToday };
+    return { label, state: done ? ('done' as const) : ('upcoming' as const), isToday };
+  });
+}
 
 // EXP 구간 막대(node 541:3021~3034) — Figma 원본은 일자형이 아니라, 한 줄짜리 막대가 오른쪽
 // 아래로 한 번, 왼쪽 아래로 한 번 꺾이는 3단(위/가운데/아래) 뱀 모양 트랙이다(고해상도로 다시
@@ -267,11 +290,24 @@ export default function MyScreen() {
   const router = useRouter();
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(MY_SCREEN_FONTS);
-  // "오늘의 투두 n/5"는 TODO 탭(todo.tsx)과 같은 공유 store를 봐서, 투두를 체크/해제하면 이
-  // 화면을 새로 열지 않아도 실시간으로 값이 바뀐다.
-  const checkedMap = useChecklistCheckedMap();
-  const completedCount = useMemo(() => Object.values(checkedMap).filter(Boolean).length, [checkedMap]);
-  const totalCount = TODO_SUMMARY_MOCK.checklist.length;
+  // "오늘의 투두 n/5" — 위 TodoProgressState 주석 참고. todo 탭과 별개로 이 화면이 직접 조회한다.
+  const [todoProgressState, setTodoProgressState] = useState<TodoProgressState>({ status: 'loading' });
+
+  useEffect(() => {
+    getDailyTodos(getTodayDateString(), TEMP_USER_ID)
+      .then(({ data }) => {
+        const total = data.checklistItems.length;
+        const completed = data.checklistItems.filter((item) => item.status === 'DONE').length;
+        setTodoProgressState({ status: 'available', completed, total });
+      })
+      .catch((error) => {
+        console.error('❌ 오늘의 투두 조회 실패:', error);
+        setTodoProgressState({ status: 'error' });
+      });
+  }, []);
+
+  const completedCount = todoProgressState.status === 'available' ? todoProgressState.completed : 0;
+  const totalCount = todoProgressState.status === 'available' ? todoProgressState.total : 0;
   const todoProgress = totalCount === 0 ? 0 : completedCount / totalCount;
 
   // MY-01 — 레벨/exp/검증 횟수 프로필. baseDate는 streakCount(연속 검증 횟수) 계산에 필요하다
@@ -292,6 +328,9 @@ export default function MyScreen() {
   const profile = profileState.status === 'available' ? profileState.profile : null;
   const level = profile?.level ?? 1;
   const remainingExp = profile ? calculateRemainingExp(profile) : null;
+  // 로딩/에러 중엔 streakCount 0으로 취급 — buildWeekStreakDays가 전부 upcoming(오늘만
+  // todayPending)으로 안전하게 그린다.
+  const weekStreakDays = buildWeekStreakDays(profile?.streakCount ?? 0);
 
   // MY-02 — 수면 데이터 연결 상태. baseDate를 보내지 않는다(위 DataStatusState 주석 참고).
   const [dataStatusState, setDataStatusState] = useState<DataStatusState>({ status: 'loading' });
@@ -321,10 +360,9 @@ export default function MyScreen() {
     setDeleteError(null);
     try {
       await deleteUserMe(TEMP_USER_ID);
-      // hard delete 성공 — 이 기기에 남아있는 로컬 상태(공유 체크리스트 store)를 깨끗이 비우고,
-      // _layout.tsx에 "온보딩/동의 화면으로 강제로 돌아가라"는 신호를 보낸다. entryRoute가 바뀌면
-      // (tabs) 트리 전체(이 화면 포함)가 곧바로 언마운트되므로 여기서 모달을 직접 닫을 필요는 없다.
-      resetChecklistStore();
+      // hard delete 성공 — _layout.tsx에 "온보딩/동의 화면으로 강제로 돌아가라"는 신호를 보낸다.
+      // entryRoute가 바뀌면 (tabs) 트리 전체(이 화면 포함)가 곧바로 언마운트되므로 여기서 모달을
+      // 직접 닫을 필요는 없다.
       signalAccountDeleted();
     } catch (error) {
       console.error('❌ 회원 탈퇴 실패:', error);
@@ -356,8 +394,8 @@ export default function MyScreen() {
           <ThemedText style={styles.levelSubtitle}>내 루틴을 찾았어요!</ThemedText>
           {/* MY-01 검증 신뢰도 — Figma 노드 없음. verificationCount로 계산한 신뢰도 문구
               (calculateVerificationTrustLevel, api/user.ts)와 streakCount(연속 검증 횟수)를
-              보여준다. streakCount는 "출석 연속"이 아니므로 아래 WEEK_STREAK_MOCK(출석 목업)과는
-              절대 같은 자리/같은 의미로 섞지 않는다. */}
+              보여준다. 아래 "이번 주 출석 스트릭" 띠도 같은 streakCount를 요일 그리드에 투영한
+              것이다(week-streak.ts) — 서로 다른 표현일 뿐 같은 값이다. */}
           {profileState.status === 'available' && (
             <ThemedText style={styles.trustLevelText}>
               검증 {profileState.profile.verificationCount}회 · 연속 {profileState.profile.streakCount}일 ·{' '}
@@ -385,14 +423,14 @@ export default function MyScreen() {
             contentFit="contain"
           />
 
-          {/* 이번 주 출석 스트릭 (node 541:2985, 정적 목업 — 위 WEEK_STREAK_MOCK 주석 참고) */}
+          {/* 이번 주 출석 스트릭 (node 541:2985, streakCount 실연동 — 위 buildWeekStreakDays 주석 참고) */}
           <View style={styles.weekStreakRow}>
-            {WEEK_STREAK_MOCK.map((day, index) => {
+            {weekStreakDays.map((day, index) => {
               const colors = WEEK_STREAK_COLORS[day.state];
               return (
                 <View key={index} style={styles.weekStreakDay}>
                   <View style={styles.weekStreakMarkerSlot}>
-                    {day.state === 'today' && <Text style={styles.weekStreakMarker}>▼</Text>}
+                    {day.isToday && <Text style={styles.weekStreakMarker}>▼</Text>}
                   </View>
                   <View style={[styles.weekStreakCircle, { backgroundColor: colors.circleBg, borderColor: colors.ring }]}>
                     <Image

@@ -53,7 +53,9 @@ export default function TabLayout() {
   // - checkedIn:false(그날 재호출) 또는 요청 실패 → 팝업 없이 바로 다음 화면으로 진행한다.
   // - checkedIn:true → ATT-01 팝업을 띄우고, 닫힐 때 attendanceSeen을 true로 바꾼다.
   const [attendanceCheckIn, setAttendanceCheckIn] = useState<
-    { status: 'pending' } | { status: 'checked-in'; exp: AttendanceExpInfo } | { status: 'skip' }
+    | { status: 'pending' }
+    | { status: 'checked-in'; exp: AttendanceExpInfo; streakCount: number }
+    | { status: 'skip' }
   >({ status: 'pending' });
   const [attendanceSeen, setAttendanceSeen] = useState(false);
   // MY-04(회원 탈퇴) 성공 신호 — my.tsx가 use-account-reset-signal.ts를 통해 이 값을 올린다.
@@ -108,7 +110,11 @@ export default function TabLayout() {
     if (!pastOnboarding) return;
     checkInAttendance(TEMP_USER_ID, getTodayDateString())
       .then(({ data }) => {
-        setAttendanceCheckIn(data.checkedIn ? { status: 'checked-in', exp: data.exp } : { status: 'skip' });
+        setAttendanceCheckIn(
+          data.checkedIn
+            ? { status: 'checked-in', exp: data.exp, streakCount: data.streakCount }
+            : { status: 'skip' }
+        );
       })
       .catch((error) => {
         console.error('❌ 출석 체크인 실패:', error);
@@ -138,6 +144,7 @@ export default function TabLayout() {
         <AttendanceFlow
           onComplete={() => setAttendanceSeen(true)}
           exp={attendanceCheckIn.status === 'checked-in' ? attendanceCheckIn.exp : undefined}
+          streakCount={attendanceCheckIn.status === 'checked-in' ? attendanceCheckIn.streakCount : 0}
         />
       )}
       {/* (tabs) 그룹(HOME/TODO/REPORT/MY, app-tabs.tsx의 NativeTabs)과 my-model.tsx를 형제

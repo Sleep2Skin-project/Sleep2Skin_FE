@@ -102,11 +102,13 @@ const COMPARISON_GAUGE_ASSETS = [
 ] as const;
 
 // verifications/skipped의 metric 필드(DARK_CIRCLE/BARRIER/COMPLEXION 등) → 표시 라벨.
-// index.tsx(FORECAST_METRIC_LABELS)와 동일한 한글 라벨을 써서 앱 전체 표기를 통일한다.
+// 이 비교 테이블(node 618:1656의 618:1678/1692/1706)은 "예보 대비 실측"을 보여주는 맥락이라
+// index.tsx/daily-report.tsx의 피부 예보 라벨과는 별도로, Figma가 이 화면 전용으로 지정한 문구를
+// 그대로 쓴다.
 const VERIFICATION_METRIC_LABELS: Record<string, string> = {
-  DARK_CIRCLE: '다크서클',
-  BARRIER: '장벽',
-  COMPLEXION: '안색',
+  DARK_CIRCLE: '다크서클 회복',
+  BARRIER: '피부 장벽',
+  COMPLEXION: '혈색',
 };
 
 function metricLabel(metric: string): string {
@@ -151,34 +153,37 @@ const REPORT_TEXT_DARKEST = '#171717';
 const REPORT_TEXT_MUTED = '#8B8B93'; // Manatee
 const REPORT_BLUE = '#3366FF';
 const REPORT_NAVY = '#031949';
-const REPORT_ACCURACY_CARD_BG = '#F4F0FD';
 const REPORT_DOLPHIN = '#6B6478';
 const REPORT_TARA_BG = '#E1F6EB';
 const REPORT_MEADOW = '#1FAA6A';
-const REPORT_STREAK_BADGE_BG = '#C9DAFF';
 const REPORT_TABLE_BORDER = 'rgba(112, 115, 124, 0.22)'; // Pale Sky 22%
 const REPORT_TABLE_DIVIDER = 'rgba(112, 115, 124, 0.08)'; // Pale Sky 8%
 const REPORT_HEADER_LABEL = 'rgba(55, 56, 60, 0.28)'; // Tuna 28%
 const REPORT_VALUE_MUTED = 'rgba(55, 56, 60, 0.61)'; // Tuna 61%
 const REPORT_SPARKLE_BG = 'rgba(0, 102, 255, 0.1)'; // Blue Ribbon 10%
 
-// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543, "연속 출석에 실패했어요") 전용 색상.
-// 연속 검증(스트릭)을 "일자별 완료/실패/예정" 배열로 조회하는 API는 없다(GET
-// /api/v1/skin/verification/summary는 streakCount 정수 하나와 최근 1건만 내려줄 뿐, 과거
-// 스트릭을 "이어서 재개"할 수 있는 개념 자체가 백엔드에 없다) — 그래서 요일별 배지 상태는
-// Figma 시안 값을 그대로 옮긴 정적 목업이고, 두 CTA 버튼은 실제 재개/재시작 로직 없이 모달을
-// 닫기만 한다. 실제 로직이 필요해지면 백엔드에 전용 API가 먼저 있어야 한다.
+// node 618:1938(느슨한 그룹, Figma 캔버스에 프레임 없이 떠 있는 최신 시안) — "셀피 리포트 팝업"
+// 모달의 리디자인. 예전 시안(node 487:273 > 487:543, "아차! 연속 출석에 실패했어요")은 요일별
+// 완료/실패/예정 3가지 상태를 보여줬는데, 그 배열을 내려주는 API가 없어(GET
+// /api/v1/skin/verification/summary는 streakCount 정수 하나와 최근 1건만 내려줄 뿐, "일자별
+// 이력"이나 "이어서 재개" 개념 자체가 백엔드에 없다) 전부 정적 목업이었다.
+// 새 시안은 "실패" 상태를 아예 없애고 완료 1칸 + 목표(5일) 4칸, CTA 버튼 1개(기존 2개 → 1개)로
+// 단순화했다 — 그 덕에 streakCount 정수 하나만으로 완전히 실연동된다: 검증 직후 streakCount가
+// 1이면(오늘 새로 1일차를 시작한 것 — 최초 검증이든 스트릭이 끊긴 뒤 재시작이든 서버 입장에서는
+// 구분할 방법이 없어 동일하게 취급) 이 모달을 띄우고, 항상 "완료 1칸 + 5일 4칸"만 보여준다
+// (streakCount가 2 이상이면 이미 진행 중인 스트릭이므로 이 모달 자체를 띄우지 않는다 — 중간
+// 진행 상태를 보여주는 시안이 아니다).
 const STREAK_MODAL_BACKDROP = 'rgba(255, 255, 255, 0.4)';
 const STREAK_MODAL_TITLE = '#000000';
 const STREAK_MODAL_SUBTITLE = '#525252';
 const STREAK_MODAL_PANEL_BG = 'rgba(209, 234, 255, 0.6)';
 const STREAK_MODAL_DAY_DONE_BG = '#8ECDFF';
 const STREAK_MODAL_DAY_DONE_BORDER = '#058BFC';
-const STREAK_MODAL_DAY_MISSED_BORDER = '#F91D33';
 const STREAK_MODAL_DAY_PENDING_BORDER = '#949597';
-const STREAK_MODAL_LABEL_MUTED = '#8B8B93';
+const STREAK_MODAL_MARKER = '#008DFF';
 const STREAK_MODAL_PRIMARY_BTN_BG = '#008DFF';
-const STREAK_MODAL_SECONDARY_BTN_BG = '#E3E3E3';
+// 목표 일수(카드 안 "5일" 라벨과 동일한 값) — 진행 중 4칸의 라벨 문구에도 그대로 쓴다.
+const STREAK_CHALLENGE_GOAL_DAYS = 5;
 
 // 이 파일 대부분의 텍스트는 시스템 폰트로도 크게 문제없이 맞았지만, 이 모달의 타이틀("아차! 연속
 // 출석에 실패했어요")은 박스 폭이 좁아 시스템 폰트로는 두 줄로 넘칠 수 있다 — 온보딩
@@ -191,17 +196,6 @@ const STREAK_MODAL_FONTS = {
   [PRETENDARD_SEMIBOLD]: require('@/assets/fonts/Pretendard-SemiBold.otf'),
 };
 
-type StreakDayState = 'done' | 'missed' | 'pending';
-
-// 요일 배지 5개(node 487:246/247/252/269/271) — 위 주석대로 실제 스트릭 데이터가 아니라
-// Figma 시안이 보여주는 정적 예시(3일 완료 → 4일째 실패 → 5일째는 아직 오지 않음) 그대로다.
-const STREAK_MODAL_DAYS: { state: StreakDayState; label: string }[] = [
-  { state: 'done', label: '완료' },
-  { state: 'done', label: '완료' },
-  { state: 'done', label: '완료' },
-  { state: 'missed', label: '4일' },
-  { state: 'pending', label: '5일' },
-];
 
 // 개발자용 프리패스(Bypass) — 웹 브라우저는 실기기 카메라/갤러리가 온전히 동작하지 않을 수
 // 있어, 화면 전환 흐름만 먼저 검증할 수 있도록 실패 시 이 더미 이미지로 강제 진행한다.
@@ -695,14 +689,18 @@ type AccuracyBannerState =
   | { kind: 'no_verification'; message: string | null }
   | { kind: 'available'; baseDate: string; summary: VerificationSummary };
 
-// "84% 예보 적중률" 링 + "N일 연속 검증 완료!" 스트릭 배지 (node 243:1507).
-// GET /api/v1/skin/verification/summary(HOME-09)를 직접 호출해 채운다.
+// "84% 예보 적중률" 링 + "N일 연속 검증 완료!" 스트릭 배지 (node 618:1656 리디자인 — 예전
+// node 243:1507 대비 스트릭 배지가 StreakChallengeModal과 똑같은 모양(얼굴 아이콘 원형 배지 +
+// "완료" 라벨, 전부 #8ECDFF/#058BFC)으로 통일됐다. 카드도 단색 배경(#F4F0FD)에서 흰 배경 +
+// #058BFC 테두리로 바뀌었다).
+// GET /api/v1/skin/verification/summary(HOME-09)를 직접 호출해 채운다 — 데이터 소스는 그대로다.
 // - 링 중앙 수치는 summary.hitRate(누적 적중률). summary.latest.hitRate(그날치)와는 다른 숫자라
 //   섞어 쓰지 않고 "최근 검증 N%" 배지로 따로 보여준다.
-// - 스트릭 배지 개수는 summary.streakCount를 그대로 쓰되, "오늘"은 응답의 baseDate(요청한
-//   오늘 날짜)와 summary.latest.baseDate가 같을 때만 별 배지로 표시한다 — 오늘 아직 검증하지
-//   않았는데도 별을 붙이면 하지 않은 일을 한 것처럼 보이게 된다("오늘 미검증이 연속을 끊지
-//   않는다"는 규칙과, 하지 않은 일로 보여선 안 된다는 규칙은 서로 다른 요구라 둘 다 지켜야 한다).
+// - 스트릭 배지 개수는 summary.streakCount를 그대로 쓴다. 예전엔 "오늘" 배지만 별 아이콘 +
+//   다른 배경색으로 구분했지만, 새 시안은 모든 배지를 동일하게 그리고 마지막(오늘) 배지 위에
+//   작은 포인터 마커만 얹는 방식으로 단순화했다 — "오늘"은 응답의 baseDate(요청한 오늘 날짜)와
+//   summary.latest.baseDate가 같을 때만 표시한다(오늘 아직 검증하지 않았는데도 마커를 붙이면
+//   하지 않은 일을 한 것처럼 보이게 된다).
 function AccuracyCard() {
   const [state, setState] = useState<AccuracyBannerState>({ kind: 'loading' });
 
@@ -757,7 +755,6 @@ function AccuracyCard() {
   const { summary, baseDate } = state;
   const todayInStreak = summary.streakCount > 0 && summary.latest.baseDate === baseDate;
   const totalBadges = Math.min(summary.streakCount, STREAK_BADGE_MAX);
-  const checkBadgeCount = todayInStreak ? Math.max(totalBadges - 1, 0) : totalBadges;
   const streakTitle =
     summary.streakCount === 0
       ? '오늘부터 연속 검증을 시작해보세요'
@@ -768,7 +765,7 @@ function AccuracyCard() {
   return (
     <View style={styles.accuracyCard}>
       <View style={styles.accuracyTopRow}>
-        {/* 원형 링 + 중앙 수치 (node 243:1509, 118x118) */}
+        {/* 원형 링 + 중앙 수치 (node 618:1728, 112.67x112.67) */}
         <View style={styles.accuracyRingWrap}>
           <Image
             source={require('@/assets/images/figma-icon-report-ring.png')}
@@ -787,34 +784,29 @@ function AccuracyCard() {
           </View>
         </View>
 
-        {/* 스트릭 배지 (node 243:1520) */}
+        {/* 스트릭 배지 (node 618:1739~1763) — StreakChallengeModal의 완료 배지와 동일한 모양
+            (얼굴 아이콘 + "완료" 라벨, #8ECDFF/#058BFC)을 그대로 재사용한다. */}
         <View style={styles.accuracyStreakColumn}>
           <Text style={styles.accuracyStreakTitle}>{streakTitle}</Text>
           {summary.streakCount > 0 && (
             <View style={styles.accuracyStreakRow}>
-              {Array.from({ length: checkBadgeCount }).map((_, index) => (
+              {Array.from({ length: totalBadges }).map((_, index) => (
                 <View key={index} style={styles.accuracyStreakBadgeGroup}>
+                  {/* 오늘(마지막) 배지 위 포인터 마커 (node 618:1763) — 자리는 항상 차지하고
+                      today 배지에서만 채운다(다른 배지와 세로 위치가 어긋나지 않도록). */}
+                  <View style={styles.accuracyStreakMarkerSlot}>
+                    {todayInStreak && index === totalBadges - 1 && <View style={styles.accuracyStreakMarker} />}
+                  </View>
                   <View style={styles.accuracyStreakBadgeCircle}>
                     <Image
-                      source={require('@/assets/images/figma-icon-report-streak-check.png')}
-                      style={styles.accuracyStreakCheckIcon}
+                      source={require('@/assets/images/figma-icon-my-streak-face.png')}
+                      style={styles.accuracyStreakFaceIcon}
                       contentFit="contain"
                     />
                   </View>
+                  <Text style={styles.accuracyStreakBadgeLabel}>완료</Text>
                 </View>
               ))}
-              {todayInStreak && (
-                <View style={styles.accuracyStreakBadgeGroup}>
-                  <View style={[styles.accuracyStreakBadgeCircle, styles.accuracyStreakBadgeCircleToday]}>
-                    <Image
-                      source={require('@/assets/images/figma-icon-report-streak-star.png')}
-                      style={styles.accuracyStreakStarIcon}
-                      contentFit="contain"
-                    />
-                  </View>
-                  <Text style={[styles.accuracyStreakBadgeLabel, styles.accuracyStreakBadgeLabelToday]}>오늘</Text>
-                </View>
-              )}
             </View>
           )}
         </View>
@@ -908,76 +900,78 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
   );
 }
 
-// node 487:273 "셀피 리포트 팝업" > 모달 카드(node 487:543) — 셀피 로딩 화면(AnalyzingStep)에서
-// 검증 리포트(ReportStep)로 넘어가는 순간, 리포트 화면 위에 겹쳐 뜨는 "연속 출석 실패" 안내 모달.
-// 좌표는 카드(node 487:543, x:33 y:204 w:331.67 h:413) 원점 기준 상대값을 그대로 옮겼다.
-// 두 CTA 버튼은 실제 재개/재시작 백엔드 로직이 없어(위 STREAK_MODAL 상수 주석 참고) 모달을
-// 닫기만 한다.
-function StreakBrokenModal({ onDismiss }: { onDismiss: () => void }) {
+// node 618:1938("셀피 리포트 팝업" 리디자인, 위 STREAK_MODAL 상수 주석 참고) — 셀피 로딩
+// 화면(AnalyzingStep)에서 검증 리포트(ReportStep)로 넘어가는 순간, 리포트 화면(적중률 링은 그대로
+// 유지) 위에 겹쳐 뜨는 "5일 챌린지" 안내 모달. 좌표는 카드(332x346, radius 35.8) 원점 기준
+// 상대값 — Figma가 배경에 blur(5.11px) 프로스티드 글라스 효과를 쓰지만 RN 기본만으로는 재현이
+// 번거로워 불투명 흰 배경 + 그림자로 근사했다(예전 시안과 동일한 근사 방식).
+// GET /api/v1/skin/verification/summary(streakCount)만으로 완전히 연동된다 — 검증 직후 이 모달을
+// 매번 띄우고(리포트 화면의 AccuracyCard가 이미 보여주는 것과 같은 정보를 팝업으로 한 번 더
+// 강조), 5일 단위로 순환하는 "사이클 내 며칠째"(dayInCycle)에 맞춰 타이틀 문구와 완료 배지
+// 개수를 동적으로 그린다:
+// - dayInCycle === 1: "다시 1일부터 도전해요!" (최초 시작과 스트릭이 끊긴 뒤 재시작을 서버가
+//   구분해서 내려주지 않아 문구는 동일하게 취급한다)
+// - dayInCycle 2~5: "{dayInCycle}일 연속 검증에 성공했어요!"
+function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number; onDismiss: () => void }) {
   const [fontsLoaded] = useFonts(STREAK_MODAL_FONTS);
   // 폰트 로드 전엔 아예 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 타이틀이 줄바꿈되는 걸 막는다.
   if (!fontsLoaded) return null;
+
+  // 1~STREAK_CHALLENGE_GOAL_DAYS(5) 사이를 순환하는 "이번 사이클의 며칠째"로 환산한다
+  // (streakCount=6이면 새 사이클의 1일차, 9면 4일차 — 5일마다 보너스를 받고 다시 도는 구조).
+  const dayInCycle = ((Math.max(streakCount, 1) - 1) % STREAK_CHALLENGE_GOAL_DAYS) + 1;
+  const pendingCount = STREAK_CHALLENGE_GOAL_DAYS - dayInCycle;
+  const title = dayInCycle === 1 ? '다시 1일부터 도전해요!' : `${dayInCycle}일 연속 검증에 성공했어요!`;
 
   return (
     <Pressable style={styles.streakModalBackdrop} onPress={onDismiss}>
       {/* 카드 자체는 탭해도 안 닫히도록 backdrop과 별개 Pressable로 감싼다(이벤트 버블 차단). */}
       <Pressable style={styles.streakModalCard} onPress={() => {}}>
-        <Text style={styles.streakModalTitle}>아차! 연속 출석에 실패했어요</Text>
-        <Text style={styles.streakModalSubtitle}>다시 출석한다면 다시 얻을 수 있어요.</Text>
+        <Text style={styles.streakModalTitle}>{title}</Text>
+        <Text style={styles.streakModalSubtitle}>
+          {STREAK_CHALLENGE_GOAL_DAYS}일을 채우면 보너스 exp를 받아요
+        </Text>
 
         <View style={styles.streakModalPanel} />
 
-        {/* 요일 배지 5개 (node 487:246/247/252/269/271) */}
+        {/* 완료 배지 dayInCycle개 + 목표 배지 pendingCount개 (node 618:1938 하위 GROUP 5개) —
+            마지막 완료 배지 위에만 포인터 마커(node 618:1965)를 얹는다. */}
         <View style={styles.streakModalDayRow}>
-          {STREAK_MODAL_DAYS.map((day, index) => (
-            <View key={index} style={styles.streakModalDayItem}>
-              <View
-                style={[
-                  styles.streakModalDayCircle,
-                  day.state === 'done' && styles.streakModalDayCircleDone,
-                  day.state === 'missed' && styles.streakModalDayCircleMissed,
-                  day.state === 'pending' && styles.streakModalDayCirclePending,
-                ]}>
+          {Array.from({ length: dayInCycle }).map((_, index) => (
+            <View key={`done-${index}`} style={styles.streakModalDayItem}>
+              <View style={styles.streakModalMarkerSlot}>
+                {index === dayInCycle - 1 && <View style={styles.streakModalMarker} />}
+              </View>
+              <View style={[styles.streakModalDayCircle, styles.streakModalDayCircleDone]}>
                 <Image
-                  source={
-                    day.state === 'done'
-                      ? require('@/assets/images/figma-icon-streak-day-done.png')
-                      : day.state === 'missed'
-                        ? require('@/assets/images/figma-icon-streak-day-missed.png')
-                        : require('@/assets/images/figma-icon-streak-day-pending.png')
-                  }
-                  style={styles.streakModalDayFace}
+                  source={require('@/assets/images/figma-icon-my-streak-face.png')}
+                  style={styles.streakModalDayFaceDone}
                   contentFit="contain"
                 />
               </View>
-              <Text
-                style={[
-                  styles.streakModalDayLabel,
-                  day.state === 'missed' && styles.streakModalDayLabelMissed,
-                ]}>
-                {day.label}
-              </Text>
+              <Text style={[styles.streakModalDayLabel, styles.streakModalDayLabelDone]}>완료</Text>
+            </View>
+          ))}
+          {Array.from({ length: pendingCount }).map((_, index) => (
+            <View key={`pending-${index}`} style={styles.streakModalDayItem}>
+              <View style={styles.streakModalMarkerSlot} />
+              <View style={[styles.streakModalDayCircle, styles.streakModalDayCirclePending]}>
+                <Image
+                  source={require('@/assets/images/figma-icon-my-streak-face.png')}
+                  style={styles.streakModalDayFacePending}
+                  contentFit="contain"
+                />
+              </View>
+              <Text style={styles.streakModalDayLabel}>{STREAK_CHALLENGE_GOAL_DAYS}일</Text>
             </View>
           ))}
         </View>
 
-        {/* 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544) */}
-        <Image
-          source={require('@/assets/images/figma-icon-streak-flag.png')}
-          style={styles.streakModalFlag}
-          contentFit="contain"
-        />
-
-        {/* CTA (node 471:1032/1033) */}
+        {/* CTA (node 618:1943/1944) */}
         <Pressable
           onPress={onDismiss}
           style={({ pressed }) => [styles.streakModalPrimaryButton, pressed && styles.pressed]}>
-          <Text style={styles.streakModalPrimaryButtonText}>이어서 4일차부터 도전하기</Text>
-        </Pressable>
-        <Pressable
-          onPress={onDismiss}
-          style={({ pressed }) => [styles.streakModalSecondaryButton, pressed && styles.pressed]}>
-          <Text style={styles.streakModalSecondaryButtonText}>1일차부터 다시 시작하기</Text>
+          <Text style={styles.streakModalPrimaryButtonText}>피부 예보 확인하기</Text>
         </Pressable>
       </Pressable>
     </Pressable>
@@ -1154,10 +1148,15 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [verifyState, setVerifyState] = useState<VerifyRequestState>({ status: 'idle' });
-  // 셀피 로딩 화면(AnalyzingStep)에서 리포트(ReportStep)로 넘어가는 순간 한 번 뜨는 "연속 출석
-  // 실패" 팝업(node 487:273) — 모달이 이 컴포넌트와 함께 매번 새로 마운트되므로(위 주석 참고)
-  // true로 시작해도 매번 출입할 때마다 다시 뜬다.
-  const [showStreakModal, setShowStreakModal] = useState(true);
+  // 셀피 로딩 화면(AnalyzingStep)에서 리포트(ReportStep)로 넘어가는 순간 뜨는 "5일 챌린지"
+  // 팝업(StreakChallengeModal, 위 STREAK_MODAL 상수 주석 참고) — 리포트 화면의 AccuracyCard가
+  // 보여주는 것과 같은 streakCount를 팝업으로 한 번 더 강조해서 보여준다(적중률 링 등 나머지
+  // 리포트 UI는 그대로 유지, 이 팝업만 겹쳐 뜬다). AccuracyCard도 같은 엔드포인트를 독립적으로
+  // 호출하지만, 이 화면 대부분의 다른 섹션들도 각자 필요한 걸 각자 조회하는 이 파일의 기존 패턴과
+  // 동일하게 여기서도 별도로 호출한다.
+  const [streakChallengeModalState, setStreakChallengeModalState] = useState<
+    { status: 'pending' } | { status: 'hidden' } | { status: 'visible'; streakCount: number }
+  >({ status: 'pending' });
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
@@ -1213,6 +1212,30 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, imageUri]);
+
+  // StreakChallengeModal 표시 여부 — 검증이 성공한 직후 streakCount를 조회해 채운다. 검증에
+  // 성공하면 streakCount는 항상 최소 1이므로(api/skin.ts의 VerificationSummary 문서 참고,
+  // "오늘 첫 검증 → 1") streakCount > 0 조건은 사실상 매번 참이다 — 검증할 때마다 뜬다.
+  useEffect(() => {
+    if (verifyState.status !== 'success') return;
+    let cancelled = false;
+
+    getVerificationSummary(TEMP_USER_ID, getTodayDateString())
+      .then(({ data }) => {
+        if (cancelled) return;
+        const streakCount = data.status === 'AVAILABLE' ? data.summary.streakCount : 0;
+        setStreakChallengeModalState(streakCount > 0 ? { status: 'visible', streakCount } : { status: 'hidden' });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('❌ 5일 챌린지 모달용 스트릭 조회 실패:', error);
+        setStreakChallengeModalState({ status: 'hidden' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [verifyState.status]);
 
   // 예외 코드별 사용자 고지 + 후속 동작. 코드 문서는 SelfieVerificationErrorCode(api/skin.ts) 참고.
   const handleVerifyError = (error: unknown) => {
@@ -1291,7 +1314,12 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
       <View style={canvasWrapperStyle}>
         <ThemedView style={[styles.canvas, canvasScaleStyle]}>
           <ReportStep data={verifyState.data} onClose={onClose} onFinish={onFinish} />
-          {showStreakModal && <StreakBrokenModal onDismiss={() => setShowStreakModal(false)} />}
+          {streakChallengeModalState.status === 'visible' && (
+            <StreakChallengeModal
+              streakCount={streakChallengeModalState.streakCount}
+              onDismiss={() => setStreakChallengeModalState({ status: 'hidden' })}
+            />
+          )}
         </ThemedView>
       </View>
     </SafeAreaView>
@@ -1897,34 +1925,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
   },
-  // 카드(node 487:543, x:33 y:204 w:331.67 h:413, radius:35.8) — Figma는 배경에 blur(5.11px)
-  // 프로스티드 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로
-  // 근사했다.
+  // 카드(node 618:1938/1939, w:332 h:346, radius:35.8) — Figma는 배경에 blur(5.11px) 프로스티드
+  // 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로 근사했다
+  // (예전 시안(487:543)과 동일한 근사 방식). 가로는 (402-332)/2=35로 가운데 정렬, 세로는 예전
+  // 시안과 같은 top:204를 유지했다(이 새 카드는 느슨한 캔버스 그룹이라 절대 좌표가 없음).
   streakModalCard: {
     position: 'absolute',
-    left: 33,
+    left: 35,
     top: 204,
-    width: 331.67,
-    height: 413,
+    width: 332,
+    height: 346,
     backgroundColor: Colors.white,
-    borderRadius: 36,
+    borderRadius: 35.8,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 24,
     elevation: 8,
   },
-  // "아차! 연속 출석에 실패했어요" (node 471:1028, 카드 원점 기준 x:28.5 y:45 w:256 h:25)
+  // "다시 1일부터 도전해요!" (node 618:1940, 카드 원점 기준 x:29 y:45 w:279 h:25)
   streakModalTitle: {
     position: 'absolute',
-    left: 28.5,
+    left: 29,
     top: 45,
-    width: 256,
+    width: 279,
     fontSize: 20,
     fontFamily: PRETENDARD_SEMIBOLD,
     color: STREAK_MODAL_TITLE,
   },
-  // "다시 출석한다면 다시 얻을 수 있어요." (node 471:1029, x:28.5 y:79 w:246 h:19)
+  // "5일을 채우면 보너스 exp를 받아요" (node 618:1941, x:28.5 y:79 w:246 h:19)
   streakModalSubtitle: {
     position: 'absolute',
     left: 28.5,
@@ -1934,7 +1963,7 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_REGULAR,
     color: STREAK_MODAL_SUBTITLE,
   },
-  // 연한 블루 배경 패널 (node 471:1030, x:8.5 y:107 w:317 h:139, radius:9) — 요일 배지 행의 배경
+  // 연한 블루 배경 패널 (node 618:1942, x:8.5 y:107 w:317 h:139, radius:9) — 배지 행의 배경
   streakModalPanel: {
     position: 'absolute',
     left: 8.5,
@@ -1944,25 +1973,47 @@ const styles = StyleSheet.create({
     backgroundColor: STREAK_MODAL_PANEL_BG,
     borderRadius: 9,
   },
-  // 요일 배지 행 (node 487:246 등, x:15.84 y:133.58 w:286.25) — 5개 항목 균등 배치
+  // 배지 행 (node 618:1938 하위 GROUP 5개, x:15.84 y:133.58 w:301) — 5개 항목 균등 배치.
+  // 완료 칸 수가 동적이라(streakCount에 따라 마지막 완료 배지 위치가 바뀜) 마커(618:1965)를 행
+  // 전체 기준 절대좌표 하나로 고정하지 않고, 각 항목 위에 마커 자리(streakModalMarkerSlot)를
+  // 두어 "마지막 완료 배지" 항목에서만 채운다 — 그만큼 원래 marker top(113)보다 위로 올려
+  // 자리를 확보한다.
   streakModalDayRow: {
     position: 'absolute',
     left: 15.84,
-    top: 133.58,
-    width: 286.25,
+    top: 120,
+    width: 301,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   streakModalDayItem: {
-    width: 53.7,
+    width: 53.87,
     alignItems: 'center',
     gap: 6,
   },
-  // 배지 원(53.7x53.7) — 상태별 배경/테두리는 인라인 스타일로 덧붙인다
+  // 마커 자리(node 618:1965 위치 근사) — 항상 높이를 차지해 모든 배지의 원이 같은 y에 온다.
+  streakModalMarkerSlot: {
+    height: 13.58,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  // 마지막 완료 배지 위 포인터 마커 (node 618:1965, 14x14 다이아몬드) — CSS 삼각형 트릭으로
+  // 아래쪽을 가리키는 작은 마커를 그린다(별도 SVG 에셋 없이 border만으로 구현).
+  streakModalMarker: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderTopWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: STREAK_MODAL_MARKER,
+  },
+  // 배지 원(53.87x53.87) — 상태별 배경/테두리는 인라인 스타일로 덧붙인다
   streakModalDayCircle: {
-    width: 53.7,
-    height: 53.7,
-    borderRadius: 26.85,
+    width: 53.87,
+    height: 53.87,
+    borderRadius: 26.94,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1972,37 +2023,30 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: STREAK_MODAL_DAY_DONE_BORDER,
   },
-  streakModalDayCircleMissed: {
-    backgroundColor: Colors.white,
-    borderWidth: 2,
-    borderColor: STREAK_MODAL_DAY_MISSED_BORDER,
-  },
   streakModalDayCirclePending: {
     backgroundColor: Colors.white,
     borderWidth: 2,
     borderColor: STREAK_MODAL_DAY_PENDING_BORDER,
   },
-  streakModalDayFace: {
+  // 완료 배지 아이콘(node 618:1959, 39.6x33.66)이 목표 배지 아이콘(node 618:1947, 34.85x28.53)보다
+  // 살짝 크다 — Figma 원본 그대로 두 크기를 구분한다.
+  streakModalDayFaceDone: {
     width: 40,
     height: 34,
+  },
+  streakModalDayFacePending: {
+    width: 35,
+    height: 28.5,
   },
   streakModalDayLabel: {
     fontSize: 13,
     fontFamily: PRETENDARD_SEMIBOLD,
-    color: STREAK_MODAL_LABEL_MUTED,
+    color: STREAK_MODAL_DAY_PENDING_BORDER,
   },
-  streakModalDayLabelMissed: {
-    color: STREAK_MODAL_DAY_MISSED_BORDER,
+  streakModalDayLabelDone: {
+    color: STREAK_MODAL_DAY_DONE_BORDER,
   },
-  // 4일째(실패 지점) 위 빨간 깃발 마커 (node 487:544, 카드 원점 기준 x:222 y:116 w:14 h:14)
-  streakModalFlag: {
-    position: 'absolute',
-    left: 222,
-    top: 116,
-    width: 14,
-    height: 14,
-  },
-  // "이어서 4일차부터 도전하기" 버튼 (node 471:1032, x:21 y:261 w:283 h:55, radius:26)
+  // "피부 예보 확인하기" 버튼 (node 618:1943/1944, x:21 y:261 w:283 h:55, radius:26)
   streakModalPrimaryButton: {
     position: 'absolute',
     left: 21,
@@ -2018,23 +2062,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: PRETENDARD_SEMIBOLD,
     color: Colors.white,
-  },
-  // "1일차부터 다시 시작하기" 버튼 (node 471:1033, x:21 y:331 w:283 h:55, radius:26)
-  streakModalSecondaryButton: {
-    position: 'absolute',
-    left: 21,
-    top: 331,
-    width: 283,
-    height: 55,
-    borderRadius: 26,
-    backgroundColor: STREAK_MODAL_SECONDARY_BTN_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streakModalSecondaryButtonText: {
-    fontSize: 16,
-    fontFamily: PRETENDARD_SEMIBOLD,
-    color: STREAK_MODAL_TITLE,
   },
 
   // 3단계: 검증 리포트 — node 241:604 "iPhone 17 - 14 (검증 리포트)"를 좌표 그대로 옮겼다.
@@ -2112,14 +2139,17 @@ const styles = StyleSheet.create({
   reportTitleAccent: {
     color: REPORT_BLUE,
   },
-  // 적중률 카드 (node 243:1507, padding: 20px 18px, fill: #F4F0FD, radius:20)
+  // 적중률 카드 (node 618:1727, w:364.08 h:152, radius:13.86, fill:#FFFFFF, stroke:#058BFC 0.6px)
+  // — 예전엔 단색 배경(#F4F0FD)이었는데 흰 배경 + 얇은 파란 테두리로 바뀌었다.
   // 타이틀과의 간격(y:221 - 타이틀 블록 하단 ≈15px).
   accuracyCard: {
     marginTop: 15,
-    borderRadius: 20,
+    borderRadius: 14,
+    borderWidth: 0.6,
+    borderColor: STREAK_MODAL_DAY_DONE_BORDER,
     paddingVertical: 20,
     paddingHorizontal: 18,
-    backgroundColor: REPORT_ACCURACY_CARD_BG,
+    backgroundColor: Colors.white,
   },
   // 로딩/에러/빈 상태(NO_VERIFICATION) 공용 — 링/스트릭 레이아웃 대신 가운데 정렬된 짧은 문구만 보여준다.
   accuracyCardCentered: {
@@ -2146,17 +2176,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 18,
   },
-  // 원형 링 (node 243:1509/1510, 118x118)
+  // 원형 링 (node 618:1728/1729, 112.67x112.67 — 예전 118x118에서 살짝 축소)
   accuracyRingWrap: {
-    width: 118,
-    height: 118,
+    width: 113,
+    height: 113,
     alignItems: 'center',
     justifyContent: 'center',
   },
   accuracyRingImage: {
     position: 'absolute',
-    width: 118,
-    height: 118,
+    width: 113,
+    height: 113,
   },
   accuracyRingContent: {
     alignItems: 'center',
@@ -2166,29 +2196,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
   },
-  // "84" (node 243:1513, Inter Bold 25.2px, letterSpacing:-0.0198em, #3366FF)
+  // "84" (node 618:1732, Inter Bold 24.06px, letterSpacing:-0.0198em, #3366FF)
   accuracyRateText: {
-    fontSize: 25.2,
+    fontSize: 24,
     fontWeight: '700',
     letterSpacing: -0.5,
     color: REPORT_BLUE,
   },
-  // "%" (node 243:1514, Inter Bold 16px, letterSpacing:-0.0313em, #3366FF)
+  // "%" (node 618:1733, Inter Bold 15.28px, letterSpacing:-0.0313em, #3366FF)
   accuracyRatePercent: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.5,
     color: REPORT_BLUE,
     marginBottom: 2,
   },
-  // "예보 적중률" (node 243:1516, Inter SemiBold 11px, Dolphin)
+  // "예보 적중률" (node 618:1735, Inter SemiBold 10.5px, Dolphin)
   accuracyRateLabel: {
     marginTop: 2,
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
     color: REPORT_DOLPHIN,
   },
-  // "+6%p" 필 (node 243:1518, padding: 3px 7px, fill: Tara, radius:8)
+  // "+6%p" 필 (node 618:1737, padding: ~3px 7px, fill: Tara, radius:7.6)
   accuracyDeltaPill: {
     marginTop: 4,
     paddingVertical: 3,
@@ -2196,24 +2226,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: REPORT_TARA_BG,
   },
-  // "+6%p" 텍스트 (node 243:1519, Inter Bold 11px, Mountain Meadow)
+  // "+6%p" 텍스트 (node 618:1738, Inter Bold 10.5px, Mountain Meadow)
   accuracyDeltaText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: REPORT_MEADOW,
   },
-  // "div"(node 243:1520, gap:10)
+  // "div"(node 618:1520류, gap:10)
   accuracyStreakColumn: {
     flex: 1,
     gap: 10,
   },
-  // "8일 연속 검증 완료!" (node 243:1522, Inter SemiBold 15px, #031949)
+  // "5일 연속 검증 완료!" (node 618:1739, Inter/Pretendard Bold 16.84px, #031949)
   accuracyStreakTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16.8,
+    fontWeight: '700',
     color: REPORT_NAVY,
   },
-  // "div"(node 243:1523, gap:6)
+  // "div"(node 618:1740, gap≈6)
   accuracyStreakRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -2223,36 +2253,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  // 배지 원 (node 243:1525 등, 26x26, radius:13, fill: #C9DAFF)
+  // 완료(오늘 포함) 배지 위 포인터 마커 자리 — 항상 높이를 차지해 모든 배지의 원이 같은 y에 온다.
+  accuracyStreakMarkerSlot: {
+    height: 10,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  // 마커(node 618:1763, 13.77x13.77 다이아몬드) — CSS 삼각형 트릭으로 근사(StreakChallengeModal의
+  // streakModalMarker와 동일 패턴).
+  accuracyStreakMarker: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: STREAK_MODAL_MARKER,
+  },
+  // 배지 원 (node 618:1741 등, ~39x39, radius:~19.5, fill:#8ECDFF, stroke:#058BFC — StreakChallengeModal의
+  // "완료" 배지와 동일한 스타일). 예전엔 26x26 옅은 파랑(#C9DAFF) 배경에 체크 아이콘이었다.
   accuracyStreakBadgeCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 39,
+    height: 39,
+    borderRadius: 19.5,
+    borderWidth: 1.1,
+    borderColor: STREAK_MODAL_DAY_DONE_BORDER,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: REPORT_STREAK_BADGE_BG,
+    backgroundColor: STREAK_MODAL_DAY_DONE_BG,
+    overflow: 'hidden',
   },
-  // "오늘" 배지만 fill: #3366FF (node 243:1550)
-  accuracyStreakBadgeCircleToday: {
-    backgroundColor: REPORT_BLUE,
+  // 배지 안 얼굴 아이콘(node 618:1743 등, ~28x24) — StreakChallengeModal과 같은
+  // figma-icon-my-streak-face.png를 재사용한다(예전의 체크/별 아이콘 대신).
+  accuracyStreakFaceIcon: {
+    width: 28,
+    height: 24,
   },
-  accuracyStreakCheckIcon: {
-    width: 12,
-    height: 12,
-  },
-  accuracyStreakStarIcon: {
-    width: 13,
-    height: 13,
-  },
-  // "3일" 등 (node 243:1528 등, Inter Bold 10.5px, Manatee)
+  // "완료" (node 618:1744 등, Pretendard SemiBold 9.66px, #058BFC) — 이제 모든 배지가 동일하게
+  // "완료"만 표시한다(예전엔 "오늘" 배지만 별도 라벨/굵기였다).
   accuracyStreakBadgeLabel: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: REPORT_TEXT_MUTED,
-  },
-  // "오늘" 라벨만 Inter SemiBold(600) — 나머지 요일 라벨은 Bold(700) (node 243:1553 vs 243:1528 등)
-  accuracyStreakBadgeLabelToday: {
-    fontWeight: '600',
+    fontSize: 9.7,
+    fontFamily: PRETENDARD_SEMIBOLD,
+    color: STREAK_MODAL_DAY_DONE_BORDER,
   },
   // 비교 테이블 (node 243:1683, w:362, padding: 7px 17px 5px, border: Pale Sky 22%, radius:16)
   // 적중률 카드와의 간격(y:385 - 카드 하단 ≈6px, 카드 바로 아래 붙는 좁은 간격).

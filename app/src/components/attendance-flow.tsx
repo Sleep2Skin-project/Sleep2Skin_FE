@@ -6,18 +6,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { calculateRemainingExp, type AttendanceExpInfo } from '@/api/game';
 import { Colors } from '@/constants/colors';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { isWeekdayInTrailingStreak, toMondayFirstWeekdayIndex } from '@/utils/week-streak';
 
 // ATT-01 — 온보딩 완료 직후, 홈 화면 진입 전에 한 번 보여주는 "오늘 출석 완료" 축하 화면.
 // Figma 'Ui (복사)' 파일 노드 501:292("iPhone 17 - 7")를 Figma REST API로 직접 읽어와
 // 온보딩(onboarding-flow.tsx)과 동일하게 402x874 고정 캔버스로 좌표를 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 501:292) 원점 기준 절대값.
 //
-// 요일별 출석 상태(ATTENDANCE_DAYS)는 여전히 정적 목업이다 — Figma 시안 자체가 월/수/금만
-// 파란 체크, 화/목/토/일은 회색 X로 고정돼 있어(체크/비체크 두 상태를 보여주기 위한 예시로 보임)
-// 그 값을 그대로 옮겼다. HOME-04(POST /api/v1/users/me/attendance)의 streakCount를 여기 흘려
-// 쓰면 안 된다 — 그 값은 "출석 연속 횟수"가 아니라 "연속 검증 횟수"(GET /skin/verification/summary와
-// 동일 개념)라 이 주간 출석 UI와는 의미가 다르다. 실제 주간 출석 이력 API가 생기면 그때 이
-// 정적 배열을 교체할 것.
+// 요일별 체크/X 표시는 HOME-04(POST /api/v1/users/me/attendance) 응답의 streakCount를
+// week-streak.ts(isWeekdayInTrailingStreak)로 이번 주 월~일에 투영해 실연동한다(my.tsx의
+// "이번 주 출석 스트릭"과 같은 계산, 자세한 설명은 week-streak.ts 상단 주석 참고). 이 화면은
+// checkedIn: true일 때만 마운트되므로 오늘은 항상 포함돼 체크로 보인다.
 //
 // exp(HOME-04 응답의 exp)는 optional prop으로 받는다 — 이 화면 자체를 호출부(_layout.tsx)가
 // checkedIn: true일 때만 마운트하므로 항상 채워지지만, 방어적으로 없을 때는 경험치 줄을 렌더하지
@@ -48,27 +47,35 @@ const ATTENDANCE_FONTS = {
 };
 
 // 요일 라벨(node 509:297 등) x좌표는 완전히 균등하지 않아(약 41.2px 간격, 소수점 오차) Figma
-// 값을 그대로 옮겼다. attended는 Figma 시안이 보여주는 정적 예시 상태 그대로(위 주석 참고).
-const ATTENDANCE_DAYS = [
-  { label: '월', labelX: 70.17, circleX: 61, attended: true },
-  { label: '화', labelX: 111, circleX: 102.25, attended: false },
-  { label: '수', labelX: 152.68, circleX: 143.51, attended: true },
-  { label: '목', labelX: 193.93, circleX: 184.77, attended: false },
-  { label: '금', labelX: 235.19, circleX: 226.02, attended: true },
-  { label: '토', labelX: 276.44, circleX: 267.28, attended: false },
-  { label: '일', labelX: 317.7, circleX: 308.53, attended: false },
+// 값을 그대로 옮겼다. attended 여부는 렌더링 시 streakCount로부터 계산해서 채운다(아래 컴포넌트
+// 참고) — 여기 남은 건 순수 레이아웃 좌표뿐이다.
+const ATTENDANCE_DAY_POSITIONS = [
+  { label: '월', labelX: 70.17, circleX: 61 },
+  { label: '화', labelX: 111, circleX: 102.25 },
+  { label: '수', labelX: 152.68, circleX: 143.51 },
+  { label: '목', labelX: 193.93, circleX: 184.77 },
+  { label: '금', labelX: 235.19, circleX: 226.02 },
+  { label: '토', labelX: 276.44, circleX: 267.28 },
+  { label: '일', labelX: 317.7, circleX: 308.53 },
 ] as const;
 
 export function AttendanceFlow({
   onComplete,
   exp,
+  streakCount,
 }: {
   onComplete: () => void;
   exp?: AttendanceExpInfo;
+  streakCount: number;
 }) {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(ATTENDANCE_FONTS);
   const remainingExp = exp ? calculateRemainingExp(exp) : null;
+  const todayIndex = toMondayFirstWeekdayIndex(new Date());
+  const attendanceDays = ATTENDANCE_DAY_POSITIONS.map((day, index) => ({
+    ...day,
+    attended: isWeekdayInTrailingStreak(index, todayIndex, streakCount),
+  }));
 
   // 폰트 로드 전엔 흰 배경만 렌더한다 — 시스템 폰트로 잠깐 렌더돼 줄바꿈이 튀는 걸 막는다.
   if (!fontsLoaded) {
@@ -111,7 +118,7 @@ export function AttendanceFlow({
           )}
 
           {/* 요일 라벨 + 출석 원 (node 509:297~339, y:542/570.65) */}
-          {ATTENDANCE_DAYS.map((day) => (
+          {attendanceDays.map((day) => (
             <View key={day.label}>
               <Text style={[styles.dayLabel, { left: day.labelX }]}>{day.label}</Text>
               <View

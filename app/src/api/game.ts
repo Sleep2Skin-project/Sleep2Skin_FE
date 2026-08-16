@@ -2,6 +2,8 @@ import { AxiosError } from "axios";
 
 import { api } from "@/api/axios";
 import { ApiErrorBody, SkinModelUserNotFoundError } from "@/api/skin";
+import type { UserMeData } from "@/api/user";
+import { LEVEL_EXP_MAX } from "@/constants/mockData";
 
 // ===== 출석 체크인 (HOME-04) =====
 // 앱 시작 시 한 번 호출한다. 하루 여러 번(스플래시+홈 등) 불러도 중복 지급되지 않으며,
@@ -105,4 +107,25 @@ export interface LevelProgress {
 export function calculateRemainingExp(exp: LevelProgress): number | null {
   if (exp.nextLevelExp === null) return null;
   return exp.nextLevelExp - exp.totalExp;
+}
+
+/**
+ * "이번 레벨 안에서 current/max exp" 형태로 환산 — 서버는 totalExp(누적)와 nextLevelExp(다음
+ * 레벨 컷오프 절대값)만 주므로, LEVEL_EXP_MAX(레벨별 필요 exp 표)로 "이번 레벨 시작 exp"를
+ * 역산한다. 홈 화면(index.tsx)의 exp 게이지와 마이 탭(my.tsx)의 레벨 바 둘 다 이 함수 하나를
+ * 공유해서 써야 두 화면의 진행률이 항상 같은 값으로 일치한다.
+ * 만렙(nextLevelExp === null)이거나 profile 자체가 없으면(로딩 중) 꽉 찬 값(percent:100)으로
+ * 방어한다.
+ */
+export function getLevelExpDisplay(
+  profile: UserMeData | null
+): { current: number; max: number; percent: number } {
+  const level = profile?.level ?? 1;
+  const max = LEVEL_EXP_MAX[level] ?? LEVEL_EXP_MAX[1];
+  if (!profile || profile.nextLevelExp === null) {
+    return { current: max, max, percent: 100 };
+  }
+  const levelStartExp = profile.nextLevelExp - max;
+  const current = Math.min(Math.max(profile.totalExp - levelStartExp, 0), max);
+  return { current, max, percent: (current / max) * 100 };
 }

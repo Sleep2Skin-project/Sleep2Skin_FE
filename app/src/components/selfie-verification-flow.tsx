@@ -312,6 +312,15 @@ function CaptureStep({
   const [libraryPermission, requestLibraryPermission] = ImagePicker.useMediaLibraryPermissions();
   // 웹은 브라우저 카메라 권한 팝업(getUserMedia)을 유도하지 않고 항상 더미로 우회한다.
   const cameraReady = !isWeb && cameraPermission?.granted === true;
+  // 5초 자동촬영 카운트다운(아래 useEffect)은 마운트 시점에 한 번만 설정되는 setInterval이라,
+  // 그 콜백이 직접 참조하는 cameraReady는 마운트 당시의 스냅샷(대개 권한 확인 전 false)에
+  // 그대로 고정돼버린다 — 이후 사용자가 권한을 허용해도 타이머는 그 사실을 영영 못 본다.
+  // ref는 렌더와 무관하게 항상 최신값을 담고 있으므로, capturePhoto가 이 ref를 읽게 하면
+  // 타이머가 언제 끝나든 "지금" 권한 상태를 정확히 참조한다.
+  const cameraReadyRef = useRef(cameraReady);
+  useEffect(() => {
+    cameraReadyRef.current = cameraReady;
+  }, [cameraReady]);
 
   // 최초 진입 시 카메라·앨범 권한을 한 번 확인하고, 아직 받지 않았다면(그리고 다시 물어볼 수
   // 있다면) 요청한다. 이미 허용/영구 거부된 상태라면 재요청하지 않는다. 웹에서는 어차피
@@ -342,7 +351,7 @@ function CaptureStep({
   };
 
   const capturePhoto = async () => {
-    if (isWeb || !cameraReady) {
+    if (isWeb || !cameraReadyRef.current) {
       await bypassWithDummyImage(isWeb ? '웹 환경에서는 카메라를 사용할 수 없어' : '카메라 권한이 없어');
       return;
     }

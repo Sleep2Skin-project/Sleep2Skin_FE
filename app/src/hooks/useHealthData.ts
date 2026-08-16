@@ -5,6 +5,8 @@ import {
   CategoryValueSleepAnalysis,
 } from "@kingstinct/react-native-healthkit";
 
+import { TEMP_USER_ID } from "@/constants/config";
+
 const SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis";
 const HRV_TYPE = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN";
 const RESTING_HR_TYPE = "HKQuantityTypeIdentifierRestingHeartRate";
@@ -187,7 +189,7 @@ export async function uploadSleepSession(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Id": "1",
+        "X-User-Id": String(TEMP_USER_ID),
       },
       body: JSON.stringify(requestBody),
     });

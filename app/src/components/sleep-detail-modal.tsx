@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TEMP_USER_ID } from '@/constants/config';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { formatTimeKST } from '@/utils/format-time';
 
 // REP-03 수면 단계 타임라인의 팝업 버전 — docs/home.png 우측 '팝업창' 와이어프레임을 그대로 따른다.
 // GET /api/v1/report/daily/timeline로 실연동한다(api/report.ts). segments는 시작시각 오름차순이
@@ -35,17 +36,6 @@ function getTodayDateString() {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-/** ISO 8601 문자열을 KST(UTC+9) "HH:mm"으로 안전하게 포맷한다. null이거나 파싱 실패면 '--:--'로 방어한다. */
-function formatTimeKSTSafe(iso: string | null): string {
-  if (!iso) return '--:--';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '--:--';
-  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const hours = String(kst.getUTCHours()).padStart(2, '0');
-  const minutes = String(kst.getUTCMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
 }
 
 /** 구간 자기 자신의 길이(분) — 막대 너비 계산용. 파싱 실패/역전 구간은 0으로 방어해 화면이 안 뻗게 한다. */
@@ -122,7 +112,7 @@ export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
                     취침~기상 시각을 대신 히어로 텍스트로 보여준다. */}
                 <View style={styles.mainStat}>
                   <ThemedText style={styles.mainStatValue}>
-                    {formatTimeKSTSafe(timelineState.sleepOnsetTime)} – {formatTimeKSTSafe(timelineState.wakeTime)}
+                    {formatTimeKST(timelineState.sleepOnsetTime)} – {formatTimeKST(timelineState.wakeTime)}
                   </ThemedText>
                   <ThemedText style={styles.asleepTimeLabel}>취침 – 기상</ThemedText>
                 </View>

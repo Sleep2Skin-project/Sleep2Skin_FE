@@ -56,6 +56,11 @@ function formatDuration(minutes: number) {
   return `${hours}시간 ${remainder}분`;
 }
 
+/** "OOO님의 한달" — nickname은 report.tsx가 GET /api/v1/users/me로 한 번만 불러 내려준다(daily-report.tsx와 동일 패턴). */
+function buildUserHeading(nickname: string | null) {
+  return nickname ? `${nickname}님의 한달` : '나의 한달';
+}
+
 // Figma 차트 플롯 영역 높이(막대 바닥 y202 - 가장 높은 막대 상단 y72 = 130) — 데이터가 아니라 이
 // 화면 전용 레이아웃 수치라 응답 객체가 아닌 스타일 상수로 둔다.
 const CHART_PLOT_HEIGHT = 130;
@@ -168,7 +173,7 @@ function CorrelationRow({ item }: { item: MonthlyReportCorrelation }) {
   );
 }
 
-export function MonthlyReport() {
+export function MonthlyReport({ nickname }: { nickname: string | null }) {
   const [state, setState] = useState<MonthlyReportState>({ status: 'loading' });
 
   useEffect(() => {
@@ -209,7 +214,7 @@ export function MonthlyReport() {
         <ThemedText style={styles.dateRange}>
           최근 28일 · {formatShortDate(state.periodStart)} – {formatShortDate(state.periodEnd)}
         </ThemedText>
-        <ThemedText style={styles.heading}>test1님의 한달</ThemedText>
+        <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
         <View style={styles.emptyState}>
           <ThemedText style={styles.emptyStateText}>가입 후 28일이 지나야 월간 리포트가 제공돼요</ThemedText>
         </View>

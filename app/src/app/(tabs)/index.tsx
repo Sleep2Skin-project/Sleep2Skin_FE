@@ -15,26 +15,28 @@ import {
   type VerificationSummary,
 } from '@/api/skin';
 import { getSleepInterpretation, type SleepInterpretation } from '@/api/sleep';
+import { getUserMe, type UserMeData } from '@/api/user';
 import { SelfieVerificationFlow } from '@/components/selfie-verification-flow';
 import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { HOME_SUMMARY_MOCK } from '@/constants/mockData';
+import { HOME_SUMMARY_MOCK, LEVEL_EXP_MAX } from '@/constants/mockData';
 import { useDesignScale } from '@/hooks/use-design-scale';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
 // 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
 // 피부 예보/수면 통역/적중률·연속 검증 배너는 GET /api/v1/skin/forecast, /api/v1/sleep/interpretation,
-// GET /api/v1/skin/verification/summary로 연동했고, 날짜/인사말/레벨처럼 대응하는 API가 아직
-// 없는 항목만 mockData.ts의 HOME_SUMMARY_MOCK을 그대로 쓴다.
+// GET /api/v1/skin/verification/summary로, 레벨/exp/캐릭터는 GET /api/v1/users/me(MY-01, 마이 탭과
+// 같은 소스)로 연동했다. 날짜/인사말처럼 대응하는 API가 아직 없는 항목만 mockData.ts의
+// HOME_SUMMARY_MOCK을 그대로 쓴다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
-// 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 mock의 progressPercent로 계산한다.
+// 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 getLevelExpDisplay의 percent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
 
 // "50/250 exp" 배지 전용 픽셀 폰트(node 541:3482) — 이 화면에만 로컬로 번들링한다(TODO(todo.tsx)의
@@ -46,6 +48,37 @@ const EXP_TEXT_FONTS = {
 
 const VERIFY_BUTTON_LABEL = '5초 셀피로 오늘 예보 검증하기';
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
+
+// 레벨별 캐릭터 이미지(mockData.ts의 옛 TODO 블록 참고) — 레벨4는 기존 figma-character.png와
+// 픽셀 동일 이미지지만, 5종 모두 이 맵 하나로 통일해 관리한다.
+const LEVEL_CHARACTER_IMAGES: Record<number, number> = {
+  1: require('@/assets/images/figma-character-level-1.png'),
+  2: require('@/assets/images/figma-character-level-2.png'),
+  3: require('@/assets/images/figma-character-level-3.png'),
+  4: require('@/assets/images/figma-character-level-4.png'),
+  5: require('@/assets/images/figma-character-level-5.png'),
+};
+
+// MY-01(GET /api/v1/users/me)과 동일한 프로필 응답에서 레벨/exp를 가져온다(마이 탭 my.tsx와
+// 같은 패턴). 이 API엔 빈 상태가 없어 loading/error/available 세 상태만 관리하면 된다.
+type ProfileState = { status: 'loading' } | { status: 'error' } | { status: 'available'; profile: UserMeData };
+
+/**
+ * 레벨 내 exp 진행률 계산. 서버는 totalExp(누적)와 nextLevelExp(다음 레벨 컷오프 절대값,
+ * 만렙이면 null)만 주므로, LEVEL_EXP_MAX(레벨별 필요 exp 표)로 "이번 레벨 시작 exp"를 역산해
+ * current/max 형태로 바꾼다(my.tsx의 calculateRemainingExp와 같은 계산 축, 표현만 다름).
+ * 만렙(nextLevelExp === null)이면 꽉 찬 막대(max/max)로 보여준다.
+ */
+function getLevelExpDisplay(profile: UserMeData | null): { current: number; max: number; percent: number } {
+  const level = profile?.level ?? 1;
+  const max = LEVEL_EXP_MAX[level] ?? LEVEL_EXP_MAX[1];
+  if (!profile || profile.nextLevelExp === null) {
+    return { current: max, max, percent: 100 };
+  }
+  const levelStartExp = profile.nextLevelExp - max;
+  const current = Math.min(Math.max(profile.totalExp - levelStartExp, 0), max);
+  return { current, max, percent: (current / max) * 100 };
+}
 
 const FORECAST_METRIC_LABELS = {
   darkCircle: '다크서클',
@@ -173,9 +206,19 @@ export default function HomeScreen() {
   const [verificationSummaryState, setVerificationSummaryState] = useState<VerificationSummaryState>({
     status: 'loading',
   });
+  // MY-01과 동일한 프로필 응답 — 레벨/exp/캐릭터 이미지를 여기서 채운다(마이 탭과 같은 값이라
+  // 항상 일치해야 함).
+  const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
   useEffect(() => {
     const baseDate = getTodayDateString();
+
+    getUserMe(TEMP_USER_ID, baseDate)
+      .then(({ data }) => setProfileState({ status: 'available', profile: data }))
+      .catch((error) => {
+        console.error('❌ 프로필 조회 실패:', error);
+        setProfileState({ status: 'error' });
+      });
 
     getSkinForecast(baseDate, TEMP_USER_ID)
       .then(({ data }) => {
@@ -240,6 +283,11 @@ export default function HomeScreen() {
       });
   }, []);
 
+  const profile = profileState.status === 'available' ? profileState.profile : null;
+  const level = profile?.level ?? 1;
+  const expDisplay = getLevelExpDisplay(profile);
+  const characterImage = LEVEL_CHARACTER_IMAGES[level] ?? LEVEL_CHARACTER_IMAGES[1];
+
   return (
     <>
       <SafeAreaView style={styles.screen}>
@@ -257,27 +305,22 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* 캐릭터 레벨 */}
-            <ThemedText style={styles.levelText}>LEVEL. {HOME_SUMMARY_MOCK.level.current}</ThemedText>
+            {/* 캐릭터 레벨 — MY-01(GET /api/v1/users/me) 실값(마이 탭과 동일 소스). */}
+            <ThemedText style={styles.levelText}>LEVEL. {level}</ThemedText>
             <View style={styles.levelTrack}>
-              <View style={[styles.levelFill, { width: `${HOME_SUMMARY_MOCK.level.progressPercent}%` }]} />
+              <View style={[styles.levelFill, { width: `${expDisplay.percent}%` }]} />
             </View>
-            {/* "50/250 exp" (node 541:3482, x:38 y:160 w:177.64 h:23) — 게이미케이션 API 연동 전까지
-                mock 값. 픽셀 폰트 로드 전엔 시스템 폰트로 잠깐 바뀌어 보이는 걸 막기 위해 렌더하지 않는다. */}
+            {/* "50/250 exp" (node 541:3482, x:38 y:160 w:177.64 h:23) — MY-01 totalExp/nextLevelExp로
+                계산한 실값(getLevelExpDisplay). 픽셀 폰트 로드 전엔 시스템 폰트로 잠깐 바뀌어 보이는
+                걸 막기 위해 렌더하지 않는다. */}
             {expFontLoaded && (
               <ThemedText style={styles.expText}>
-                {HOME_SUMMARY_MOCK.level.exp.current}/{HOME_SUMMARY_MOCK.level.exp.max} exp
+                {expDisplay.current}/{expDisplay.max} exp
               </ThemedText>
             )}
 
-            {/* 캐릭터 — 지금은 레벨4 고정 이미지 하드코딩. 게이미케이션 API 연동 시 레벨별
-                이미지 전환 로직을 붙여야 한다 — 할 일 목록은 mockData.ts의 HOME_SUMMARY_MOCK
-                위 TODO 블록 참고(레벨1~5 원본은 app/assets/images/figma-character-level-1~5.png). */}
-            <Image
-              source={require('@/assets/images/figma-character.png')}
-              style={styles.characterImage}
-              contentFit="contain"
-            />
+            {/* 캐릭터 — MY-01의 level로 5종 이미지 중 하나를 고른다(LEVEL_CHARACTER_IMAGES). */}
+            <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
 
             {/* 수면 요약 툴팁 카드 */}
             <Pressable onPress={() => router.push('/report')} style={({ pressed }) => [pressed && styles.pressed]}>

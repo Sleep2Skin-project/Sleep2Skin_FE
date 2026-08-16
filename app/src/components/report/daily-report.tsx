@@ -4,6 +4,8 @@ import { StyleSheet, View } from 'react-native';
 
 import {
   getDailyReport,
+  getDailyTimeline,
+  getWeeklyReport,
   type DailyReportForecastMetric,
   type DailyReportSleepSummary,
 } from '@/api/report';
@@ -11,6 +13,7 @@ import type { SleepStats } from '@/api/sleep';
 import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TEMP_USER_ID } from '@/constants/config';
+import { formatTimeKST } from '@/utils/format-time';
 
 // 일간 리포트 (REP-02, 04, 05) — Figma 'Ui (복사)' 파일 node 350:698("리포트- 일간")을 Dev Mode 값
 // (색상 hex/폰트/여백/radius) 그대로 옮긴 것. 탭 전환 세그먼트(일간/주간/월간/종합)와 하단 탭바는
@@ -18,36 +21,43 @@ import { TEMP_USER_ID } from '@/constants/config';
 // index.tsx/onboarding-flow.tsx와 달리 이 화면은 고정 캔버스에 절대좌표를 옮기지 않고, Figma가 준
 // 좌표 간격을 padding/gap으로 환산해 Flexbox로 짜서 기기 폭에 반응형으로 채운다(카드 폭 등도 %/flex).
 //
-// GET /api/v1/report/daily(REP-02/04/05)로 "지난밤 수면 구간" 카드/통계 카드/오늘의 피부 예보를
-// 전부 이 한 API로 연동한다. sleepSummary와 skinForecast는 응답 안에서 완전히 독립된 섹션이라
-// (api/report.ts 주석 참고) 아래 두 상태(sleepSummaryState/skinForecastState)도 서로 다른 시점에
-// 서로 다른 값을 가질 수 있게 별도로 관리한다 — 한쪽이 NO_SLEEP_DATA라고 다른 쪽까지 숨기지 않는다.
+// GET /api/v1/report/daily(REP-02/04/05)로 "지난밤 수면 구간" 카드/통계 카드/오늘의 피부 예보를,
+// GET /api/v1/report/daily/timeline(REP-03, sleep-detail-modal.tsx와 같은 API)로 취침~기상 시각을
+// 연동한다. 두 API는 완전히 독립적이라(같은 baseDate라도 서로 다른 status를 가질 수 있음) 아래
+// sleepSummaryState/skinForecastState/sleepWindowState 세 상태를 각자 따로 관리한다 — 한쪽이
+// NO_SLEEP_DATA라고 다른 쪽까지 숨기지 않는다.
 const DATE_RANGE_LABEL = '최근 7일 · 7/25 – 7/31';
-const USER_HEADING = 'test1님의 어제';
 
-// report/daily가 아직 주지 않는 필드(입면/기상 시각, REM 수면 분) — 값이 생기기 전까지 목업으로
-// 채운다. deepSleepMinutes/coreSleepMinutes(=lightSleepMinutes)/awakeCount/awakeMinutes는 이제
-// 전부 API 실값을 쓴다(아래 toHybridSleepStats 참고).
-const SLEEP_TIMING_MOCK = {
-  sleepOnsetTime: '2026-08-09T14:40:00Z', // UTC — KST 23:40
-  wakeTime: '2026-08-09T22:10:00Z', // UTC — KST(다음날) 07:10
+/** "OOO님의 어제" — nickname은 report.tsx가 GET /api/v1/users/me로 한 번만 불러 내려준다. 로딩/에러
+ * 중(null)엔 이름 없이도 자연스러운 "나의 어제"로 대체한다. */
+function buildUserHeading(nickname: string | null) {
+  return nickname ? `${nickname}님의 어제` : '나의 어제';
+}
+
+// report/daily·report/daily/timeline 어디에도 없는 필드(REM 수면 분)만 값이 생기기 전까지 목업으로
+// 채운다. 입면/기상 시각은 이제 timeline API 실값을 쓴다(아래 sleepWindowState 참고).
+const SLEEP_REM_MOCK = {
   remSleepMinutes: 202, // 3시간 22분
 };
 
-// SleepStats에 없는 필드(입면 지연·수면 효율)는 report/daily에도 아직 없어 별도 목업으로 남겨둔다.
-const SLEEP_EXTRA_STATS_MOCK = {
-  latencyMinutes: 62,
-  efficiencyPercent: 70,
-};
-
-// 게이미케이션(경험치) 팝업 트리거용 목업 — 연속 출석/경험치를 다루는 백엔드 API가 아직 없어서
-// (API_SPEC.md 미등재) "어제보다 수면 점수가 올랐는지"를 실제로 계산할 방법이 없다. report/daily의
-// sleepScore는 어제 값을 함께 주지 않아(diffFromYesterday가 없음) 이 비교엔 아직 못 쓴다.
-// 그래서 today/previous를 하드코딩해두고 today > previous일 때만 팝업을 띄우는 것으로 로직만
-// 흉내 낸다. 실제 API가 어제 대비 값을 내려주면 이 목업 대신 그 값을 쓸 것.
-const SLEEP_SCORE_MOCK = { today: 86, previous: 70 };
+// 게이미케이션(경험치) 팝업 — "어제보다 오늘 수면 점수가 높으면" 트리거는 GET /api/v1/report/weekly의
+// dailyScores(최근 7일치 점수 배열, weekly-report.tsx와 같은 API)로 실연동한다. report/daily의
+// sleepScore는 어제 값을 함께 주지 않지만(diffFromYesterday 없음), weekly가 이미 어제·오늘 점수를
+// 둘 다 갖고 있어 그 두 값을 프론트에서 비교하면 된다 — 평균·합계를 다시 계산하는 게 아니라 서버가
+// 준 개별 값 두 개를 그대로 빼는 것뿐이라 "재계산 금지" 규칙 위반이 아니다.
+// exp 지급은 아직 다른 문제다 — "수면 점수 상승"에 대해 실제로 exp를 적립해주는 백엔드 엔드포인트/
+// reason이 없어서(VERIFICATION_STREAK·TODO_DONE·TODO_ALL_DONE 셋뿐, api/game.ts·api/todo.ts 참고),
+// 이 숫자만은 여전히 목업이다 — 트리거(뜨는지 여부)와 표시 점수/날짜는 실값, exp만 자리표시자.
+// 백엔드에 전용 엔드포인트가 생기면 SLEEP_SCORE_EXP_MOCK을 그 응답값으로 교체할 것.
 const SLEEP_SCORE_EXP_MOCK = 10;
-const SLEEP_SCORE_DATE_LABEL_MOCK = '26년 8월 14일';
+
+/** "YYYY-MM-DD" → "YY년 M월 D일" (SleepScoreGamificationModal의 dateLabel 포맷). */
+function formatSleepScoreDateLabel(isoDate: string): string {
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  return `${year.slice(2)}년 ${Number(month)}월 ${Number(day)}일`;
+}
 
 function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
@@ -57,27 +67,24 @@ function formatDuration(minutes: number) {
   return `${hours}시간 ${remainder}분`;
 }
 
-/** UTC ISO 문자열을 KST(UTC+9) "HH:mm"으로 포맷 — 기기 타임존과 무관하게 항상 한국 시각 기준. */
-function formatTimeKST(isoUtc: string) {
-  const kst = new Date(new Date(isoUtc).getTime() + 9 * 60 * 60 * 1000);
-  const hours = String(kst.getUTCHours()).padStart(2, '0');
-  const minutes = String(kst.getUTCMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-}
-
 /**
- * report/daily의 DailyReportSleepSummary(실측) + 아직 API에 없는 필드(목업)를 합쳐 기존
- * SleepStats 모양으로 만든다. lightSleepMinutes → coreSleepMinutes 매핑이 핵심 규칙
- * ("얕은 수면(HealthKit asleepCore)을 리포트 노출용으로 부르는 이름", api/report.ts 참고) —
- * awakeCount/awakeMinutes는 재계산하지 않고 API 값을 그대로 옮긴다.
+ * report/daily의 DailyReportSleepSummary(실측) + report/daily/timeline의 취침~기상 시각(실측,
+ * sleepWindow) + 아직 API에 없는 필드(REM만 목업)를 합쳐 기존 SleepStats 모양으로 만든다.
+ * lightSleepMinutes → coreSleepMinutes 매핑이 핵심 규칙("얕은 수면(HealthKit asleepCore)을 리포트
+ * 노출용으로 부르는 이름", api/report.ts 참고) — awakeCount/awakeMinutes는 재계산하지 않고 API
+ * 값을 그대로 옮긴다. sleepWindow가 아직 없으면(로딩/에러/무데이터) 빈 문자열로 두고, 그 값을
+ * 읽는 formatTimeKST가 알아서 '--:--'로 방어한다.
  */
-function toHybridSleepStats(summary: DailyReportSleepSummary): SleepStats {
+function toHybridSleepStats(
+  summary: DailyReportSleepSummary,
+  sleepWindow: { sleepOnsetTime: string; wakeTime: string } | null
+): SleepStats {
   return {
-    sleepOnsetTime: SLEEP_TIMING_MOCK.sleepOnsetTime,
-    wakeTime: SLEEP_TIMING_MOCK.wakeTime,
+    sleepOnsetTime: sleepWindow?.sleepOnsetTime ?? '',
+    wakeTime: sleepWindow?.wakeTime ?? '',
     totalSleepMinutes: summary.totalSleepMinutes,
     deepSleepMinutes: summary.deepSleepMinutes,
-    remSleepMinutes: SLEEP_TIMING_MOCK.remSleepMinutes,
+    remSleepMinutes: SLEEP_REM_MOCK.remSleepMinutes,
     coreSleepMinutes: summary.lightSleepMinutes,
     awakeCount: summary.awakeCount,
     awakeMinutes: summary.awakeMinutes,
@@ -152,15 +159,17 @@ function buildLegendRows(stats: SleepStats): LegendItem[][] {
 // 발생 시각까지는 SleepStats에 없어서(집계값만 내려옴) 위치 자체는 Figma 좌표를 그대로 둔다.
 const AROUSAL_MARKER_POSITIONS = [36.3, 64.3];
 
-// 지표 카드 6개 (node 350:737~814) — 3열 x 2행, Figma 순서(좌→우, 상→하) 그대로.
-// 총 수면/야간 각성/각성 시간/얕은 수면(코어)은 report/daily 실값에서, 잠든 시간/수면 효율은
-// 아직 API에 없는 필드라 SLEEP_EXTRA_STATS_MOCK에서 가져온다.
-function buildStatItems(stats: SleepStats) {
+// 지표 카드 6개(node 350:737~814, 최신 시안 기준 "제목 없음(7)" 스크린샷 참고) — 3열 x 2행,
+// 좌→우 상→하 순서로 총 수면/깊은 수면/야간 각성/수면 점수/얕은 수면/각성 시간. 전부 report/daily
+// 실값이다 — 수면 점수는 같은 응답의 sleepSummary.summary.sleepScore(위 sleepScoreBadge와 동일
+// 소스), 깊은 수면은 stats.deepSleepMinutes(범례가 이미 쓰는 값과 동일). "잠든 시간"(입면 지연)은
+// 이 6칸에 포함되지 않는 지표라 여기서 완전히 뺐다 — API에도 없고 디자인에도 없다.
+function buildStatItems(stats: SleepStats, sleepScore: number) {
   return [
     { key: 'total', label: '총 수면', value: formatDuration(stats.totalSleepMinutes) },
-    { key: 'latency', label: '잠든 시간', value: `${SLEEP_EXTRA_STATS_MOCK.latencyMinutes}분` },
+    { key: 'deep', label: '깊은 수면', value: formatDuration(stats.deepSleepMinutes) },
     { key: 'wakeCount', label: '야간 각성', value: `${stats.awakeCount}회` },
-    { key: 'efficiency', label: '수면 효율', value: `${SLEEP_EXTRA_STATS_MOCK.efficiencyPercent}%` },
+    { key: 'score', label: '수면 점수', value: `${sleepScore}점` },
     { key: 'core', label: '얕은 수면', value: formatDuration(stats.coreSleepMinutes) },
     { key: 'wakeMinutes', label: '각성 시간', value: formatDuration(stats.awakeMinutes) },
   ];
@@ -170,7 +179,7 @@ function buildStatItems(stats: SleepStats) {
 // darkCircle/complexion/barrier 3개뿐이라(눈 부기는 API에 없음) Figma의 4개 중 "눈 부기"를 뺐다.
 // 3번째 지표가 빠지면서 남는 세로 공간은 아래 수면 카드 범례를 2열 x 3행으로 넓혀 쓰는 데 썼다.
 // 트랙(node 350:751 등)은 배경 트랙 위에 today%만큼 진한 막대가 채워지는 형태다.
-// (수면 구간 상세 일부(입면/기상 시각, REM)는 여전히 목업 — 위 SLEEP_TIMING_MOCK 참고.)
+// (입면/기상 시각은 이제 timeline API 실값, REM 수면 분만 여전히 목업 — 위 SLEEP_REM_MOCK 참고.)
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 
 const SKIN_METRIC_LABELS = {
@@ -195,6 +204,24 @@ type SkinForecastState =
       complexion: DailyReportForecastMetric;
       barrier: DailyReportForecastMetric;
     };
+
+// report/daily/timeline(REP-03) — 취침~기상 시각만 필요하므로 segments는 이 화면에서 쓰지 않는다
+// (구간별 타임라인 바는 sleep-detail-modal.tsx 소관). no_data엔 message가 없다 — 취침~기상 텍스트는
+// formatTimeKST의 '--:--' 폴백으로 조용히 대체되고, 별도 안내 문구를 두지 않는다(sleepSummaryState가
+// 이미 카드 전체의 로딩/에러/빈 상태를 보여주므로 중복 안내를 피한다).
+type SleepWindowState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'no_data' }
+  | { status: 'available'; sleepOnsetTime: string; wakeTime: string };
+
+// SleepScoreGamificationModal 트리거 — report/weekly의 dailyScores(최근 7일)에서 오늘·어제 두
+// 항목을 찾아 비교한다. 'ready'는 "비교는 끝났고 상승하지 않았거나 비교 불가"(팝업 안 띄움),
+// 'increased'는 상승(팝업 띄움) — 둘을 분리해두면 렌더링에서 오탐 없이 명확하게 분기할 수 있다.
+type SleepScoreCompareState =
+  | { status: 'loading' }
+  | { status: 'ready' }
+  | { status: 'increased'; score: number; dateLabel: string };
 
 function getTodayDateString() {
   const now = new Date();
@@ -288,11 +315,14 @@ function SkinMetricRow({
   );
 }
 
-export function DailyReport() {
+export function DailyReport({ nickname }: { nickname: string | null }) {
   const [sleepSummaryState, setSleepSummaryState] = useState<SleepSummaryState>({ status: 'loading' });
   const [skinForecastState, setSkinForecastState] = useState<SkinForecastState>({ status: 'loading' });
-  // 목업 트리거(위 SLEEP_SCORE_MOCK 주석 참고) — 오늘 점수가 어제보다 높을 때만 한 번 띄운다.
-  const [showScoreUpModal, setShowScoreUpModal] = useState(SLEEP_SCORE_MOCK.today > SLEEP_SCORE_MOCK.previous);
+  const [sleepWindowState, setSleepWindowState] = useState<SleepWindowState>({ status: 'loading' });
+  // SleepScoreGamificationModal 트리거 상태(위 SleepScoreCompareState 주석 참고).
+  const [sleepScoreCompareState, setSleepScoreCompareState] = useState<SleepScoreCompareState>({
+    status: 'loading',
+  });
 
   useEffect(() => {
     const baseDate = getTodayDateString();
@@ -321,23 +351,69 @@ export function DailyReport() {
         setSleepSummaryState({ status: 'error' });
         setSkinForecastState({ status: 'error' });
       });
+
+    // GET /report/daily/timeline — 별개 엔드포인트라 위 getDailyReport와 독립적으로 호출한다
+    // (sleep-detail-modal.tsx와 같은 API, 같은 baseDate).
+    getDailyTimeline(baseDate, TEMP_USER_ID)
+      .then(({ data }) => {
+        setSleepWindowState(
+          data.status === 'AVAILABLE'
+            ? { status: 'available', sleepOnsetTime: data.sleepOnsetTime, wakeTime: data.wakeTime }
+            : { status: 'no_data' }
+        );
+      })
+      .catch(() => setSleepWindowState({ status: 'error' }));
+
+    // GET /report/weekly — SleepScoreGamificationModal 트리거용으로 dailyScores에서 오늘·어제
+    // 점수만 뽑아 비교한다(weekly-report.tsx와 같은 API, 별도 독립 호출). periodEnd가 baseDate와
+    // 같으므로 배열의 마지막 항목이 오늘, 그 앞이 어제다 — 둘 다 값이 있고 오늘이 더 높을 때만
+    // 'increased'로 전환한다(신규 가입자의 INSUFFICIENT_DATA나 결측치는 그냥 비교 불가로 처리).
+    getWeeklyReport(baseDate, TEMP_USER_ID)
+      .then(({ data }) => {
+        if (data.status !== 'FULL') {
+          setSleepScoreCompareState({ status: 'ready' });
+          return;
+        }
+        const { dailyScores } = data;
+        const today = dailyScores[dailyScores.length - 1];
+        const yesterday = dailyScores[dailyScores.length - 2];
+        if (
+          !today ||
+          !yesterday ||
+          today.date !== baseDate ||
+          today.sleepScore === null ||
+          yesterday.sleepScore === null ||
+          today.sleepScore <= yesterday.sleepScore
+        ) {
+          setSleepScoreCompareState({ status: 'ready' });
+          return;
+        }
+        setSleepScoreCompareState({
+          status: 'increased',
+          score: today.sleepScore,
+          dateLabel: formatSleepScoreDateLabel(today.date),
+        });
+      })
+      .catch(() => setSleepScoreCompareState({ status: 'ready' }));
   }, []);
 
-  const hybridSleepStats = sleepSummaryState.status === 'available' ? toHybridSleepStats(sleepSummaryState.summary) : null;
+  const sleepWindow = sleepWindowState.status === 'available' ? sleepWindowState : null;
+  const hybridSleepStats =
+    sleepSummaryState.status === 'available' ? toHybridSleepStats(sleepSummaryState.summary, sleepWindow) : null;
 
   return (
     <View style={styles.container}>
-      {showScoreUpModal && (
+      {sleepScoreCompareState.status === 'increased' && (
         <SleepScoreGamificationModal
-          score={SLEEP_SCORE_MOCK.today}
+          score={sleepScoreCompareState.score}
           expGained={SLEEP_SCORE_EXP_MOCK}
-          dateLabel={SLEEP_SCORE_DATE_LABEL_MOCK}
-          onClose={() => setShowScoreUpModal(false)}
+          dateLabel={sleepScoreCompareState.dateLabel}
+          onClose={() => setSleepScoreCompareState({ status: 'ready' })}
         />
       )}
 
       <ThemedText style={styles.dateRange}>{DATE_RANGE_LABEL}</ThemedText>
-      <ThemedText style={styles.heading}>{USER_HEADING}</ThemedText>
+      <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 
       <View style={styles.sleepCard}>
         <View style={styles.sleepCardTitleRow}>
@@ -401,7 +477,7 @@ export function DailyReport() {
 
       {sleepSummaryState.status === 'available' && hybridSleepStats && (
         <View style={styles.statGrid}>
-          {buildStatItems(hybridSleepStats).map((item) => (
+          {buildStatItems(hybridSleepStats, sleepSummaryState.summary.sleepScore).map((item) => (
             <View key={item.key} style={styles.statCard}>
               <ThemedText style={styles.statLabel}>{item.label}</ThemedText>
               <ThemedText style={styles.statValue}>{item.value}</ThemedText>

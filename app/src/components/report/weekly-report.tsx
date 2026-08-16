@@ -56,6 +56,11 @@ function formatDayOfMonth(isoDate: string): string {
   return String(Number(parts[2]));
 }
 
+/** "OOO님의 일주일" — nickname은 report.tsx가 GET /api/v1/users/me로 한 번만 불러 내려준다(daily-report.tsx와 동일 패턴). */
+function buildUserHeading(nickname: string | null) {
+  return nickname ? `${nickname}님의 일주일` : '나의 일주일';
+}
+
 function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -184,7 +189,7 @@ function CorrelationRow({ item }: { item: WeeklyReportCorrelation }) {
   );
 }
 
-export function WeeklyReport() {
+export function WeeklyReport({ nickname }: { nickname: string | null }) {
   const [state, setState] = useState<WeeklyReportState>({ status: 'loading' });
 
   useEffect(() => {
@@ -226,7 +231,7 @@ export function WeeklyReport() {
         <ThemedText style={styles.dateRange}>
           최근 7일 · {formatShortDate(state.periodStart)} – {formatShortDate(state.periodEnd)}
         </ThemedText>
-        <ThemedText style={styles.heading}>test1님의 일주일</ThemedText>
+        <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
         <View style={styles.emptyState}>
           <ThemedText style={styles.emptyStateText}>가입 후 7일이 지나야 주간 리포트가 제공돼요</ThemedText>
         </View>

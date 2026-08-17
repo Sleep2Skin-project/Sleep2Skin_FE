@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { calculateRemainingExp, getLevelExpDisplay } from '@/api/game';
+import { calculateRemainingExp, checkInAttendance, getLevelExpDisplay, type AttendanceWeekDay } from '@/api/game';
 import { getDailyTodos } from '@/api/todo';
 import {
   calculateVerificationTrustLevel,
@@ -20,7 +20,6 @@ import { TEMP_USER_ID } from '@/constants/config';
 import { LEVEL_CHARACTER_IMAGES, LEVEL_EXP_MAX } from '@/constants/mockData';
 import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { isWeekdayInTrailingStreak, toMondayFirstWeekdayIndex } from '@/utils/week-streak';
 
 // MY — Figma 'Ui (복사)' 파일 노드 541:2981("iPhone 17 - 22")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -101,35 +100,47 @@ function formatSyncTimestamp(iso: string): string {
 // 이 앱의 실제 업로드 정책("앱을 켤 때마다 업로드")을 고정 문구로 그대로 노출한다(MY-02 규칙 2).
 const SYNC_POLICY_TEXT = '앱을 켤 때마다 자동으로 최신 수면 데이터를 가져와요';
 
-// 이번 주 출석 스트릭 띠(node 541:2985) — MY-01(GET /api/v1/users/me)의 streakCount를
-// week-streak.ts(isWeekdayInTrailingStreak)로 이번 주 월~일 그리드에 투영해 실연동한다(정확한
-// 요일별 이력 API는 없어 "오늘 포함 최근 streakCount일" 꼬리를 그리는 방식 — 자세한 설명은
-// week-streak.ts 상단 주석 참고). 완료(파랑)/오늘인데 아직 스트릭에 안 들어간 경우(빨강, 위쪽
-// 세모 표시)/예정 또는 미완료(회색) 세 가지 시각 상태로 그린다.
-type WeekStreakState = 'done' | 'todayPending' | 'upcoming';
+// 이번 주 출석 스트릭 띠(node 541:2985) — POST /api/v1/users/me/attendance(HOME-04) 응답의
+// weekDays(월~일 7칸, 날짜별 ATTENDED/MISSED/UPCOMING 실측)를 그대로 그린다.
+//
+// 예전엔 MY-01(GET /api/v1/users/me)의 streakCount(연속 "검증" 횟수 — 출석과 다른 개념)를
+// week-streak.ts(isWeekdayInTrailingStreak)로 이번 주에 투영해 흉내 냈었다. 그 근사는 신규
+// 유저가 월요일에 첫 출석을 해도 streakCount가 0이라 체크 대신 실패 표시가 뜨는 버그가 있었다
+// (attendance-flow.tsx에 있던 것과 동일한 원인 — 자세한 경위는 그 파일 상단 주석 참고). 지금은
+// 이 화면이 직접 attendance API를 호출해 정확한 weekDays로 그린다 — 이 호출은 앱 시작마다
+// _layout.tsx가 이미 한 번 부른 뒤라 항상 "재호출"(200, checkedIn:false)이라 중복 지급 걱정은
+// 없다(재호출은 에러가 아니고, 같은 날 몇 번을 불러도 하루 1회 지급은 서버가 보장한다).
+//
+// 완료(파랑) / 결석 — MISSED, 그리고 오늘인데 아직 기록이 없는 극히 드문 경우도 같은 취급(빨강,
+// 오늘 칸에는 위쪽 세모 표시가 추가로 붙는다) / 예정 — UPCOMING(회색) 세 가지 시각 상태로 그린다.
+// attendance-flow.tsx(출석 팝업)의 체크·X·빈칸 3구분과 같은 원칙 — "결석"과 "예정"을 같은 색으로
+// 뭉개면 아직 오지도 않은 날이 빠뜨린 날처럼 보인다.
+type WeekStreakState = 'done' | 'missed' | 'upcoming';
 
 const WEEK_STREAK_COLORS: Record<WeekStreakState, { ring: string; circleBg: string }> = {
   done: { ring: '#058BFC', circleBg: '#8ECDFF' },
-  todayPending: { ring: '#F91D33', circleBg: '#FFFFFF' },
+  missed: { ring: '#F91D33', circleBg: '#FFFFFF' },
   upcoming: { ring: '#949597', circleBg: '#FFFFFF' },
 };
 
 const WEEKDAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'] as const;
 
 /**
- * streakCount를 이번 주 7칸으로 투영한다. 오늘 이후 요일은 항상 upcoming. 오늘까지(포함)는
- * "오늘로부터 며칠 전인지"가 streakCount 미만이면 done — 단, 오늘 자신이 아직 스트릭에 포함되지
- * 않은 극히 드문 경우(streakCount가 0이거나 오늘이 그 안 든 경우 — 앱 진입 시 자동 출석
- * 체크인이 이미 실행되므로 사실상 거의 발생하지 않음)만 todayPending으로 강조한다.
+ * weekDays(서버가 항상 월~일 7칸으로 보장)를 그대로 이번 주 7칸에 대응시킨다. isToday는 요일
+ * 인덱스가 아니라 날짜 문자열로 판정한다(주 경계 계산을 다시 하지 않기 위해 서버 값을 그대로
+ * 믿는다). UPCOMING만 upcoming(회색)이고, ATTENDED가 아닌 나머지(MISSED·오늘인데 아직 기록이
+ * 없는 드문 경우)는 전부 missed(빨강)로 그린다 — day가 없으면(로딩 중 등 방어) 안전하게 upcoming.
  */
-function buildWeekStreakDays(streakCount: number): { label: string; state: WeekStreakState; isToday: boolean }[] {
-  const todayIndex = toMondayFirstWeekdayIndex(new Date());
+function buildWeekStreakDays(
+  weekDays: AttendanceWeekDay[],
+  todayDateString: string
+): { label: string; state: WeekStreakState; isToday: boolean }[] {
   return WEEKDAY_LABELS.map((label, index) => {
-    const isToday = index === todayIndex;
-    if (index > todayIndex) return { label, state: 'upcoming' as const, isToday };
-    const done = isWeekdayInTrailingStreak(index, todayIndex, streakCount);
-    if (isToday) return { label, state: done ? ('done' as const) : ('todayPending' as const), isToday };
-    return { label, state: done ? ('done' as const) : ('upcoming' as const), isToday };
+    const day = weekDays[index];
+    const isToday = day?.date === todayDateString;
+    if (!day || day.status === 'UPCOMING') return { label, state: 'upcoming' as const, isToday };
+    if (day.status === 'ATTENDED') return { label, state: 'done' as const, isToday };
+    return { label, state: 'missed' as const, isToday };
   });
 }
 
@@ -341,9 +352,29 @@ export default function MyScreen() {
   // 미세하게 차오르게 하는 데 쓴다(아래 LevelSegmentBar).
   const expDisplay = getLevelExpDisplay(profile);
   const characterImage = LEVEL_CHARACTER_IMAGES[level] ?? LEVEL_CHARACTER_IMAGES[1];
-  // 로딩/에러 중엔 streakCount 0으로 취급 — buildWeekStreakDays가 전부 upcoming(오늘만
-  // todayPending)으로 안전하게 그린다.
-  const weekStreakDays = buildWeekStreakDays(profile?.streakCount ?? 0);
+
+  // "이번 주 출석 스트릭" 띠 전용 — HOME-04(POST /api/v1/users/me/attendance)를 재호출해 정확한
+  // weekDays를 얻는다(위 buildWeekStreakDays 주석 참고). _layout.tsx가 앱 시작 시 이미 한 번
+  // 불렀으므로 이 호출은 항상 그날의 재호출이라 중복 지급되지 않는다.
+  const [weekDaysState, setWeekDaysState] = useState<
+    { status: 'loading' } | { status: 'error' } | { status: 'available'; weekDays: AttendanceWeekDay[] }
+  >({ status: 'loading' });
+
+  useEffect(() => {
+    checkInAttendance(TEMP_USER_ID, getTodayDateString())
+      .then(({ data }) => setWeekDaysState({ status: 'available', weekDays: data.weekDays }))
+      .catch((error) => {
+        console.error('❌ 출석 스트릭 조회 실패:', error);
+        setWeekDaysState({ status: 'error' });
+      });
+  }, []);
+
+  // 로딩/에러 중엔 빈 배열로 취급 — buildWeekStreakDays가 (day를 못 찾으니) 전부 upcoming으로
+  // 안전하게 그린다.
+  const weekStreakDays = buildWeekStreakDays(
+    weekDaysState.status === 'available' ? weekDaysState.weekDays : [],
+    getTodayDateString()
+  );
 
   // MY-02 — 수면 데이터 연결 상태. baseDate를 보내지 않는다(위 DataStatusState 주석 참고).
   const [dataStatusState, setDataStatusState] = useState<DataStatusState>({ status: 'loading' });
@@ -407,8 +438,8 @@ export default function MyScreen() {
           <ThemedText style={styles.levelSubtitle}>내 루틴을 찾았어요!</ThemedText>
           {/* MY-01 검증 신뢰도 — Figma 노드 없음. verificationCount로 계산한 신뢰도 문구
               (calculateVerificationTrustLevel, api/user.ts)와 streakCount(연속 검증 횟수)를
-              보여준다. 아래 "이번 주 출석 스트릭" 띠도 같은 streakCount를 요일 그리드에 투영한
-              것이다(week-streak.ts) — 서로 다른 표현일 뿐 같은 값이다. */}
+              보여준다. 아래 "이번 주 출석 스트릭" 띠는 다른 API(HOME-04)의 실제 출석 기록을
+              그리는 것이라 이 줄의 streakCount(검증 스트릭)와는 서로 다른 값이다 — 혼동하지 말 것. */}
           {profileState.status === 'available' && (
             <ThemedText style={styles.trustLevelText}>
               검증 {profileState.profile.verificationCount}회 · 연속 {profileState.profile.streakCount}일 ·{' '}
@@ -437,7 +468,7 @@ export default function MyScreen() {
             contentFit="contain"
           />
 
-          {/* 이번 주 출석 스트릭 (node 541:2985, streakCount 실연동 — 위 buildWeekStreakDays 주석 참고) */}
+          {/* 이번 주 출석 스트릭 (node 541:2985, HOME-04 weekDays 실연동 — 위 buildWeekStreakDays 주석 참고) */}
           <View style={styles.weekStreakRow}>
             {weekStreakDays.map((day, index) => {
               const colors = WEEK_STREAK_COLORS[day.state];

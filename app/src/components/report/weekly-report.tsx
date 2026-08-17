@@ -6,6 +6,7 @@ import {
   getWeeklyReport,
   type FullWeeklyReportData,
   type WeeklyReportCorrelation,
+  type WeeklyReportCorrelationGroup,
   type WeeklyReportDailyScore,
 } from '@/api/report';
 import { ThemedText } from '@/components/themed-text';
@@ -98,6 +99,14 @@ const CORRELATION_STRENGTH_FALLBACK_COLOR = '#6B6B6B';
 const CORRELATION_STRENGTH_FALLBACK_WIDTH = 40;
 const INSUFFICIENT_SAMPLE_COLOR = '#9E9E9E';
 
+// correlations 그룹 헤더 라벨 — 서버가 skinMetric 코드값을 늘릴 수 있어(api/report.ts 참고) 모르는
+// 코드가 와도 화면이 깨지지 않도록 원문 코드 그대로 보여주는 fallback을 둔다.
+const SKIN_METRIC_GROUP_LABELS: Record<string, string> = {
+  DARK_CIRCLE: '다크서클',
+  COMPLEXION: '혈색',
+  BARRIER: '피부장벽',
+};
+
 type WeeklyReportState =
   | { status: 'loading' }
   | { status: 'error' }
@@ -185,6 +194,25 @@ function CorrelationRow({ item }: { item: WeeklyReportCorrelation }) {
       <View style={styles.factorTrack}>
         {meta && <View style={[styles.factorFill, { width: `${meta.widthPercent}%`, backgroundColor: meta.color }]} />}
       </View>
+    </View>
+  );
+}
+
+// correlations가 flat 배열에서 skinMetric 기준 3그룹으로 바뀐 뒤의 렌더링 단위 — 그룹 헤더 아래
+// 그 그룹에 속한 CorrelationRow들을 나열한다. 매핑되는 sleepFeature가 없어 그룹이 비어있을 수도
+// 있다는 게 명세로 확정돼 있어(api/report.ts 참고), 그 경우도 화면이 비어 보이지 않게 방어한다.
+function CorrelationGroupSection({ group }: { group: WeeklyReportCorrelationGroup }) {
+  const groupLabel = SKIN_METRIC_GROUP_LABELS[group.skinMetric] ?? group.skinMetric;
+  return (
+    <View style={styles.correlationGroup}>
+      <ThemedText style={styles.correlationGroupTitle}>{groupLabel}</ThemedText>
+      {group.correlations.length === 0 ? (
+        <ThemedText style={styles.statusText}>관련 데이터가 아직 없어요</ThemedText>
+      ) : (
+        group.correlations.map((item) => (
+          <CorrelationRow key={`${item.sleepFeature}-${item.skinMetric}`} item={item} />
+        ))
+      )}
     </View>
   );
 }
@@ -293,8 +321,8 @@ export function WeeklyReport({ nickname }: { nickname: string | null }) {
       <View style={styles.factorSection}>
         <ThemedText style={styles.factorSectionTitle}>한 주간 영향이 컸던 요인</ThemedText>
         <View style={styles.factorList}>
-          {correlations.map((item) => (
-            <CorrelationRow key={`${item.sleepFeature}-${item.skinMetric}`} item={item} />
+          {correlations.map((group) => (
+            <CorrelationGroupSection key={group.skinMetric} group={group} />
           ))}
         </View>
       </View>
@@ -529,10 +557,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // node 306:2450 자체 gap(13.68) — 제목 하단 여백 포함해 14.
+  // node 306:2450 자체 gap(13.68) — 제목 하단 여백 포함해 14. 이제 그룹 단위(CorrelationGroupSection)로
+  // 나열되므로 이 gap은 그룹 사이 간격이다.
   factorList: {
     marginTop: 14,
-    gap: 14,
+    gap: 18,
+  },
+  // 그룹 헤더(다크서클/혈색/피부장벽) + 그 안의 CorrelationRow들 — Figma엔 없는 신규 구조라
+  // factorSectionTitle보다 한 단계 작은 보조 타이틀로 얹었다.
+  correlationGroup: {
+    gap: 10,
+  },
+  correlationGroupTitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    color: '#031949',
   },
   factorRow: {
     gap: 6,

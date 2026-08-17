@@ -4,22 +4,17 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useDesignScale } from '@/hooks/use-design-scale';
 
-// 일간 리포트(daily-report.tsx) 전용 — "수면 점수가 올랐을 때" 뜨는 게이미케이션(경험치) 팝업.
-// Figma 'Ui (복사)' 파일 노드 513:340("리포트- 일간") 위에 겹쳐 있던 모달 그룹(node 516:953,
-// 프레임 원점 기준 x:-18 y:423)을 그대로 옮겼다.
+// "수면 점수가 올랐을 때/90점 이상일 때" 뜨는 게이미케이션(경험치) 팝업. Figma 'Ui (복사)' 파일
+// 노드 513:340("리포트- 일간") 위에 겹쳐 있던 모달 그룹(node 516:953, 프레임 원점 기준
+// x:-18 y:423) 좌표를 그대로 옮긴 것 — 원래는 일간 리포트 화면 전용으로 그려졌지만, 실제 트리거가
+// POST /api/v1/sleep/sessions(앱 시작마다 호출)로 옮겨가면서 지금은 src/app/_layout.tsx가 소유
+// 하고 앱 시작 시 그 화면 위(대체로 홈 탭) 오버레이로 띄운다. RN Modal로 화면 전체를 별도 레이어로
+// 덮는 구조라 백드롭이 "지금 떠 있는 화면을 반투명 dim" 하는 범용 구조라서 뒤에 어느 화면이 있어도
+// 그대로 쓸 수 있다 — 402x874 고정 캔버스 + useDesignScale 비율 스케일링도 그대로다.
 //
-// daily-report.tsx 자신은 ScrollView 안에서 Flexbox로 반응형으로 그려지는 화면이지만(고정 캔버스가
-// 아님), 이 팝업만은 홈/온보딩/셀피 화면과 동일하게 402x874 고정 캔버스 + useDesignScale 비율
-// 스케일링을 쓴다 — RN Modal이 화면 전체를 별도 레이어로 덮으므로 부모의 스크롤 여부와 무관하게
-// 항상 기기 화면 전체 기준으로 좌표를 잡을 수 있고, Figma가 준 절대좌표(카드가 화면 중앙이 아니라
-// 하단 쪽에 치우쳐 있음, y:423~852)도 변환 없이 그대로 쓸 수 있다.
-//
-// "수면 점수가 전날보다 올랐는지"는 daily-report.tsx가 GET /api/v1/report/weekly의 dailyScores
-// (최근 7일 점수, weekly-report.tsx와 같은 API)로 오늘·어제를 비교해 실연동한다 — score/dateLabel
-// prop도 그 실값이다. 다만 exp 지급(+10)만은 여전히 목업이다 — "수면 점수 상승"에 대해 실제로
-// exp를 적립해주는 백엔드 엔드포인트/reason이 아직 없어서(연속 출석/투두 완료 외엔 없음,
-// api/game.ts·api/todo.ts 참고) expGained 값 자체를 서버에서 받아올 방법이 없다. 전용 엔드포인트가
-// 생기면 daily-report.tsx의 SLEEP_SCORE_EXP_MOCK을 그 응답값으로 교체할 것.
+// score/expGained/dateLabel은 모두 그 API 응답의 실값이다(exp.reasons 중
+// SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH 합산, sleep.sleepScore, sleepDate) — 더 이상 목업이
+// 아니다(_layout.tsx 참고).
 //
 // Figma는 카드 배경에 blur(5.11px) 프로스티드 글라스 효과를 쓰지만, RN 기본만으로는 재현이
 // 번거로워 불투명 흰 배경 + 그림자로 근사했다(다른 팝업 모달들과 동일한 절충).

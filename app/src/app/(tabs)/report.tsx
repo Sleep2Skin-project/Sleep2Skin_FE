@@ -14,8 +14,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 
 // REPORT 탭(REP-01~11) — 일간·주간·월간·종합 리포트.
 // 일간 화면은 Figma node 350:698 실사 기준으로 배경이 옅은 파랑(#DFEAFF, HOME/TODO와 동일)이라
-// 테마 배경(흰색) 대신 고정 배경을 쓴다. 일간/주간/월간은 실 API로 연동됐고(각 컴포넌트 상단
-// 주석 참고), 종합 섹션만 아직 해당 백엔드 API가 없어 목업 데이터로 렌더링한다(overall-report.tsx).
+// 테마 배경(흰색) 대신 고정 배경을 쓴다. 네 섹션 모두 실 API로 연동됐다(각 컴포넌트 상단 주석 참고).
 //
 // "OOO님의 어제/일주일/한달" 헤딩의 닉네임 — 세 하위 화면이 각자 GET /api/v1/users/me를 중복
 // 호출하지 않도록 여기 부모에서 한 번만 불러 nickname prop으로 내려준다(홈/마이 탭과 같은 API,

@@ -29,6 +29,29 @@ export interface AttendanceExpInfo {
   nextLevelExp: number | null;
 }
 
+export type AttendanceDayOfWeek =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
+/**
+ * ATTENDED: 그날 출석 기록이 있다(재호출이어도 오늘 칸은 여기). MISSED: 이미 지난 날인데 기록이
+ * 없다. UPCOMING: baseDate보다 미래라 아직 판정할 수 없다 — MISSED와 같은 빈 칸으로 그리면 안
+ * 된다(하지도 않은 일로 도장판이 비어 보이는 오탐).
+ */
+export type AttendanceDayStatus = "ATTENDED" | "MISSED" | "UPCOMING";
+
+export interface AttendanceWeekDay {
+  /** "YYYY-MM-DD" */
+  date: string;
+  dayOfWeek: AttendanceDayOfWeek;
+  status: AttendanceDayStatus;
+}
+
 export interface AttendanceCheckInData {
   baseDate: string;
   /**
@@ -38,10 +61,17 @@ export interface AttendanceCheckInData {
   checkedIn: boolean;
   /**
    * 출석 연속 횟수가 아니라 '연속 검증 횟수'다(GET /skin/verification/summary, MY 탭과 동일한 값).
-   * 연속 검증 자체에 대한 보상은 이 API가 아니라 POST /skin/selfie가 지급한다.
+   * 연속 검증 자체에 대한 보상은 이 API가 아니라 POST /skin/selfie가 지급한다. 요일별 출석
+   * 도장판(weekDays)을 이 값으로 역산해서 그리지 말 것 — 개념이 다른 숫자다(과거 실수 참고:
+   * attendance-flow.tsx가 한때 이 값을 week-streak.ts로 투영해 첫 출석일에도 X로 보이는
+   * 버그가 있었다).
    */
   streakCount: number;
   exp: AttendanceExpInfo;
+  /** 기준일이 속한 주의 월요일("YYYY-MM-DD") — REP-06 주간 리포트의 롤링 7일 앵커와 다르므로 같은 규칙으로 읽지 말 것 */
+  weekStartDate: string;
+  /** 항상 월~일 7칸(기록 없는 날도 빠지지 않음), 첫 칸이 월요일 고정. 도장판은 이 값을 그대로 그린다 */
+  weekDays: AttendanceWeekDay[];
 }
 
 export interface AttendanceCheckInResponse {

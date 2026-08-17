@@ -446,7 +446,7 @@ export function OnboardingFlow({
     }
 
     // uploadSleepSession은 내부에서 모든 에러를 처리하므로 실패해도 다음 단계는 항상 진행된다.
-    await uploadSleepSession();
+    await uploadSleepSession(TEMP_USER_ID);
 
     await finishAccountSetup();
 

@@ -90,7 +90,7 @@ export async function getDailyTodos(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -186,9 +186,9 @@ export async function updateTodoStatus(
   } catch (error) {
     if (error instanceof AxiosError && error.response) {
       const body = error.response.data as ApiErrorBody | undefined;
-      const code = body?.code as TodoActionErrorCode | undefined;
+      const code = body?.error?.code as TodoActionErrorCode | undefined;
       if (code) {
-        throw new TodoActionApiError(code, error.response.status, body?.message);
+        throw new TodoActionApiError(code, error.response.status, body?.error?.message);
       }
     }
     throw error;

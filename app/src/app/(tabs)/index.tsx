@@ -23,6 +23,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { HOME_SUMMARY_MOCK, LEVEL_CHARACTER_IMAGES } from '@/constants/mockData';
+import { consumeAppStartForecast } from '@/hooks/use-app-start-forecast';
 import { useDesignScale } from '@/hooks/use-design-scale';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
@@ -31,6 +32,9 @@ import { useDesignScale } from '@/hooks/use-design-scale';
 // GET /api/v1/skin/verification/summary로, 레벨/exp/캐릭터는 GET /api/v1/users/me(MY-01, 마이 탭과
 // 같은 소스)로 연동했다. 날짜/인사말처럼 대응하는 API가 아직 없는 항목만 mockData.ts의
 // HOME_SUMMARY_MOCK을 그대로 쓴다.
+// 단, 피부 예보는 앱 시작 직후엔 GET /skin/forecast를 아예 안 부를 수 있다 — _layout.tsx가 이미
+// POST /sleep/sessions로 오늘 예보를 받아왔으면 그 값을 재사용한다(use-app-start-forecast.ts,
+// "앱 시작 직후엔 그 API가 필요 없다"는 스펙 규칙). 캐시가 없을 때만 이 조회로 폴백한다.
 // 좌표는 모두 프레임(node 187:2673) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -205,15 +209,24 @@ export default function HomeScreen() {
         setProfileState({ status: 'error' });
       });
 
-    getSkinForecast(baseDate, TEMP_USER_ID)
-      .then(({ data }) => {
-        setForecastState(
-          data.status === 'AVAILABLE'
-            ? { status: 'available', forecast: data.forecast }
-            : { status: 'no_data', message: data.message }
-        );
-      })
-      .catch(() => setForecastState({ status: 'error' }));
+    // 앱 시작 시 _layout.tsx가 POST /sleep/sessions로 이미 오늘 예보를 받아왔다면 그 값을
+    // 그대로 쓴다 — GET /skin/forecast는 "이미 받은 예보를 날짜 바꿔 다시 볼 때"만 필요하다는
+    // 스펙 규칙(use-app-start-forecast.ts 참고). 캐시가 없으면(HealthKit 데이터 없음/업로드
+    // 실패/이미 소비됨 등) 기존처럼 조회한다.
+    const appStartForecast = consumeAppStartForecast(baseDate);
+    if (appStartForecast) {
+      setForecastState({ status: 'available', forecast: appStartForecast });
+    } else {
+      getSkinForecast(baseDate, TEMP_USER_ID)
+        .then(({ data }) => {
+          setForecastState(
+            data.status === 'AVAILABLE'
+              ? { status: 'available', forecast: data.forecast }
+              : { status: 'no_data', message: data.message }
+          );
+        })
+        .catch(() => setForecastState({ status: 'error' }));
+    }
 
     getSleepInterpretation(baseDate, TEMP_USER_ID)
       .then(({ data }) => {

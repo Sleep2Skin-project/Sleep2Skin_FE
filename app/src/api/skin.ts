@@ -1,30 +1,15 @@
 import { AxiosError } from "axios";
 
 import { api } from "@/api/axios";
-import type { ForecastMetric } from "@/api/sleep";
+import type { AttendanceExpInfo } from "@/api/game";
+import type { SkinForecast } from "@/api/sleep";
 
-/** darkCircle이 산출되지 않을 일은 없으므로 unavailable 대상은 이 둘뿐 */
-export type UnavailableSkinForecastMetric = "COMPLEXION" | "BARRIER";
-
-export type UnavailableSkinForecastReason =
-  | "MISSING_FEATURES"
-  | "NO_SLEEP_STAGES"
-  | "INSUFFICIENT_HISTORY";
-
-export interface UnavailableSkinForecastEntry {
-  metric: UnavailableSkinForecastMetric;
-  reason: UnavailableSkinForecastReason;
-}
-
-export interface SkinForecastDetail {
-  /** 항상 값이 존재 (null 불가) */
-  darkCircle: ForecastMetric;
-  /** 지표 산출이 불가하면 null */
-  complexion: ForecastMetric | null;
-  /** 지표 산출이 불가하면 null */
-  barrier: ForecastMetric | null;
-  unavailable: UnavailableSkinForecastEntry[];
-}
+/**
+ * GET /skin/forecast와 POST /sleep/sessions가 완전히 같은 모양의 예보를 내려주므로, 새 타입을
+ * 만들지 않고 api/sleep.ts의 SkinForecast를 그대로 재사용한다(darkCircle non-null 규칙까지
+ * 동일 — 중복 정의하면 한쪽만 고치는 실수가 생긴다, 과거에 실제로 그랬다).
+ */
+export type SkinForecastDetail = SkinForecast;
 
 /** 데이터가 있는 경우 */
 export interface AvailableSkinForecastData {
@@ -57,16 +42,26 @@ export async function getSkinForecast(
   baseDate: string,
   userId: number
 ): Promise<SkinForecastQueryResponse> {
-  const response = await api.get<SkinForecastQueryResponse>(
-    "/api/v1/skin/forecast",
-    {
-      params: { baseDate },
-      headers: {
-        "X-User-Id": userId,
-      },
+  try {
+    const response = await api.get<SkinForecastQueryResponse>(
+      "/api/v1/skin/forecast",
+      {
+        params: { baseDate },
+        headers: {
+          "X-User-Id": userId,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      const body = error.response.data as ApiErrorBody | undefined;
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
+        throw new SkinModelUserNotFoundError(userId);
+      }
     }
-  );
-  return response.data;
+    throw error;
+  }
 }
 
 // ===== 내 모델 — 일반 vs 개인화 (REP-12) =====
@@ -137,10 +132,24 @@ export interface SkinModelResponse {
   data: SkinModelData;
 }
 
-/** 서버가 내려주는 에러 바디의 code 필드 (예: "USER_NOT_FOUND") */
+/**
+ * 서버가 내려주는 실패 응답의 실제 모양 — { success: false, error: { code, message } }.
+ * code/message는 항상 error 아래에 중첩돼 있고 바디 최상위에는 없다.
+ *
+ * 🚨 이 인터페이스가 한때 { code, message }를 최상위 필드로 잘못 정의하고 있었던 적이 있다
+ * (`body.code` vs 실제 `body.error.code`) — 그 버전에서는 모든 API의 에러 코드 분기(404 →
+ * SkinModelUserNotFoundError 변환, SelfieVerificationApiError/TodoActionApiError의 코드별 분기
+ * 전부 포함)가 실제로는 단 한 번도 매치되지 않고 조용히 폴백 경로(raw AxiosError를 그대로 던지거나
+ * "일시적인 오류가 발생했어요" 같은 범용 메시지)로 빠지는 버그가 있었다. 실기기 테스트에서
+ * SKIN_FORECAST_NOT_FOUND(수면 미업로드 안내를 띄워야 함)가 대신 범용 오류 팝업으로 뜨는 것으로
+ * 발견됨 — 앞으로 이 타입을 건드릴 때는 반드시 `body.error?.code` 형태로 읽을 것.
+ */
 export interface ApiErrorBody {
-  code?: string;
-  message?: string;
+  success: false;
+  error?: {
+    code?: string;
+    message?: string;
+  };
 }
 
 /**
@@ -175,7 +184,7 @@ export async function getSkinModel(userId: number): Promise<SkinModelResponse> {
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -272,6 +281,19 @@ export interface SelfieVerificationData {
   /** 분모는 3이 아니라 verifications.length. verifications는 비지 않으므로 0/0은 발생하지 않는다 */
   hitRate: number;
   model: SelfieVerificationModelResult;
+  /**
+   * 이번 검증을 포함한 연속 검증 횟수 — GET /skin/verification/summary와 같은 계산이라 같은 값을
+   * 보여준다. 검증 직후 화면(StreakChallengeModal 등)이 이 값을 쓰면 되므로, 그 화면을 위해
+   * verification/summary를 또 호출할 필요가 없다.
+   */
+  streakCount: number;
+  /**
+   * 연속 검증 보상(reason: "VERIFICATION_STREAK"). 2일차부터 지급되고(1일차는 0), 5일차부터는
+   * 매일 +25 고정 — 새 타입을 만들지 않고 api/game.ts의 AttendanceExpInfo를 그대로 재사용한다
+   * (출석 체크인·수면 업로드·투두와 파싱 코드·레벨업 연출을 공유하기 위함). 분석 실패 시엔 이
+   * 응답 자체가 생성되지 않으므로(행이 안 생김) gained가 0으로 내려올 일이 사실상 없다.
+   */
+  exp: AttendanceExpInfo;
 }
 
 export interface SelfieVerificationResponse {
@@ -327,14 +349,14 @@ function toSelfieVerificationError(error: unknown): unknown {
   if (error instanceof AxiosError && error.response) {
     const status = error.response.status;
     const body = error.response.data as ApiErrorBody | undefined;
-    let code = body?.code as SelfieVerificationErrorCode | undefined;
+    let code = body?.error?.code as SelfieVerificationErrorCode | undefined;
     // 502/504는 게이트웨이가 JSON 바디 없이 순수 상태 코드만 내려줄 수 있어 status로도 폴백한다.
     if (!code) {
       if (status === 502) code = "SELFIE_ANALYSIS_FAILED";
       else if (status === 504) code = "SELFIE_ANALYSIS_TIMEOUT";
     }
     if (code) {
-      return new SelfieVerificationApiError(code, status, body?.message);
+      return new SelfieVerificationApiError(code, status, body?.error?.message);
     }
   }
   return error;
@@ -491,7 +513,7 @@ export async function getVerificationSummary(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }

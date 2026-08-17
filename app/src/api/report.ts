@@ -14,8 +14,10 @@ export interface DailyReportSleepSummary {
   /**
    * 예보 점수(가중평균)와는 다른 숫자다 — 그날 참여한 수면 피처 부분점수의 단순 평균
    * ("오늘 수면이 전반적으로 몇 점이었나"). 다른 화면의 "예보 적중률/점수"와 섞어 쓰지 말 것.
+   * 참여 피처가 0개면 null(0점이 아님) — 세션이 있으면 야간 각성·총 수면이 항상 참여해 실무에서는
+   * 거의 발생하지 않지만, 이론상 가능하므로 화면은 null을 방어해야 한다.
    */
-  sleepScore: number;
+  sleepScore: number | null;
   deepSleepMinutes: number;
   /** 얕은 수면(HealthKit asleepCore)을 리포트 노출용으로 부르는 이름. SleepStats.coreSleepMinutes와 같은 개념 */
   lightSleepMinutes: number;
@@ -111,7 +113,7 @@ export async function getDailyReport(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -240,7 +242,7 @@ export async function getMonthlyReport(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -320,7 +322,7 @@ export async function getDailyTimeline(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -445,7 +447,7 @@ export async function getWeeklyReport(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -528,7 +530,7 @@ export async function getOverallReport(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }

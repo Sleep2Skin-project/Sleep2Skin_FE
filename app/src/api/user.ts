@@ -20,16 +20,26 @@ export interface ConsentAgreeResponse {
  * Request Body 없음. termsVersion/agreedAt은 서버가 결정하므로 클라이언트는 보내지 않는다.
  */
 export async function saveUserConsent(userId: number): Promise<ConsentAgreeResponse> {
-  const response = await api.post<ConsentAgreeResponse>(
-    "/api/v1/users/me/consents",
-    null,
-    {
-      headers: {
-        "X-User-Id": userId,
-      },
+  try {
+    const response = await api.post<ConsentAgreeResponse>(
+      "/api/v1/users/me/consents",
+      null,
+      {
+        headers: {
+          "X-User-Id": userId,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      const body = error.response.data as ApiErrorBody | undefined;
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
+        throw new SkinModelUserNotFoundError(userId);
+      }
     }
-  );
-  return response.data;
+    throw error;
+  }
 }
 
 export interface OnboardingCompleteData {
@@ -50,16 +60,26 @@ export interface OnboardingCompleteResponse {
 export async function completeUserOnboarding(
   userId: number
 ): Promise<OnboardingCompleteResponse> {
-  const response = await api.patch<OnboardingCompleteResponse>(
-    "/api/v1/users/me/onboarding",
-    null,
-    {
-      headers: {
-        "X-User-Id": userId,
-      },
+  try {
+    const response = await api.patch<OnboardingCompleteResponse>(
+      "/api/v1/users/me/onboarding",
+      null,
+      {
+        headers: {
+          "X-User-Id": userId,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      const body = error.response.data as ApiErrorBody | undefined;
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
+        throw new SkinModelUserNotFoundError(userId);
+      }
     }
-  );
-  return response.data;
+    throw error;
+  }
 }
 
 // ===== 온보딩·동의 상태 + 프로필 조회 (ONB-01, MY-01) =====
@@ -125,7 +145,7 @@ export async function getUserMe(userId: number, baseDate: string): Promise<UserM
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -191,7 +211,7 @@ export async function deleteUserMe(userId: number): Promise<DeleteUserMeResponse
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -259,7 +279,7 @@ export async function getDataStatus(userId: number): Promise<DataStatusResponse>
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }

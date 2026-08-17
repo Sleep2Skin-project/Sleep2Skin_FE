@@ -8,13 +8,12 @@
 // ── HOME (GET /home/summary 예상) ─────────────────────────────────────────
 // sleepSummary.tooltipLines/skinForecast.items는 각각 GET /sleep/interpretation,
 // GET /skin/forecast 실연동(index.tsx의 interpretationState/forecastState)으로 대체돼 더 이상
-// 안 쓴다 — 여기 남기지 않는다. date/greeting/skinForecast.title·disclaimer만 대응하는 API가
-// 없어 아직 이 목업을 쓴다.
+// 안 쓴다 — 여기 남기지 않는다. greeting/skinForecast.title·disclaimer만 대응하는 API가 없어
+// 아직 이 목업을 쓴다. date는 여기 있었지만(label: "8월 6일 목요일" 고정 문자열) 서버 API가
+// 애초에 필요 없는 "오늘 날짜"를 목업으로 얼려두는 바람에 화면에 날짜가 영원히 안 바뀌는
+// 버그였다 — index.tsx가 로컬에서 직접 계산하도록 고치면서 이 필드는 제거했다.
 
 export interface HomeSummaryResponse {
-  date: {
-    label: string;
-  };
   greeting: {
     message: string;
     emoji: string;
@@ -50,7 +49,6 @@ export const LEVEL_CHARACTER_IMAGES: Record<number, number> = {
 };
 
 export const HOME_SUMMARY_MOCK: HomeSummaryResponse = {
-  date: { label: '8월 6일 목요일' },
   greeting: { message: '좋은 아침이에요', emoji: '🌞' },
   skinForecast: {
     title: '오늘의 피부 예보',

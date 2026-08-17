@@ -90,6 +90,17 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+const WEEKDAY_LABELS_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 상단 "8월 6일 목요일" — HOME_SUMMARY_MOCK.date.label이 그 문자열 그대로 하드코딩돼 있어서 날짜가
+// 절대 안 바뀌는 버그였다(대응 API가 없는 항목이라 목업을 썼었는데, 오늘 날짜는 애초에 서버 API가
+// 필요 없는 값이라 굳이 목업으로 둘 이유가 없다). 다른 화면들의 getTodayDateString과 동일하게
+// 로컬 Date에서 직접 계산한다.
+function formatTodayHeading(): string {
+  const now = new Date();
+  return `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAY_LABELS_KO[now.getDay()]}요일`;
+}
+
 /**
  * grade는 백엔드가 자유 문자열로 내려줘 고정 enum이 없다(한글 "안정"/영문 "STABLE"처럼 표기가
  * 섞여 올 수 있음). 디자인 시안 4단계(위험-빨강 / 주의-주황 / 보통-초록 / 안정-파랑) 기준으로
@@ -297,7 +308,7 @@ export default function HomeScreen() {
 
             {/* 상단 안내 문구 (날짜 + 인사말) */}
             <View style={styles.dateGreetingBlock}>
-              <ThemedText style={styles.dateText}>{HOME_SUMMARY_MOCK.date.label}</ThemedText>
+              <ThemedText style={styles.dateText}>{formatTodayHeading()}</ThemedText>
               <View style={styles.greetingRow}>
                 <Image source={require('@/assets/images/figma-icon-sun.png')} style={styles.sunIcon} contentFit="contain" />
                 <ThemedText style={styles.greetingText}>{HOME_SUMMARY_MOCK.greeting.message}</ThemedText>

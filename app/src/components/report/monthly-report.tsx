@@ -269,7 +269,7 @@ export function MonthlyReport({ nickname }: { nickname: string | null }) {
       <ThemedText style={styles.dateRange}>
         최근 28일 · {formatShortDate(data.periodStart)} – {formatShortDate(data.periodEnd)}
       </ThemedText>
-      <ThemedText style={styles.heading}>test1님의 한달</ThemedText>
+      <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 
       {highestWeek && lowestWeek && (
         <View style={styles.insightRow}>

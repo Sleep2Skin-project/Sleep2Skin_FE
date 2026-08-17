@@ -5,6 +5,13 @@ import {
   CategoryValueSleepAnalysis,
 } from "@kingstinct/react-native-healthkit";
 
+import {
+  uploadSleepSession as postSleepSession,
+  type SleepSegment,
+  type SleepStage,
+  type UploadSleepSessionData,
+} from "@/api/sleep";
+
 const SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis";
 const HRV_TYPE = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN";
 const RESTING_HR_TYPE = "HKQuantityTypeIdentifierRestingHeartRate";
@@ -57,17 +64,6 @@ export async function getRestingHeartRateData(): Promise<any[]> {
   return recentSamples;
 }
 
-const SLEEP_SESSION_UPLOAD_URL =
-  "https://sleep2skin.duckdns.org/api/v1/sleep/sessions";
-
-type SleepStage = "AWAKE" | "CORE" | "DEEP" | "REM" | "UNSPECIFIED";
-
-type SleepSessionSegment = {
-  stage: SleepStage;
-  startTime: string;
-  endTime: string;
-};
-
 // HKCategoryValueSleepAnalysis(inBed=0, asleepUnspecified=1(=asleep), awake=2, asleepCore=3,
 // asleepDeep=4, asleepREM=5) → 백엔드 stage. inBed은 매핑표에 없으므로 아래에서 별도로 걸러낸다.
 const SLEEP_STAGE_MAP: Record<number, SleepStage> = {
@@ -101,8 +97,8 @@ function formatIsoWithOffset(date: Date): string {
 // HealthKit 수면 원시 샘플(getSleepData 반환값)을 백엔드 sleep/sessions API의 segments 형식으로 변환한다.
 // "in bed"(수면이 아니라 침대에 누워있기만 한 구간)는 결과에서 완전히 제외하고,
 // UNSPECIFIED는 임의로 다른 stage로 바꾸지 않고 그대로 전달한다.
-export function mapSleepSamplesToSegments(rawSamples: any[]): SleepSessionSegment[] {
-  const segments: SleepSessionSegment[] = [];
+export function mapSleepSamplesToSegments(rawSamples: any[]): SleepSegment[] {
+  const segments: SleepSegment[] = [];
 
   for (const sample of rawSamples) {
     const value = sample.value;
@@ -146,8 +142,13 @@ function getMostRecentQuantity(samples: any[]): number | undefined {
 }
 
 // HealthKit에서 가져온 실제 수면/HRV/안정시 심박수 데이터를 백엔드 형식으로 변환해
-// POST /api/v1/sleep/sessions로 업로드한다. 실패해도 예외를 밖으로 던지지 않는다.
-export async function uploadSleepSession(): Promise<void> {
+// POST /api/v1/sleep/sessions로 업로드한다(api/sleep.ts의 타입 있는 클라이언트를 그대로 쓴다 —
+// URL/헤더/에러 파싱을 이 파일에 다시 구현하지 않는다). 앱이 시작될 때마다 호출하는 것이 원칙이라
+// (새 데이터가 없어도 그냥 호출 — 서버가 해시로 재처리 여부를 판단), 실패해도 예외를 밖으로
+// 던지지 않고 null을 반환한다: 호출부가 "이번 실행에서 보여줄 exp 팝업이 없다"로만 취급하면 된다.
+export async function uploadSleepSession(
+  userId: number,
+): Promise<UploadSleepSessionData | null> {
   try {
     const sleepSamples = await getSleepData();
     const segments = mapSleepSamplesToSegments(sleepSamples);
@@ -166,44 +167,15 @@ export async function uploadSleepSession(): Promise<void> {
 
     if (segments.length === 0) {
       console.log("업로드할 수면 데이터가 없습니다");
-      return;
+      return null;
     }
 
-    const requestBody: {
-      segments: SleepSessionSegment[];
-      hrv?: number;
-      restingHeartRate?: number;
-    } = { segments };
+    const { data } = await postSleepSession({ segments, hrv, restingHeartRate }, userId);
 
-    if (hrv !== undefined) {
-      requestBody.hrv = hrv;
-    }
-
-    if (restingHeartRate !== undefined) {
-      requestBody.restingHeartRate = restingHeartRate;
-    }
-
-    const response = await fetch(SLEEP_SESSION_UPLOAD_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Id": "1",
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      console.log("✅ 수면 세션 업로드 성공:", result.data);
-    } else {
-      console.log(
-        "❌ 수면 세션 업로드 실패:",
-        result.error?.code,
-        result.error?.message,
-      );
-    }
+    console.log("✅ 수면 세션 업로드 성공:", data);
+    return data;
   } catch (error) {
-    console.log("❌ 수면 세션 업로드 중 네트워크 에러:", error);
+    console.log("❌ 수면 세션 업로드 실패:", error);
+    return null;
   }
 }

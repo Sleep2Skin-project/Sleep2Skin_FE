@@ -5,12 +5,10 @@ import { StyleSheet, View } from 'react-native';
 import {
   getDailyReport,
   getDailyTimeline,
-  getWeeklyReport,
   type DailyReportForecastMetric,
   type DailyReportSleepSummary,
 } from '@/api/report';
 import type { SleepStats } from '@/api/sleep';
-import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TEMP_USER_ID } from '@/constants/config';
 import { formatTimeKST } from '@/utils/format-time';
@@ -34,24 +32,13 @@ function buildUserHeading(nickname: string | null) {
   return nickname ? `${nickname}님의 어제` : '나의 어제';
 }
 
-// 게이미케이션(경험치) 팝업 — "어제보다 오늘 수면 점수가 높으면" 트리거는 GET /api/v1/report/weekly의
-// dailyScores(최근 7일치 점수 배열, weekly-report.tsx와 같은 API)로 실연동한다. report/daily의
-// sleepScore는 어제 값을 함께 주지 않지만(diffFromYesterday 없음), weekly가 이미 어제·오늘 점수를
-// 둘 다 갖고 있어 그 두 값을 프론트에서 비교하면 된다 — 평균·합계를 다시 계산하는 게 아니라 서버가
-// 준 개별 값 두 개를 그대로 빼는 것뿐이라 "재계산 금지" 규칙 위반이 아니다.
-// exp 지급은 아직 다른 문제다 — "수면 점수 상승"에 대해 실제로 exp를 적립해주는 백엔드 엔드포인트/
-// reason이 없어서(VERIFICATION_STREAK·TODO_DONE·TODO_ALL_DONE 셋뿐, api/game.ts·api/todo.ts 참고),
-// 이 숫자만은 여전히 목업이다 — 트리거(뜨는지 여부)와 표시 점수/날짜는 실값, exp만 자리표시자.
-// 백엔드에 전용 엔드포인트가 생기면 SLEEP_SCORE_EXP_MOCK을 그 응답값으로 교체할 것.
-const SLEEP_SCORE_EXP_MOCK = 10;
-
-/** "YYYY-MM-DD" → "YY년 M월 D일" (SleepScoreGamificationModal의 dateLabel 포맷). */
-function formatSleepScoreDateLabel(isoDate: string): string {
-  const parts = isoDate.split('-');
-  if (parts.length !== 3) return isoDate;
-  const [year, month, day] = parts;
-  return `${year.slice(2)}년 ${Number(month)}월 ${Number(day)}일`;
-}
+// 게이미케이션(경험치) 팝업(SleepScoreGamificationModal)은 더 이상 이 화면 소관이 아니다 —
+// "수면 점수 상승/90점 이상" exp(SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH)는 POST
+// /api/v1/sleep/sessions 응답으로 실제 지급되며, 그 호출 자체가 앱 시작마다(_layout.tsx) 한 번만
+// 일어나야 하므로(재호출 시 중복 지급 방지는 서버 해시 비교에 의존) 트리거와 팝업 모두 root
+// 레이아웃(_layout.tsx)이 소유한다. 예전엔 이 화면이 GET /report/weekly의 dailyScores로 어제·
+// 오늘 점수를 직접 비교해 목업 exp(+10 고정)로 팝업을 흉내 냈지만, 실제 지급 여부/금액과 무관하게
+// 뜰 수 있어 부정확했다 — 그 로직을 제거했다.
 
 function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
@@ -80,6 +67,7 @@ function toHybridSleepStats(
     deepSleepMinutes: summary.deepSleepMinutes,
     remSleepMinutes: summary.remSleepMinutes,
     coreSleepMinutes: summary.lightSleepMinutes,
+    sleepScore: summary.sleepScore,
     awakeCount: summary.awakeCount,
     awakeMinutes: summary.awakeMinutes,
   };
@@ -222,14 +210,6 @@ type SleepWindowState =
   | { status: 'no_data' }
   | { status: 'available'; sleepOnsetTime: string; wakeTime: string };
 
-// SleepScoreGamificationModal 트리거 — report/weekly의 dailyScores(최근 7일)에서 오늘·어제 두
-// 항목을 찾아 비교한다. 'ready'는 "비교는 끝났고 상승하지 않았거나 비교 불가"(팝업 안 띄움),
-// 'increased'는 상승(팝업 띄움) — 둘을 분리해두면 렌더링에서 오탐 없이 명확하게 분기할 수 있다.
-type SleepScoreCompareState =
-  | { status: 'loading' }
-  | { status: 'ready' }
-  | { status: 'increased'; score: number; dateLabel: string };
-
 function getTodayDateString() {
   const now = new Date();
   const year = now.getFullYear();
@@ -326,10 +306,6 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
   const [sleepSummaryState, setSleepSummaryState] = useState<SleepSummaryState>({ status: 'loading' });
   const [skinForecastState, setSkinForecastState] = useState<SkinForecastState>({ status: 'loading' });
   const [sleepWindowState, setSleepWindowState] = useState<SleepWindowState>({ status: 'loading' });
-  // SleepScoreGamificationModal 트리거 상태(위 SleepScoreCompareState 주석 참고).
-  const [sleepScoreCompareState, setSleepScoreCompareState] = useState<SleepScoreCompareState>({
-    status: 'loading',
-  });
 
   useEffect(() => {
     const baseDate = getTodayDateString();
@@ -370,38 +346,6 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
         );
       })
       .catch(() => setSleepWindowState({ status: 'error' }));
-
-    // GET /report/weekly — SleepScoreGamificationModal 트리거용으로 dailyScores에서 오늘·어제
-    // 점수만 뽑아 비교한다(weekly-report.tsx와 같은 API, 별도 독립 호출). periodEnd가 baseDate와
-    // 같으므로 배열의 마지막 항목이 오늘, 그 앞이 어제다 — 둘 다 값이 있고 오늘이 더 높을 때만
-    // 'increased'로 전환한다(신규 가입자의 INSUFFICIENT_DATA나 결측치는 그냥 비교 불가로 처리).
-    getWeeklyReport(baseDate, TEMP_USER_ID)
-      .then(({ data }) => {
-        if (data.status !== 'FULL') {
-          setSleepScoreCompareState({ status: 'ready' });
-          return;
-        }
-        const { dailyScores } = data;
-        const today = dailyScores[dailyScores.length - 1];
-        const yesterday = dailyScores[dailyScores.length - 2];
-        if (
-          !today ||
-          !yesterday ||
-          today.date !== baseDate ||
-          today.sleepScore === null ||
-          yesterday.sleepScore === null ||
-          today.sleepScore <= yesterday.sleepScore
-        ) {
-          setSleepScoreCompareState({ status: 'ready' });
-          return;
-        }
-        setSleepScoreCompareState({
-          status: 'increased',
-          score: today.sleepScore,
-          dateLabel: formatSleepScoreDateLabel(today.date),
-        });
-      })
-      .catch(() => setSleepScoreCompareState({ status: 'ready' }));
   }, []);
 
   const sleepWindow = sleepWindowState.status === 'available' ? sleepWindowState : null;
@@ -410,15 +354,6 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
 
   return (
     <View style={styles.container}>
-      {sleepScoreCompareState.status === 'increased' && (
-        <SleepScoreGamificationModal
-          score={sleepScoreCompareState.score}
-          expGained={SLEEP_SCORE_EXP_MOCK}
-          dateLabel={sleepScoreCompareState.dateLabel}
-          onClose={() => setSleepScoreCompareState({ status: 'ready' })}
-        />
-      )}
-
       <ThemedText style={styles.dateRange}>{DATE_RANGE_LABEL}</ThemedText>
       <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 

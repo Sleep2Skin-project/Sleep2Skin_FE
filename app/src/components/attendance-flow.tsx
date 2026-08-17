@@ -3,20 +3,22 @@ import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { calculateRemainingExp, type AttendanceExpInfo } from '@/api/game';
+import { calculateRemainingExp, type AttendanceExpInfo, type AttendanceWeekDay } from '@/api/game';
 import { Colors } from '@/constants/colors';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { isWeekdayInTrailingStreak, toMondayFirstWeekdayIndex } from '@/utils/week-streak';
 
 // ATT-01 — 온보딩 완료 직후, 홈 화면 진입 전에 한 번 보여주는 "오늘 출석 완료" 축하 화면.
 // Figma 'Ui (복사)' 파일 노드 501:292("iPhone 17 - 7")를 Figma REST API로 직접 읽어와
 // 온보딩(onboarding-flow.tsx)과 동일하게 402x874 고정 캔버스로 좌표를 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 501:292) 원점 기준 절대값.
 //
-// 요일별 체크/X 표시는 HOME-04(POST /api/v1/users/me/attendance) 응답의 streakCount를
-// week-streak.ts(isWeekdayInTrailingStreak)로 이번 주 월~일에 투영해 실연동한다(my.tsx의
-// "이번 주 출석 스트릭"과 같은 계산, 자세한 설명은 week-streak.ts 상단 주석 참고). 이 화면은
-// checkedIn: true일 때만 마운트되므로 오늘은 항상 포함돼 체크로 보인다.
+// 요일별 체크/X 표시는 HOME-04(POST /api/v1/users/me/attendance) 응답의 weekDays를 그대로
+// 그린다 — 과거엔 streakCount(연속 "검증" 횟수, 출석과 다른 개념)를 week-streak.ts로 이번 주에
+// 투영해 흉내 냈었는데, 그 값은 이 화면이 보여줘야 할 "출석" 여부와 무관해서 월요일 첫 출석에도
+// X가 뜨는 버그가 있었다(신규 유저는 streakCount가 0이라 아무 요일도 "포함된 것으로" 계산되지
+// 않았음). weekDays는 서버가 이미 ATTENDED/MISSED/UPCOMING을 판정해 내려주므로 그대로 옮기기만
+// 하면 된다 — MISSED(진짜 빠뜨림)와 UPCOMING(아직 오지 않은 날)을 같은 빈 칸으로 그리면 안 된다는
+// 게 API 쪽 명시 규칙이라, UPCOMING은 아이콘 없이 빈 원으로 둬서 "실패"처럼 보이지 않게 한다.
 //
 // exp(HOME-04 응답의 exp)는 optional prop으로 받는다 — 이 화면 자체를 호출부(_layout.tsx)가
 // checkedIn: true일 때만 마운트하므로 항상 채워지지만, 방어적으로 없을 때는 경험치 줄을 렌더하지
@@ -47,8 +49,9 @@ const ATTENDANCE_FONTS = {
 };
 
 // 요일 라벨(node 509:297 등) x좌표는 완전히 균등하지 않아(약 41.2px 간격, 소수점 오차) Figma
-// 값을 그대로 옮겼다. attended 여부는 렌더링 시 streakCount로부터 계산해서 채운다(아래 컴포넌트
-// 참고) — 여기 남은 건 순수 레이아웃 좌표뿐이다.
+// 값을 그대로 옮겼다. 상태(ATTENDED/MISSED/UPCOMING)는 weekDays prop을 그대로 순서대로 대응시킨다
+// (서버 응답도 월요일부터 7칸 고정이라 인덱스로 zip해도 안전) — 여기 남은 건 순수 레이아웃
+// 좌표뿐이다.
 const ATTENDANCE_DAY_POSITIONS = [
   { label: '월', labelX: 70.17, circleX: 61 },
   { label: '화', labelX: 111, circleX: 102.25 },
@@ -62,19 +65,19 @@ const ATTENDANCE_DAY_POSITIONS = [
 export function AttendanceFlow({
   onComplete,
   exp,
-  streakCount,
+  weekDays,
 }: {
   onComplete: () => void;
   exp?: AttendanceExpInfo;
-  streakCount: number;
+  /** HOME-04 응답의 weekDays. 항상 월~일 7칸(서버가 보장) — ATTENDANCE_DAY_POSITIONS와 인덱스로 zip한다 */
+  weekDays: AttendanceWeekDay[];
 }) {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const [fontsLoaded] = useFonts(ATTENDANCE_FONTS);
   const remainingExp = exp ? calculateRemainingExp(exp) : null;
-  const todayIndex = toMondayFirstWeekdayIndex(new Date());
   const attendanceDays = ATTENDANCE_DAY_POSITIONS.map((day, index) => ({
     ...day,
-    attended: isWeekdayInTrailingStreak(index, todayIndex, streakCount),
+    status: weekDays[index]?.status ?? 'UPCOMING',
   }));
 
   // 폰트 로드 전엔 흰 배경만 렌더한다 — 시스템 폰트로 잠깐 렌더돼 줄바꿈이 튀는 걸 막는다.
@@ -117,24 +120,28 @@ export function AttendanceFlow({
             </Text>
           )}
 
-          {/* 요일 라벨 + 출석 원 (node 509:297~339, y:542/570.65) */}
+          {/* 요일 라벨 + 출석 원 (node 509:297~339, y:542/570.65). UPCOMING은 아이콘 없이 빈
+              회색 원만 그린다 — MISSED(X 아이콘)와 시각적으로 구분해야 "아직 안 온 날"이
+              "빠뜨린 날"로 오인되지 않는다. */}
           {attendanceDays.map((day) => (
             <View key={day.label}>
               <Text style={[styles.dayLabel, { left: day.labelX }]}>{day.label}</Text>
               <View
                 style={[
                   styles.dayCircle,
-                  { left: day.circleX, backgroundColor: day.attended ? ATTENDANCE_DAY_ATTENDED_BG : ATTENDANCE_DAY_PENDING_BG },
+                  { left: day.circleX, backgroundColor: day.status === 'ATTENDED' ? ATTENDANCE_DAY_ATTENDED_BG : ATTENDANCE_DAY_PENDING_BG },
                 ]}>
-                <Image
-                  source={
-                    day.attended
-                      ? require('@/assets/images/figma-icon-attendance-check.svg')
-                      : require('@/assets/images/figma-icon-attendance-pending.svg')
-                  }
-                  style={day.attended ? styles.dayIconCheck : styles.dayIconPending}
-                  contentFit="contain"
-                />
+                {day.status !== 'UPCOMING' && (
+                  <Image
+                    source={
+                      day.status === 'ATTENDED'
+                        ? require('@/assets/images/figma-icon-attendance-check.svg')
+                        : require('@/assets/images/figma-icon-attendance-pending.svg')
+                    }
+                    style={day.status === 'ATTENDED' ? styles.dayIconCheck : styles.dayIconPending}
+                    contentFit="contain"
+                  />
+                )}
               </View>
             </View>
           ))}

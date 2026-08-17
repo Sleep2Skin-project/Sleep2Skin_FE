@@ -23,6 +23,12 @@ export interface DailyReportSleepSummary {
   awakeCount: number;
   /** 프론트에서 재계산하지 말고 API 값을 그대로 쓸 것 */
   awakeMinutes: number;
+  /** SleepSession 값을 그대로 옮긴 것 — 다른 필드들과 달리 워치 미착용이어도 결측되지 않아 null이 아니다 */
+  remSleepMinutes: number;
+  /** 심박변이도. 그 밤에 워치 미착용으로 결측이면 null */
+  hrv: number | null;
+  /** 안정시 심박. 그 밤에 워치 미착용으로 결측이면 null */
+  restingHeartRate: number | null;
 }
 
 /** 그날 수면 데이터가 있는 경우 */
@@ -151,6 +157,7 @@ export interface MonthlyReportSummary {
  * 서버가 늘릴 수 있어 string으로 열어둔다 — 화면에는 이 raw 코드 대신 항상 featureLabel/
  * metricLabel(사람이 읽는 라벨)을 쓸 것. 현재 명세로 확인된 7개 조합: 야간각성→다크서클,
  * 총수면→다크서클, 깊은수면→장벽, REM→장벽, 취침규칙성→안색, HRV→안색, 안정시심박→안색.
+ * skinMetric/metricLabel은 아래 MonthlyReportCorrelationGroup의 그룹 키와 값이 같다(항목마다 중복 보유).
  */
 export interface MonthlyReportCorrelation {
   sleepFeature: string;
@@ -164,6 +171,17 @@ export interface MonthlyReportCorrelation {
   insufficientSample: boolean;
 }
 
+/**
+ * skinMetric 기준으로 묶은 상관관계 그룹. 서버는 항상 DARK_CIRCLE/COMPLEXION/BARRIER 3그룹
+ * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠) — 그룹에 매핑되는
+ * sleepFeature가 없으면 correlations가 빈 배열일 수 있으니 그 경우도 방어해서 렌더링할 것.
+ * 그룹 내부 정렬(상관계수 절댓값 내림차순, 표본 부족은 맨 뒤)은 서버가 보장하므로 재정렬 불필요.
+ */
+export interface MonthlyReportCorrelationGroup {
+  skinMetric: string;
+  correlations: MonthlyReportCorrelation[];
+}
+
 /** 가입 후 28일이 지나 4주치 데이터가 충분한 경우 */
 export interface FullMonthlyReportData {
   status: "FULL";
@@ -171,8 +189,8 @@ export interface FullMonthlyReportData {
   periodEnd: string;
   weeks: MonthlyReportWeek[];
   summary: MonthlyReportSummary;
-  /** 상관계수 절댓값 내림차순 정렬, 표본 부족 항목은 맨 뒤 — 서버가 순서를 보장하므로 재정렬 불필요 */
-  correlations: MonthlyReportCorrelation[];
+  /** skinMetric 기준 3그룹(위 MonthlyReportCorrelationGroup 참고). 그룹 순서/그룹 내 정렬 모두 서버가 보장 */
+  correlations: MonthlyReportCorrelationGroup[];
 }
 
 /**
@@ -185,7 +203,7 @@ export interface InsufficientMonthlyReportData {
   periodEnd: string;
   weeks: MonthlyReportWeek[];
   summary: null;
-  correlations: MonthlyReportCorrelation[];
+  correlations: MonthlyReportCorrelationGroup[];
 }
 
 /**
@@ -342,7 +360,8 @@ export interface WeeklyReportSummary {
  * 다르다. 표본이 5개 미만이어도 배열에서 빠지지 않고 항상 7개 전부 내려온다(월간과 달리 "항상
  * 7개"가 명세로 확정됨). 서버가 상관계수 절댓값 내림차순 정렬 + 표본 부족은 값과 무관하게 맨
  * 뒤로 보장한다(재정렬 불필요). sleepFeature/skinMetric 원문 코드 대신 항상 featureLabel/
- * metricLabel을 화면에 쓸 것(월간 리포트와 동일 원칙).
+ * metricLabel을 화면에 쓸 것(월간 리포트와 동일 원칙). skinMetric/metricLabel은 아래
+ * WeeklyReportCorrelationGroup의 그룹 키와 값이 같다(항목마다 중복 보유).
  */
 export interface WeeklyReportCorrelation {
   sleepFeature: string;
@@ -356,6 +375,17 @@ export interface WeeklyReportCorrelation {
   insufficientSample: boolean;
 }
 
+/**
+ * skinMetric 기준으로 묶은 상관관계 그룹. 서버는 항상 DARK_CIRCLE/COMPLEXION/BARRIER 3그룹
+ * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠) — 그룹에 매핑되는
+ * sleepFeature가 없으면 correlations가 빈 배열일 수 있으니 그 경우도 방어해서 렌더링할 것.
+ * 그룹 내부 정렬(상관계수 절댓값 내림차순, 표본 부족은 맨 뒤)은 서버가 보장하므로 재정렬 불필요.
+ */
+export interface WeeklyReportCorrelationGroup {
+  skinMetric: string;
+  correlations: WeeklyReportCorrelation[];
+}
+
 /** 가입 후 7일이 지나 7일치 데이터가 충분한 경우 — 특정 날짜의 세션 결측은 이 상태에서도 발생할 수 있다(위 주석 참고) */
 export interface FullWeeklyReportData {
   status: "FULL";
@@ -364,8 +394,8 @@ export interface FullWeeklyReportData {
   /** 항상 7개 */
   dailyScores: WeeklyReportDailyScore[];
   summary: WeeklyReportSummary;
-  /** 항상 7개(표본 부족이어도 제외되지 않음) */
-  correlations: WeeklyReportCorrelation[];
+  /** skinMetric 기준 3그룹(위 WeeklyReportCorrelationGroup 참고). 그룹 순서/그룹 내 정렬 모두 서버가 보장 */
+  correlations: WeeklyReportCorrelationGroup[];
 }
 
 /**
@@ -378,7 +408,7 @@ export interface InsufficientWeeklyReportData {
   periodEnd: string;
   dailyScores: WeeklyReportDailyScore[];
   summary: null;
-  correlations: WeeklyReportCorrelation[];
+  correlations: WeeklyReportCorrelationGroup[];
 }
 
 /**
@@ -406,6 +436,89 @@ export async function getWeeklyReport(
 ): Promise<WeeklyReportResponse> {
   try {
     const response = await api.get<WeeklyReportResponse>("/api/v1/report/weekly", {
+      params: { baseDate },
+      headers: {
+        "X-User-Id": userId,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      const body = error.response.data as ApiErrorBody | undefined;
+      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+        throw new SkinModelUserNotFoundError(userId);
+      }
+    }
+    throw error;
+  }
+}
+
+// ===== 종합 리포트 (REP-09~11) =====
+// 최근 3주 수면 점수 추세와 피부 지표 정체 여부로 클리닉 트리아지를 판정하고, 앱이 관리하는
+// 지표 목록(appManaged)과 클리닉이 필요할 수 있는 신호(clinicNeeded)를 함께 내려주는 API.
+//
+// 🚨 서버는 문장을 만들지 않는다 — triage는 판정 결과(추세 값·정체 지표 목록·발동 여부)만
+// 담고, "수면은 좋아졌지만 혈색이 정체됐어요" 같은 안내 문구는 프론트가 이 판정값을 보고 직접
+// 구성해야 한다.
+//
+// 🚨 status는 오직 sleepTrend 하나로만 결정된다 — 주간/월간(REP-06/07)처럼 가입일 게이트가
+// 아니다. sleepTrend가 INSUFFICIENT_DATA(최근 3주 유효 표본 5개 미만, 또는 전반부/후반부 중
+// 한쪽이 통째로 결측)일 때만 status도 INSUFFICIENT_DATA다. 그리고 이때도 appManaged/
+// clinicNeeded/clinicLink는 여전히 그대로 계산돼 내려온다(status와 무관) — 주간/월간처럼 다른
+// 필드가 빈 배열/null로 비워지지 않는다.
+
+export type OverallSleepTrend = "INSUFFICIENT_DATA" | "VOLATILE" | "RISING" | "FALLING" | "STABLE";
+
+export interface OverallReportTriage {
+  /** sleepTrend가 STABLE/RISING이고 stagnantMetrics가 1개 이상일 때만 true */
+  triggered: boolean;
+  sleepTrend: OverallSleepTrend;
+  /** 표본 부족으로 판정 불가한 지표는 정체 아님으로 취급해 애초에 이 배열에서 빠진다 */
+  stagnantMetrics: string[];
+}
+
+/**
+ * baseDate 이하 범위의 가장 최근 실측(셀피 검증) 1건에서 뽑은 감지 플래그 — 비교·트렌드 없이
+ * 그 1건 그대로. 셀피 검증 이력이 전혀 없으면 (이 인터페이스 전체가 아니라) 상위 필드
+ * clinicNeeded 자체가 null이다. 실측 행은 있는데 특정 필드만 null이면 그 실측 행이 이 컬럼
+ * 도입 이전에 만들어졌다는 뜻 — "감지 안 됨"(false)과 절대 같은 것으로 취급하지 말 것.
+ */
+export interface OverallReportClinicNeeded {
+  pigmentationDetected: boolean | null;
+  acneScarDetected: boolean | null;
+  agingDetected: boolean | null;
+}
+
+export interface OverallReportData {
+  status: "FULL" | "INSUFFICIENT_DATA";
+  periodStart: string;
+  periodEnd: string;
+  triage: OverallReportTriage;
+  /** 앱이 관리하는 예보 지표 3종의 고정 목록(코드값) — 점수/등급 없이 이름만 */
+  appManaged: string[];
+  /** 셀피 검증 이력이 전혀 없으면 null(감지되지 않음과 측정한 적이 없음을 구분) */
+  clinicNeeded: OverallReportClinicNeeded | null;
+  clinicLink: string;
+}
+
+export interface OverallReportResponse {
+  success: boolean;
+  data: OverallReportData;
+}
+
+/**
+ * 종합 리포트(클리닉 트리아지 판정 + 앱 관리 지표 + 클리닉 필요 신호) 조회.
+ * - baseDate: 관찰 기간의 마지막 날(periodEnd)이 되는 기준일 "YYYY-MM-DD". 필수 쿼리 파라미터.
+ * - 200: status: INSUFFICIENT_DATA(표본 부족)도 정상 응답이며 여기 포함된다.
+ * - 400 INVALID_INPUT / USER_ID_HEADER_INVALID, 404 USER_NOT_FOUND(SkinModelUserNotFoundError로 변환)는
+ *   다른 report 엔드포인트와 동일 규칙.
+ */
+export async function getOverallReport(
+  baseDate: string,
+  userId: number
+): Promise<OverallReportResponse> {
+  try {
+    const response = await api.get<OverallReportResponse>("/api/v1/report/overall", {
       params: { baseDate },
       headers: {
         "X-User-Id": userId,

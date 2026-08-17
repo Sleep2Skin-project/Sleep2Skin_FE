@@ -28,6 +28,7 @@ import {
   type VerificationSummary,
   type VerificationVerdict,
 } from '@/api/skin';
+import { ExpGainPopup } from '@/components/exp-gain-popup';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TabSymbol } from '@/components/ui/tab-symbol';
@@ -222,6 +223,15 @@ function createDevBypassMockVerificationData(): SelfieVerificationData {
       updated: true,
       message: '개발자 프리패스로 만든 더미 데이터예요 — 실제 분석 결과가 아니에요.',
       changes: [],
+    },
+    streakCount: 3,
+    exp: {
+      gained: 10,
+      reasons: [{ reason: 'VERIFICATION_STREAK', amount: 10 }],
+      totalExp: 320,
+      level: 3,
+      levelUp: false,
+      nextLevelExp: 450,
     },
   };
 }
@@ -1160,12 +1170,15 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   // 셀피 로딩 화면(AnalyzingStep)에서 리포트(ReportStep)로 넘어가는 순간 뜨는 "5일 챌린지"
   // 팝업(StreakChallengeModal, 위 STREAK_MODAL 상수 주석 참고) — 리포트 화면의 AccuracyCard가
   // 보여주는 것과 같은 streakCount를 팝업으로 한 번 더 강조해서 보여준다(적중률 링 등 나머지
-  // 리포트 UI는 그대로 유지, 이 팝업만 겹쳐 뜬다). AccuracyCard도 같은 엔드포인트를 독립적으로
-  // 호출하지만, 이 화면 대부분의 다른 섹션들도 각자 필요한 걸 각자 조회하는 이 파일의 기존 패턴과
-  // 동일하게 여기서도 별도로 호출한다.
-  const [streakChallengeModalState, setStreakChallengeModalState] = useState<
-    { status: 'pending' } | { status: 'hidden' } | { status: 'visible'; streakCount: number }
-  >({ status: 'pending' });
+  // 리포트 UI는 그대로 유지, 이 팝업만 겹쳐 뜬다). POST /skin/selfie(verifySelfie) 응답에 이미
+  // streakCount가 실려 오므로(GET /skin/verification/summary와 같은 계산) 예전처럼 그 API를
+  // 따로 또 호출하지 않는다 — 검증 성공 직후 verifyState.data.streakCount를 그대로 읽는다.
+  const [streakModalDismissed, setStreakModalDismissed] = useState(false);
+  // 연속 검증 보상(exp.reasons: VERIFICATION_STREAK) — 서버가 실제로 적립해주는데도 이 화면이
+  // 지금까지 한 번도 보여준 적이 없었다(MY 탭에 들어가야 뒤늦게 레벨이 올라있는 걸 발견하는 식).
+  // 다른 게이미케이션 API들과 같은 ExpGainPopup을 재사용해서, 5일 챌린지 팝업이 끝난 뒤(둘 다
+  // 전체화면급 오버레이라 겹치면 한쪽이 가려짐) 이어서 보여준다.
+  const [expPopupDismissed, setExpPopupDismissed] = useState(false);
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
@@ -1221,30 +1234,6 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, imageUri]);
-
-  // StreakChallengeModal 표시 여부 — 검증이 성공한 직후 streakCount를 조회해 채운다. 검증에
-  // 성공하면 streakCount는 항상 최소 1이므로(api/skin.ts의 VerificationSummary 문서 참고,
-  // "오늘 첫 검증 → 1") streakCount > 0 조건은 사실상 매번 참이다 — 검증할 때마다 뜬다.
-  useEffect(() => {
-    if (verifyState.status !== 'success') return;
-    let cancelled = false;
-
-    getVerificationSummary(TEMP_USER_ID, getTodayDateString())
-      .then(({ data }) => {
-        if (cancelled) return;
-        const streakCount = data.status === 'AVAILABLE' ? data.summary.streakCount : 0;
-        setStreakChallengeModalState(streakCount > 0 ? { status: 'visible', streakCount } : { status: 'hidden' });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('❌ 5일 챌린지 모달용 스트릭 조회 실패:', error);
-        setStreakChallengeModalState({ status: 'hidden' });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [verifyState.status]);
 
   // 예외 코드별 사용자 고지 + 후속 동작. 코드 문서는 SelfieVerificationErrorCode(api/skin.ts) 참고.
   const handleVerifyError = (error: unknown) => {
@@ -1318,16 +1307,25 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   // step 3은 verifyState.status === 'success'일 때만 진입한다(위 useEffect가 성공 시에만 setStep(3)).
   if (verifyState.status !== 'success') return null;
 
+  // 5일 챌린지 팝업이 끝난 뒤에만 exp 팝업을 띄운다 — 둘 다 전체화면급 오버레이라 동시에 겹치면
+  // 한쪽이 가려진다. streakCount는 검증에 성공하면 항상 최소 1이므로(api/skin.ts의
+  // SelfieVerificationData 문서 참고) showStreakModal은 사실상 매번 참이다.
+  const showStreakModal = verifyState.data.streakCount > 0 && !streakModalDismissed;
+  const showExpPopup = verifyState.data.exp.gained !== 0 && !showStreakModal && !expPopupDismissed;
+
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: REPORT_BG }]}>
       <View style={canvasWrapperStyle}>
         <ThemedView style={[styles.canvas, canvasScaleStyle]}>
           <ReportStep data={verifyState.data} onClose={onClose} onFinish={onFinish} />
-          {streakChallengeModalState.status === 'visible' && (
+          {showStreakModal && (
             <StreakChallengeModal
-              streakCount={streakChallengeModalState.streakCount}
-              onDismiss={() => setStreakChallengeModalState({ status: 'hidden' })}
+              streakCount={verifyState.data.streakCount}
+              onDismiss={() => setStreakModalDismissed(true)}
             />
+          )}
+          {showExpPopup && (
+            <ExpGainPopup exp={verifyState.data.exp} onClose={() => setExpPopupDismissed(true)} />
           )}
         </ThemedView>
       </View>

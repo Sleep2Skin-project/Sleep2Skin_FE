@@ -14,9 +14,10 @@ import { getUserMe, type UserMeData } from '@/api/user';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AttendanceFlow } from '@/components/attendance-flow';
 import { OnboardingFlow } from '@/components/onboarding-flow';
-import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { TEMP_USER_ID } from '@/constants/config';
 import { useAccountDeletedSignal } from '@/hooks/use-account-reset-signal';
+import { setAppStartForecast } from '@/hooks/use-app-start-forecast';
+import { resetSleepScoreExpResult, setSleepScoreExpResult } from '@/hooks/use-sleep-score-exp';
 import { uploadSleepSession } from '@/hooks/useHealthData';
 
 SplashScreen.preventAutoHideAsync();
@@ -30,15 +31,6 @@ function getTodayDateString() {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-// "YYYY-MM-DD" → "YY년 M월 D일" (SleepScoreGamificationModal의 dateLabel 포맷, 이전엔
-// daily-report.tsx가 목업 트리거용으로 갖고 있던 걸 실연동하며 이 파일로 옮겼다).
-function formatSleepScoreDateLabel(isoDate: string): string {
-  const parts = isoDate.split('-');
-  if (parts.length !== 3) return isoDate;
-  const [year, month, day] = parts;
-  return `${year.slice(2)}년 ${Number(month)}월 ${Number(day)}일`;
 }
 
 // ONB-01(GET /api/v1/users/me)이 앱 진입점 라우팅을 결정하는 단 하나의 소스다.
@@ -69,16 +61,6 @@ export default function TabLayout() {
     | { status: 'skip' }
   >({ status: 'pending' });
   const [attendanceSeen, setAttendanceSeen] = useState(false);
-  // POST /api/v1/sleep/sessions — 앱이 시작될 때마다 호출한다(새 수면 데이터가 없어도 그냥 호출 —
-  // 서버가 정규화 해시로 재처리 여부를 판단). 이 한 번의 호출로 "수면 점수가 전날보다 올랐음/
-  // 오늘 90점 이상"(reasons: SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH) exp를 받는다. 재수신·중복
-  // 호출이면 gained:0·reasons:[]로 내려오므로 팝업은 자연스럽게 뜨지 않는다 — 별도로 "오늘 이미
-  // 봤는지"를 캐싱할 필요가 없다(HOME-04와 동일한 규칙).
-  const [sleepScoreExp, setSleepScoreExp] = useState<
-    | { status: 'pending' }
-    | { status: 'none' }
-    | { status: 'ready'; score: number; expGained: number; dateLabel: string }
-  >({ status: 'pending' });
   // MY-04(회원 탈퇴) 성공 신호 — my.tsx가 use-account-reset-signal.ts를 통해 이 값을 올린다.
   const accountDeletedSignal = useAccountDeletedSignal();
 
@@ -123,7 +105,7 @@ export default function TabLayout() {
     setEntryRoute({ kind: 'needs-consent' });
     setAttendanceSeen(false);
     setAttendanceCheckIn({ status: 'pending' });
-    setSleepScoreExp({ status: 'pending' });
+    resetSleepScoreExpResult();
   }, [accountDeletedSignal]);
 
   const pastOnboarding = entryRoute.kind === 'ready';
@@ -144,31 +126,39 @@ export default function TabLayout() {
       });
   }, [pastOnboarding]);
 
+  // POST /api/v1/sleep/sessions — 앱이 시작될 때마다 호출한다(새 수면 데이터가 없어도 그냥 호출 —
+  // 서버가 정규화 해시로 재처리 여부를 판단). 이 호출 자체는 스펙상 여기서 매번 일어나야 하지만,
+  // "수면 점수가 전날보다 올랐음/오늘 90점 이상" 팝업(SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH)은
+  // 원래 시안대로 일간 리포트 화면을 처음 열었을 때 뜨는 게 맞아서, 여기서는 결과를
+  // use-sleep-score-exp.ts store에 채워두기만 하고 팝업은 daily-report.tsx가 띄운다.
   useEffect(() => {
     if (!pastOnboarding) return;
     uploadSleepSession(TEMP_USER_ID)
       .then((data) => {
-        if (!data || data.sleep.sleepScore === null) {
-          setSleepScoreExp({ status: 'none' });
-          return;
-        }
+        if (!data) return;
+        // 예보는 processed 여부·sleepScore null 여부와 무관하게 항상 실려 온다 — 홈 화면
+        // (index.tsx)이 같은 걸 GET /skin/forecast로 또 조회하지 않도록 여기서 캐시해둔다
+        // (use-app-start-forecast.ts 참고, "앱 시작 직후엔 그 API가 필요 없다"는 스펙 규칙).
+        setAppStartForecast(data.sleepDate, data.forecast);
+
+        if (data.sleep.sleepScore === null) return;
         // 이 API가 지급하는 reason은 SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH 둘뿐이지만, 다른
         // reason이 섞여 와도 이 팝업은 "수면 점수" 사유분만 더해서 보여준다.
         const sleepScoreExpGained = data.exp.reasons
           .filter((reason) => reason.reason.startsWith('SLEEP_SCORE'))
           .reduce((sum, reason) => sum + reason.amount, 0);
-        if (sleepScoreExpGained <= 0) {
-          setSleepScoreExp({ status: 'none' });
-          return;
-        }
-        setSleepScoreExp({
-          status: 'ready',
+        if (sleepScoreExpGained <= 0) return;
+        setSleepScoreExpResult({
+          sleepDate: data.sleepDate,
           score: data.sleep.sleepScore,
           expGained: sleepScoreExpGained,
-          dateLabel: formatSleepScoreDateLabel(data.sleepDate),
         });
       })
-      .catch(() => setSleepScoreExp({ status: 'none' }));
+      .catch(() => {
+        // 실패해도 별도 상태를 남기지 않는다 — store가 비어 있으면 daily-report.tsx가 그냥
+        // 팝업을 안 띄운다(HOME-04와 동일하게 "오늘 이미 봤는지"를 캐싱할 필요가 없는 것과 같은
+        // 이유로, "이번 실행에서 보여줄 게 없다"를 별도 상태로 구분하지 않는다).
+      });
   }, [pastOnboarding]);
 
   const showAttendancePopup = pastOnboarding && attendanceCheckIn.status === 'checked-in' && !attendanceSeen;
@@ -207,17 +197,6 @@ export default function TabLayout() {
             options={{ animation: "slide_from_right" }}
           />
         </Stack>
-      )}
-      {/* 출석 팝업이 끝난 뒤에만 띄운다 — 둘 다 전체 화면급 UI라 동시에 겹치면 어느 한쪽이
-          가려진다. attendanceResolved를 같이 걸어두면 (tabs)가 이미 마운트된 뒤라 이 모달은
-          탭 화면(대체로 홈) 위에 오버레이로만 얹힌다. */}
-      {pastOnboarding && attendanceResolved && sleepScoreExp.status === 'ready' && (
-        <SleepScoreGamificationModal
-          score={sleepScoreExp.score}
-          expGained={sleepScoreExp.expGained}
-          dateLabel={sleepScoreExp.dateLabel}
-          onClose={() => setSleepScoreExp({ status: 'none' })}
-        />
       )}
     </ThemeProvider>
   );

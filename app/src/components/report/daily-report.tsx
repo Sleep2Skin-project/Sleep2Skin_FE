@@ -9,8 +9,10 @@ import {
   type DailyReportSleepSummary,
 } from '@/api/report';
 import type { SleepStats } from '@/api/sleep';
+import { SleepScoreGamificationModal } from '@/components/report/sleep-score-gamification-modal';
 import { ThemedText } from '@/components/themed-text';
 import { TEMP_USER_ID } from '@/constants/config';
+import { consumeSleepScoreExpResult, useSleepScoreExpResult } from '@/hooks/use-sleep-score-exp';
 import { formatTimeKST } from '@/utils/format-time';
 
 // 일간 리포트 (REP-02, 04, 05) — Figma 'Ui (복사)' 파일 node 350:698("리포트- 일간")을 Dev Mode 값
@@ -32,13 +34,25 @@ function buildUserHeading(nickname: string | null) {
   return nickname ? `${nickname}님의 어제` : '나의 어제';
 }
 
-// 게이미케이션(경험치) 팝업(SleepScoreGamificationModal)은 더 이상 이 화면 소관이 아니다 —
-// "수면 점수 상승/90점 이상" exp(SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH)는 POST
-// /api/v1/sleep/sessions 응답으로 실제 지급되며, 그 호출 자체가 앱 시작마다(_layout.tsx) 한 번만
-// 일어나야 하므로(재호출 시 중복 지급 방지는 서버 해시 비교에 의존) 트리거와 팝업 모두 root
-// 레이아웃(_layout.tsx)이 소유한다. 예전엔 이 화면이 GET /report/weekly의 dailyScores로 어제·
-// 오늘 점수를 직접 비교해 목업 exp(+10 고정)로 팝업을 흉내 냈지만, 실제 지급 여부/금액과 무관하게
-// 뜰 수 있어 부정확했다 — 그 로직을 제거했다.
+// 게이미케이션(경험치) 팝업(SleepScoreGamificationModal) — "수면 점수 상승/90점 이상" exp
+// (SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH)는 POST /api/v1/sleep/sessions 응답으로 실제 지급되고,
+// 그 호출 자체는 스펙상 앱 시작마다(_layout.tsx) 한 번만 일어나야 한다(재호출 시 중복 지급 방지는
+// 서버 해시 비교에 의존). 다만 팝업을 "띄우는" 시점은 원래 시안대로 이 화면(일간 리포트)을 처음
+// 열었을 때가 맞아서, _layout.tsx는 결과를 use-sleep-score-exp.ts store에 채워두기만 하고 이
+// 화면이 useSleepScoreExpResult로 구독해서 띄운다 — 데이터가 이 화면을 열기 전에 도착했든 연 뒤에
+// 도착했든 상관없이 뜨고, 한 번 닫으면(consumeSleepScoreExpResult) 다시 방문해도 안 뜬다.
+//
+// 예전엔 이 화면이 GET /report/weekly의 dailyScores로 어제·오늘 점수를 직접 비교해 목업 exp
+// (+10 고정)로 팝업을 흉내 냈지만, 실제 지급 여부/금액과 무관하게 뜰 수 있어 부정확했다 — 그
+// 로직은 제거했다.
+
+/** "YYYY-MM-DD" → "YY년 M월 D일" (SleepScoreGamificationModal의 dateLabel 포맷). */
+function formatSleepScoreDateLabel(isoDate: string): string {
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  const [year, month, day] = parts;
+  return `${year.slice(2)}년 ${Number(month)}월 ${Number(day)}일`;
+}
 
 function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
@@ -150,7 +164,7 @@ const AROUSAL_MARKER_POSITIONS = [36.3, 64.3];
 // 미착용으로 그 밤에 결측(null)이면 카드 자체를 만들지 않는다(0이나 '측정 불가'로 보여주지 않음).
 function buildStatItems(
   stats: SleepStats,
-  sleepScore: number,
+  sleepScore: number | null,
   hrv: number | null,
   restingHeartRate: number | null
 ) {
@@ -158,7 +172,7 @@ function buildStatItems(
     { key: 'total', label: '총 수면', value: formatDuration(stats.totalSleepMinutes) },
     { key: 'deep', label: '깊은 수면', value: formatDuration(stats.deepSleepMinutes) },
     { key: 'wakeCount', label: '야간 각성', value: `${stats.awakeCount}회` },
-    { key: 'score', label: '수면 점수', value: `${sleepScore}점` },
+    { key: 'score', label: '수면 점수', value: sleepScore === null ? '측정 불가' : `${sleepScore}점` },
     { key: 'core', label: '얕은 수면', value: formatDuration(stats.coreSleepMinutes) },
     { key: 'wakeMinutes', label: '각성 시간', value: formatDuration(stats.awakeMinutes) },
   ];
@@ -352,8 +366,21 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
   const hybridSleepStats =
     sleepSummaryState.status === 'available' ? toHybridSleepStats(sleepSummaryState.summary, sleepWindow) : null;
 
+  // 오늘 리포트를 열었을 때만 보여준다 — sleepDate가 오늘과 다르면(이론상 방어) 안 띄운다.
+  const sleepScoreExpResult = useSleepScoreExpResult();
+  const showSleepScoreModal = sleepScoreExpResult !== null && sleepScoreExpResult.sleepDate === getTodayDateString();
+
   return (
     <View style={styles.container}>
+      {showSleepScoreModal && (
+        <SleepScoreGamificationModal
+          score={sleepScoreExpResult.score}
+          expGained={sleepScoreExpResult.expGained}
+          dateLabel={formatSleepScoreDateLabel(sleepScoreExpResult.sleepDate)}
+          onClose={consumeSleepScoreExpResult}
+        />
+      )}
+
       <ThemedText style={styles.dateRange}>{DATE_RANGE_LABEL}</ThemedText>
       <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 
@@ -383,7 +410,11 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
           <>
             {/* 예보 점수(가중평균)와 다른 "그날 수면 부분점수 단순평균" — report/daily.sleepScore
                 실값. 다른 화면의 적중률/예보 점수와 절대 혼동하지 말 것(api/report.ts 주석 참고). */}
-            <ThemedText style={styles.sleepScoreBadge}>오늘 수면 점수 {sleepSummaryState.summary.sleepScore}점</ThemedText>
+            <ThemedText style={styles.sleepScoreBadge}>
+              {sleepSummaryState.summary.sleepScore === null
+                ? '오늘 수면 점수 측정 불가'
+                : `오늘 수면 점수 ${sleepSummaryState.summary.sleepScore}점`}
+            </ThemedText>
 
             <ThemedText style={styles.sleepWindow}>
               {formatTimeKST(hybridSleepStats.sleepOnsetTime)} – {formatTimeKST(hybridSleepStats.wakeTime)}

@@ -51,7 +51,8 @@ export interface ForecastMetric {
   grade: string;
 }
 
-export type UnavailableForecastMetric = "DARK_CIRCLE" | "COMPLEXION" | "BARRIER";
+/** darkCircle이 산출되지 않을 일은 없으므로(항상 값이 있음) unavailable 대상은 이 둘뿐 */
+export type UnavailableForecastMetric = "COMPLEXION" | "BARRIER";
 
 export interface UnavailableForecastReason {
   metric: UnavailableForecastMetric;
@@ -59,9 +60,16 @@ export interface UnavailableForecastReason {
   reason: string;
 }
 
+/**
+ * GET /skin/forecast와 POST /sleep/sessions가 공유하는 피부 예보 모양 — 이 파일이 정의를 갖고
+ * api/skin.ts가 재사용한다(중복 정의 금지, api/skin.ts 상단 주석 참고).
+ */
 export interface SkinForecast {
-  darkCircle: ForecastMetric | null;
+  /** 항상 값이 존재(null 불가) */
+  darkCircle: ForecastMetric;
+  /** 지표 산출이 불가하면 null */
   complexion: ForecastMetric | null;
+  /** 지표 산출이 불가하면 null */
   barrier: ForecastMetric | null;
   unavailable: UnavailableForecastReason[];
 }
@@ -117,7 +125,7 @@ export async function uploadSleepSession(
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 404) {
       const body = error.response.data as ApiErrorBody | undefined;
-      if (body?.code === "USER_NOT_FOUND" || body === undefined) {
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
         throw new SkinModelUserNotFoundError(userId);
       }
     }
@@ -183,14 +191,24 @@ export async function getSleepInterpretation(
   baseDate: string,
   userId: number
 ): Promise<SleepInterpretationResponse> {
-  const response = await api.get<SleepInterpretationResponse>(
-    "/api/v1/sleep/interpretation",
-    {
-      params: { baseDate },
-      headers: {
-        "X-User-Id": userId,
-      },
+  try {
+    const response = await api.get<SleepInterpretationResponse>(
+      "/api/v1/sleep/interpretation",
+      {
+        params: { baseDate },
+        headers: {
+          "X-User-Id": userId,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      const body = error.response.data as ApiErrorBody | undefined;
+      if (body?.error?.code === "USER_NOT_FOUND" || body === undefined) {
+        throw new SkinModelUserNotFoundError(userId);
+      }
     }
-  );
-  return response.data;
+    throw error;
+  }
 }

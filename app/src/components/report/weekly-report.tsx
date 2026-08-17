@@ -275,7 +275,7 @@ export function WeeklyReport({ nickname }: { nickname: string | null }) {
       <ThemedText style={styles.dateRange}>
         최근 7일 · {formatShortDate(data.periodStart)} – {formatShortDate(data.periodEnd)}
       </ThemedText>
-      <ThemedText style={styles.heading}>test1님의 일주일</ThemedText>
+      <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 
       <View style={styles.insightRow}>
         <ThemedText style={styles.insightLabel}>{'• 이번 주 평균 수면 점수 '}</ThemedText>

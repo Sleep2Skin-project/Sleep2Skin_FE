@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -20,6 +20,7 @@ import { TEMP_USER_ID } from '@/constants/config';
 import { LEVEL_CHARACTER_IMAGES, LEVEL_EXP_MAX } from '@/constants/mockData';
 import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { useTodoChangedSignal } from '@/hooks/use-todo-changed-signal';
 
 // MY — Figma 'Ui (복사)' 파일 노드 541:2981("iPhone 17 - 22")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -313,6 +314,11 @@ export default function MyScreen() {
   // "오늘의 투두 n/5" — 위 TodoProgressState 주석 참고. todo 탭과 별개로 이 화면이 직접 조회한다.
   const [todoProgressState, setTodoProgressState] = useState<TodoProgressState>({ status: 'loading' });
 
+  // TODO 탭에서 체크리스트를 토글하면 이 화면도 다시 조회해야 한다 — 탭 네비게이터가 화면을
+  // 언마운트하지 않아서 마운트 시 한 번만 조회하면 탭을 옮겨도 옛 값에 머문다
+  // (use-todo-changed-signal.ts). 아래 profileState effect도 같은 이유로 이 신호를 쓴다.
+  const todoChangedSignal = useTodoChangedSignal();
+
   useEffect(() => {
     getDailyTodos(getTodayDateString(), TEMP_USER_ID)
       .then(({ data }) => {
@@ -324,7 +330,7 @@ export default function MyScreen() {
         console.error('❌ 오늘의 투두 조회 실패:', error);
         setTodoProgressState({ status: 'error' });
       });
-  }, []);
+  }, [todoChangedSignal]);
 
   const completedCount = todoProgressState.status === 'available' ? todoProgressState.completed : 0;
   const totalCount = todoProgressState.status === 'available' ? todoProgressState.total : 0;
@@ -335,18 +341,16 @@ export default function MyScreen() {
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
   // 투두 탭에서 exp를 얻고 이 탭으로 돌아왔을 때 레벨/exp가 곧바로 안 바뀌면 사용자가 버그로
-  // 오해할 수 있어, 마운트 시 한 번만 도는 일반 useEffect 대신 이 탭이 포커스될 때마다(처음
-  // 마운트될 때 포함) 매번 다시 조회한다 — 홈 화면(index.tsx)도 동일한 패턴을 쓴다.
-  useFocusEffect(
-    useCallback(() => {
-      getUserMe(TEMP_USER_ID, getTodayDateString())
-        .then(({ data }) => setProfileState({ status: 'available', profile: data }))
-        .catch((error) => {
-          console.error('❌ 프로필 조회 실패:', error);
-          setProfileState({ status: 'error' });
-        });
-    }, [])
-  );
+  // 오해할 수 있어, todoChangedSignal이 바뀔 때마다(=투두 체크 토글이 성공할 때마다) 다시
+  // 조회한다 — 홈 화면(index.tsx)도 동일한 패턴을 쓴다.
+  useEffect(() => {
+    getUserMe(TEMP_USER_ID, getTodayDateString())
+      .then(({ data }) => setProfileState({ status: 'available', profile: data }))
+      .catch((error) => {
+        console.error('❌ 프로필 조회 실패:', error);
+        setProfileState({ status: 'error' });
+      });
+  }, [todoChangedSignal]);
 
   // 로딩/에러 중엔 레벨 관련 UI가 깨지지 않도록 안전한 기본값(1레벨, 만렙 아님)을 쓴다 — 실제
   // 값이 오면 즉시 이 값들로 교체된다.
@@ -454,7 +458,8 @@ export default function MyScreen() {
 
           {/* 캐릭터 (node 551:1316) — 홈 화면(index.tsx)과 동일한 LEVEL_CHARACTER_IMAGES 맵을 써서
               레벨(level)에 맞는 이미지를 고른다 — 항상 "홈 화면에 있는 현재 캐릭터"와 같은
-              그림이 보이도록 한다. */}
+              그림이 보이도록 한다. 그림자(node 541:2984)는 제거했고, 위치는 아래 characterImage
+              주석 참고. */}
           <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
 
           {/* 날짜 내비게이션 (node 541:3016/3017/3019) — 실제 날짜별 데이터가 없어 화살표는
@@ -629,13 +634,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: 'rgba(3, 25, 73, 0.55)',
   },
-  // 캐릭터 (node 551:1316, x:41 y:90 w:319 h:257) — figma-character.png는 홈 화면과 동일 이미지
+  // 캐릭터 (node 551:1316) — 그림자(node 541:2984)를 지운 뒤, "검증 N회 · 연속 N일" 텍스트
+  // 블록(trustLevelText, top:109 + lineHeight:14 = bottom 123)과 날짜 표시 행(dateChevron,
+  // top:395) 사이 빈 공간의 정중앙(123과 395의 중점 = 259)에 오도록 top을 다시 잡았다
+  // (top = 259 - height/2). 레벨별 이미지의 가로세로 비율이 서로 달라(1·2는 눕고 넓은 포즈,
+  // 3은 서 있는 세로 포즈 등) contentFit="contain"이 안쪽에서 알아서 맞추므로, 박스 자체는
+  // width만 넉넉히(캔버스 402 기준 좌우 22px 여백, weekStreakRow와 동일한 여백 관례) 잡고
+  // height는 위아래 여백(11px)을 남기고 저 gap을 넘치지 않게 잡았다.
   characterImage: {
     position: 'absolute',
-    left: 41,
-    top: 90,
-    width: 319,
-    height: 257,
+    left: 22,
+    top: 134,
+    width: 358,
+    height: 250,
   },
   // 날짜 화살표 (node 541:3017/3019, w:33 h:33)
   dateChevron: {

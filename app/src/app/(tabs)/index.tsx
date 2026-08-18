@@ -1,8 +1,8 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -25,6 +25,7 @@ import { TEMP_USER_ID } from '@/constants/config';
 import { HOME_SUMMARY_MOCK, LEVEL_CHARACTER_HOME_BOX, LEVEL_CHARACTER_IMAGES } from '@/constants/mockData';
 import { consumeAppStartForecast } from '@/hooks/use-app-start-forecast';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { useTodoChangedSignal } from '@/hooks/use-todo-changed-signal';
 
 // HOME — Figma 'Ui' 파일 노드 187:2673("홈 화면")을 Figma REST API로 직접 읽어와
 // 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -210,19 +211,19 @@ export default function HomeScreen() {
   // 항상 일치해야 함).
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
-  // 투두 탭 등 다른 화면에서 exp를 얻고 홈으로 돌아왔을 때 레벨/exp가 곧바로 안 바뀌면 사용자가
-  // 버그로 오해할 수 있어, 마운트 시 한 번뿐인 아래 useEffect와 별개로 이 탭이 포커스될 때마다
-  // (처음 마운트될 때 포함) 매번 다시 조회한다 — 마이 탭(my.tsx)도 동일한 패턴을 쓴다.
-  useFocusEffect(
-    useCallback(() => {
-      getUserMe(TEMP_USER_ID, getTodayDateString())
-        .then(({ data }) => setProfileState({ status: 'available', profile: data }))
-        .catch((error) => {
-          console.error('❌ 프로필 조회 실패:', error);
-          setProfileState({ status: 'error' });
-        });
-    }, [])
-  );
+  // TODO 탭에서 체크리스트를 토글해 exp/레벨이 바뀌면 이 화면도 다시 조회해야 한다 — 탭
+  // 네비게이터가 화면을 언마운트하지 않아서 마운트 시 한 번만 조회하면 탭을 옮겨도 옛 값에
+  // 머문다(use-todo-changed-signal.ts). 프로필만 별도 effect로 분리해 신호가 올 때마다 재조회한다.
+  const todoChangedSignal = useTodoChangedSignal();
+
+  useEffect(() => {
+    getUserMe(TEMP_USER_ID, getTodayDateString())
+      .then(({ data }) => setProfileState({ status: 'available', profile: data }))
+      .catch((error) => {
+        console.error('❌ 프로필 조회 실패:', error);
+        setProfileState({ status: 'error' });
+      });
+  }, [todoChangedSignal]);
 
   useEffect(() => {
     const baseDate = getTodayDateString();

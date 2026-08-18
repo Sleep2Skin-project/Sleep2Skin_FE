@@ -15,6 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { signalTodoChanged } from '@/hooks/use-todo-changed-signal';
 
 // AvoidDetailModal 전용 Pretendard 폰트(4종) — 온보딩(onboarding-flow.tsx)과 동일한 로컬 번들링 패턴.
 const PRETENDARD_LIGHT = 'Pretendard-Light';
@@ -50,9 +51,10 @@ const TODO_PIXEL_FONTS = {
 // 띄운다(ExpChangeBadge) — 예전엔 화면 전체를 덮는 ExpGainPopup(HOME-04 출석 체크인과 공유하던
 // 모달)을 썼지만, Figma 시안(node 694:2610)이 체크한 행 옆에 작게 표시하는 방식이라 이 화면에서만
 // 그 팝업 대신 인라인 배지로 바꿨다 — 다른 화면(HOME-04 등)은 여전히 ExpGainPopup을 그대로 쓴다.
-// 다른 화면과 공유하는 전역 store(use-checklist-store.ts)는 여전히 구 mock(TODO_SUMMARY_MOCK)
-// 기반이라 여기서는 쓰지 않는다 — 실 API의 id(숫자)와 mock의 id(문자열 슬러그)가 서로 달라
-// 지금 연결하면 MY 탭의 "오늘의 투두 n/5"가 오히려 깨진다(이 화면 자체 상태로만 관리).
+// 이 화면의 checklistItems 자체는 여전히 이 화면 상태로만 관리한다(HOME/MY와 형태가 다른 화면
+// 전용 파생값이 많아 그대로 공유하기엔 안 맞음, 실 API의 id(숫자)와 다른 화면의 id 체계가 다를
+// 수도 있어서 더더욱). 다만 토글이 성공하면 signalTodoChanged()로 HOME(레벨/exp)과 MY(exp 바·
+// 오늘의 투두 n/5)에 "다시 조회해라"만 알린다(use-todo-changed-signal.ts).
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -305,6 +307,10 @@ export default function TodoScreen() {
       const { data } = await updateTodoStatus(item.id, nextStatus, TEMP_USER_ID);
       // 서버가 돌려준 진짜 status로 다시 덮어쓴다 — 낙관적 값과 다를 일은 거의 없지만 서버가 최종 진실.
       setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: data.status } : it)));
+
+      // HOME(레벨/exp)과 MY(exp 바·오늘의 투두 n/5)에 이 화면의 변경을 알린다 — 두 화면 다
+      // 마운트 시 한 번만 조회해서 그대로 두면 탭을 옮겨도 갱신되지 않는다(use-todo-changed-signal.ts).
+      signalTodoChanged();
 
       // 체크(PENDING→DONE)했을 때만 그 항목에 배지를 추가한다. exp.gained를 그대로 쓰지 않고
       // reasons에서 TODO_DONE 몫만 뽑는다 — 마지막 칸이라 전체 완료 보너스(TODO_ALL_DONE)까지

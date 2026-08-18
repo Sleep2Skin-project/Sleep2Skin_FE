@@ -453,11 +453,10 @@ export default function MyScreen() {
             </ThemedText>
           )}
 
-          {/* 캐릭터 그림자 (node 541:2984, blur 근사) */}
-          <View style={styles.characterShadow} />
           {/* 캐릭터 (node 551:1316) — 홈 화면(index.tsx)과 동일한 LEVEL_CHARACTER_IMAGES 맵을 써서
               레벨(level)에 맞는 이미지를 고른다 — 항상 "홈 화면에 있는 현재 캐릭터"와 같은
-              그림이 보이도록 한다. */}
+              그림이 보이도록 한다. 그림자(node 541:2984)는 제거했고, 위치는 아래 characterImage
+              주석 참고. */}
           <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
 
           {/* 날짜 내비게이션 (node 541:3016/3017/3019) — 실제 날짜별 데이터가 없어 화살표는
@@ -632,23 +631,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: 'rgba(3, 25, 73, 0.55)',
   },
-  // 캐릭터 그림자 (node 541:2984, x:131 y:362 w:169 h:13, blur 근사)
-  characterShadow: {
-    position: 'absolute',
-    left: 131,
-    top: 362,
-    width: 169,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: 'rgba(179, 204, 250, 0.5)',
-  },
-  // 캐릭터 (node 551:1316, x:41 y:90 w:319 h:257) — figma-character.png는 홈 화면과 동일 이미지
+  // 캐릭터 (node 551:1316) — 그림자(node 541:2984)를 지운 뒤, "검증 N회 · 연속 N일" 텍스트
+  // 블록(trustLevelText, top:109 + lineHeight:14 = bottom 123)과 날짜 표시 행(dateChevron,
+  // top:395) 사이 빈 공간의 정중앙(123과 395의 중점 = 259)에 오도록 top을 다시 잡았다
+  // (top = 259 - height/2). 레벨별 이미지의 가로세로 비율이 서로 달라(1·2는 눕고 넓은 포즈,
+  // 3은 서 있는 세로 포즈 등) contentFit="contain"이 안쪽에서 알아서 맞추므로, 박스 자체는
+  // width만 넉넉히(캔버스 402 기준 좌우 22px 여백, weekStreakRow와 동일한 여백 관례) 잡고
+  // height는 위아래 여백(11px)을 남기고 저 gap을 넘치지 않게 잡았다.
   characterImage: {
     position: 'absolute',
-    left: 41,
-    top: 90,
-    width: 319,
-    height: 257,
+    left: 22,
+    top: 134,
+    width: 358,
+    height: 250,
   },
   // 날짜 화살표 (node 541:3017/3019, w:33 h:33)
   dateChevron: {

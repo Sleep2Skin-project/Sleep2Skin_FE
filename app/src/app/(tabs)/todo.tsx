@@ -1,10 +1,9 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { AttendanceExpInfo } from '@/api/game';
 import {
   getDailyTodos,
   TodoActionApiError,
@@ -12,7 +11,6 @@ import {
   type TodoAvoidItem,
   type TodoChecklistItem,
 } from '@/api/todo';
-import { ExpGainPopup } from '@/components/exp-gain-popup';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
@@ -31,6 +29,13 @@ const AVOID_DETAIL_FONTS = {
   [PRETENDARD_BOLD]: require('@/assets/fonts/Pretendard-Bold.otf'),
 };
 
+// 체크리스트 행 옆 "+5 exp" 배지(node 694:2610) 전용 픽셀 폰트 — 홈 화면(index.tsx)의
+// "50/250 exp"와 같은 폰트/패턴이다.
+const PRESS_START_2P = 'PressStart2P-Regular';
+const TODO_PIXEL_FONTS = {
+  [PRESS_START_2P]: require('@/assets/fonts/PressStart2P-Regular.ttf'),
+};
+
 // TODO — Figma 'Ui - 복사' 파일 노드 176:1165("iPhone 17 - 12")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
 // 좌표는 모두 프레임(node 176:1165) 원점 기준 상대값이며, 값은 Figma가 반환한 절대좌표에서 프레임 원점을 뺀 것이다.
@@ -42,11 +47,14 @@ const AVOID_DETAIL_FONTS = {
 //
 // 체크 토글은 PATCH /api/v1/todo/{id}(TODO-05)로 실연동한다(api/todo.ts의 updateTodoStatus).
 // 응답 대기 중 어색하지 않도록 낙관적 업데이트(먼저 화면부터 바꾸고, 실패하면 되돌림)를 쓴다.
-// exp가 실제로 움직였을 때(gained !== 0, 플러스든 마이너스든)만 ExpGainPopup을 띄운다 — 이
-// 팝업은 HOME-04(출석 체크인)와 완전히 같은 exp 모양(AttendanceExpInfo)을 공유하는 컴포넌트다.
-// 이 화면의 checklistItems 자체는 여전히 이 화면 상태로만 관리한다(HOME/MY와 형태가 다른
-// 화면 전용 파생값이 많아 그대로 공유하기엔 안 맞음). 다만 토글이 성공하면 signalTodoChanged()로
-// HOME(레벨/exp)과 MY(exp 바·오늘의 투두 n/5)에 "다시 조회해라"만 알린다(use-todo-changed-signal.ts).
+// exp가 실제로 움직였을 때(gained !== 0, 플러스든 마이너스든)만 그 항목 옆에 "+N exp"를 잠깐
+// 띄운다(ExpChangeBadge) — 예전엔 화면 전체를 덮는 ExpGainPopup(HOME-04 출석 체크인과 공유하던
+// 모달)을 썼지만, Figma 시안(node 694:2610)이 체크한 행 옆에 작게 표시하는 방식이라 이 화면에서만
+// 그 팝업 대신 인라인 배지로 바꿨다 — 다른 화면(HOME-04 등)은 여전히 ExpGainPopup을 그대로 쓴다.
+// 이 화면의 checklistItems 자체는 여전히 이 화면 상태로만 관리한다(HOME/MY와 형태가 다른 화면
+// 전용 파생값이 많아 그대로 공유하기엔 안 맞음, 실 API의 id(숫자)와 다른 화면의 id 체계가 다를
+// 수도 있어서 더더욱). 다만 토글이 성공하면 signalTodoChanged()로 HOME(레벨/exp)과 MY(exp 바·
+// 오늘의 투두 n/5)에 "다시 조회해라"만 알린다(use-todo-changed-signal.ts).
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -91,16 +99,50 @@ function buildTodoSummaryMessage(state: TodoScreenState): string | null {
   }
 }
 
+// "+5 exp" 인라인 배지(node 694:2610) — 체크한 항목마다 각자 하나씩 뜬다(가장 최근 것만 남는 게
+// 아니다). 체크 해제하면 그 항목의 배지만 즉시 사라진다(TodoScreen이 항목별로 map에 담아뒀다가
+// 해제 시 그 항목 것만 지운다) — "-N exp"는 따로 보여주지 않는다. 마운트될 때 한 번 스프링으로
+// 튀어 오르듯 나타난 뒤 그대로 유지되고, 언마운트(=체크 해제)되면 사라지는 것 자체가 곧 애니메이션
+// 종료라 별도 페이드아웃/onDone 콜백은 필요 없다.
+function ExpGainBadge({ amount }: { amount: number }) {
+  const [scale] = useState(() => new Animated.Value(0.4));
+  const [translateY] = useState(() => new Animated.Value(6));
+  const [opacity] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.parallel([
+      // friction을 낮고 tension을 높게 잡아 1을 살짝 넘겼다가 튕기듯 돌아오게 한다("통통 튀는" 느낌).
+      Animated.spring(scale, { toValue: 1, friction: 3.5, tension: 220, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+    // 마운트 시 1회만 재생 — 이 컴포넌트는 항목이 체크될 때만 마운트되고, 해제되면 그대로
+    // 언마운트되므로 재생을 다시 트리거할 의존성이 필요 없다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.Text
+      style={[styles.expBadgeText, { opacity, transform: [{ scale }, { translateY }] }]}
+      numberOfLines={1}>
+      +{amount} exp
+    </Animated.Text>
+  );
+}
+
 function ChecklistRow({
   item,
   checked,
   pending,
+  expGained,
   onToggle,
 }: {
   item: TodoChecklistItem;
   checked: boolean;
   /** PATCH 응답 대기 중인 항목 — 중복 탭으로 인한 경쟁 요청을 막고, 대기 중임을 옅게 보여준다 */
   pending: boolean;
+  /** 이 항목에 지금 표시 중인 exp 배지 값 — 없으면 null(TodoScreen이 항목 id로 걸러서 넘긴다) */
+  expGained: number | null;
   onToggle: () => void;
 }) {
   return (
@@ -121,6 +163,7 @@ function ChecklistRow({
       <ThemedText style={[styles.checklistItemTitle, checked && styles.checklistItemTitleChecked]}>
         {item.title}
       </ThemedText>
+      {expGained !== null && <ExpGainBadge amount={expGained} />}
     </Pressable>
   );
 }
@@ -193,6 +236,7 @@ function AvoidDetailModal({ item, onClose }: { item: TodoAvoidItem | null; onClo
 
 export default function TodoScreen() {
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const [pixelFontLoaded] = useFonts(TODO_PIXEL_FONTS);
   const [state, setState] = useState<TodoScreenState>({ status: 'loading' });
   const [selectedAvoidItem, setSelectedAvoidItem] = useState<TodoAvoidItem | null>(null);
   // 체크리스트만 별도 state로 들고 있는다 — PATCH 성공/실패에 따라 개별 항목의 status를 그때그때
@@ -202,8 +246,20 @@ export default function TodoScreen() {
   // 지금 PATCH 응답을 기다리는 항목 id — 중복 탭 방지 + 대기 중 시각 표시용.
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
-  // gained !== 0일 때만 채워진다(HOME-04와 공유하는 ExpGainPopup에 그대로 넘긴다).
-  const [expPopup, setExpPopup] = useState<AttendanceExpInfo | null>(null);
+  // 체크된 항목마다 하나씩 쌓인다(itemId → 받은 exp) — 체크한 항목 전부가 동시에 각자 배지를
+  // 보여줘야 해서(가장 최근 것만 남기지 않는다) 단일 값이 아니라 맵으로 관리한다. 체크 해제하면
+  // handleToggle이 그 항목 것만 지운다. 여기 담기는 값은 항상 TODO_DONE 몫(보통 5)만이다 —
+  // 마지막 한 칸을 채워 전체 완료 보너스(TODO_ALL_DONE)까지 함께 받아도(gained가 35처럼 합산된
+  // 값으로 와도) 그 항목 배지엔 5만 보여주고, 보너스는 아래 allDoneBonusAmount로 따로 뗀다.
+  const [expByItemId, setExpByItemId] = useState<Record<number, number>>({});
+  // "오늘 밤 체크리스트" 제목 옆 전체 완료 보너스(node 없음, 신규 연출) — 지금 이 순간 checklistItems가
+  // 전부 DONE일 때만(allChecklistDone, 아래 useMemo) 보여준다. 값 자체(TODO_ALL_DONE 보상액,
+  // 보통 30)는 checklistItems만 봐서는 알 수 없어(서버가 이 GET엔 exp를 안 준다) 마지막 토글
+  // 응답의 exp.reasons에서 딱 한 번 받아 저장해둔다 — 전체 완료가 아닌 상태로 바뀌면(하나라도
+  // 해제) null로 지운다. 처음 화면을 열었을 때 이미 전부 체크돼 있던 경우엔 이번 세션에서 받은
+  // "보상"이 아니므로 굳이 값을 추측해서 보여주지 않는다(allChecklistDone은 true여도 이 값이
+  // null이면 배지 자체를 렌더링하지 않는다).
+  const [allDoneBonusAmount, setAllDoneBonusAmount] = useState<number | null>(null);
 
   useEffect(() => {
     getDailyTodos(getTodayDateString(), TEMP_USER_ID)
@@ -229,6 +285,10 @@ export default function TodoScreen() {
   const completed = useMemo(() => checklistItems.filter((item) => item.status === 'DONE').length, [checklistItems]);
   const total = checklistItems.length;
   const progress = total === 0 ? 0 : completed / total;
+  // checklistItems에서 그대로 파생한다(별도 state로 안 둔다) — 낙관적 업데이트로 checklistItems가
+  // 바뀌는 즉시 같이 따라와서, 서버 응답을 기다리지 않고도 항상 "지금 화면에 보이는 상태"와
+  // 정확히 일치한다.
+  const allChecklistDone = total > 0 && completed === total;
 
   const summaryMessage = buildTodoSummaryMessage(state);
 
@@ -247,13 +307,38 @@ export default function TodoScreen() {
       const { data } = await updateTodoStatus(item.id, nextStatus, TEMP_USER_ID);
       // 서버가 돌려준 진짜 status로 다시 덮어쓴다 — 낙관적 값과 다를 일은 거의 없지만 서버가 최종 진실.
       setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: data.status } : it)));
+
       // HOME(레벨/exp)과 MY(exp 바·오늘의 투두 n/5)에 이 화면의 변경을 알린다 — 두 화면 다
       // 마운트 시 한 번만 조회해서 그대로 두면 탭을 옮겨도 갱신되지 않는다(use-todo-changed-signal.ts).
       signalTodoChanged();
-      // exp는 상태가 "실제로" 바뀔 때만 움직인다 — gained가 0(같은 상태 재요청 등)이면 아무것도 안 띄운다.
-      // gained가 음수(되돌리기로 인한 회수)여도 정상 케이스이므로 부호와 무관하게 0이 아니면 띄운다.
-      if (data.exp.gained !== 0) {
-        setExpPopup(data.exp);
+
+      // 체크(PENDING→DONE)했을 때만 그 항목에 배지를 추가한다. exp.gained를 그대로 쓰지 않고
+      // reasons에서 TODO_DONE 몫만 뽑는다 — 마지막 칸이라 전체 완료 보너스(TODO_ALL_DONE)까지
+      // 합쳐 35로 와도 이 항목엔 5만 보여주고 30은 아래에서 제목 줄 배지로 따로 뗀다.
+      // 체크 해제(DONE→PENDING)는 "-N exp"를 보여주지 않고 그 항목의 배지를 그냥 지운다.
+      if (data.status === 'DONE') {
+        const doneAmount = data.exp.reasons.find((r) => r.reason === 'TODO_DONE')?.amount;
+        if (doneAmount) {
+          setExpByItemId((prev) => ({ ...prev, [item.id]: doneAmount }));
+        }
+      } else {
+        setExpByItemId((prev) => {
+          if (!(item.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[item.id];
+          return next;
+        });
+      }
+
+      // 전체 완료 보너스(TODO_ALL_DONE) — data.allCompleted는 "지금 이 순간 전부 DONE인가"를
+      // 서버가 직접 알려주는 값이라 그대로 신뢰한다. true면 이번 응답의 reasons에서 보너스 액수를
+      // 뽑아 저장하고(이 토글로 막 전체 완료됐을 때만 reasons에 TODO_ALL_DONE이 실제로 들어있다),
+      // false면(하나라도 해제됐다는 뜻) 무조건 지운다.
+      if (data.allCompleted) {
+        const bonusAmount = data.exp.reasons.find((r) => r.reason === 'TODO_ALL_DONE')?.amount;
+        if (bonusAmount) setAllDoneBonusAmount(bonusAmount);
+      } else {
+        setAllDoneBonusAmount(null);
       }
     } catch (error) {
       // 실패 시 낙관적 업데이트를 되돌린다.
@@ -336,9 +421,7 @@ export default function TodoScreen() {
                           delayLongPress={350}
                           style={({ pressed }) => [styles.avoidItem, pressed && styles.pressed]}>
                           <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
-                          <View style={styles.avoidItemCauseTag}>
-                            <ThemedText style={styles.avoidItemCauseTagText}>{item.causeLabel}</ThemedText>
-                          </View>
+                          <ThemedText style={styles.avoidItemCauseText}>{item.causeLabel}</ThemedText>
                         </Pressable>
                       ))}
                     </View>
@@ -347,7 +430,12 @@ export default function TodoScreen() {
 
                 {checklistItems.length > 0 && (
                   <>
-                    <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
+                    <View style={styles.checklistTitleRow}>
+                      <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
+                      {allChecklistDone && allDoneBonusAmount !== null && pixelFontLoaded && (
+                        <ExpGainBadge amount={allDoneBonusAmount} />
+                      )}
+                    </View>
                     <View style={styles.checklistList}>
                       {checklistItems.map((item) => (
                         <ChecklistRow
@@ -355,6 +443,7 @@ export default function TodoScreen() {
                           item={item}
                           checked={item.status === 'DONE'}
                           pending={pendingId === item.id}
+                          expGained={pixelFontLoaded ? (expByItemId[item.id] ?? null) : null}
                           onToggle={() => handleToggle(item)}
                         />
                       ))}
@@ -368,7 +457,6 @@ export default function TodoScreen() {
       </ScrollView>
 
       <AvoidDetailModal item={selectedAvoidItem} onClose={() => setSelectedAvoidItem(null)} />
-      {expPopup && <ExpGainPopup exp={expPopup} onClose={() => setExpPopup(null)} />}
     </SafeAreaView>
   );
 }
@@ -395,19 +483,20 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
 
-  // Spiral Notepad (node 187:2551, x:27 y:71 w:31 h:31)
+  // Spiral Notepad (node 694:2659, x:22.04 y:70 w:31 h:31) — 예전엔 다른(구) 프레임 노드(187:2551)
+  // 좌표를 썼는데 새 시안(694:2599)과 5px 정도 어긋나 있었다.
   notepadIcon: {
     position: 'absolute',
-    left: 27,
-    top: 71,
+    left: 22,
+    top: 70,
     width: 31,
     height: 31,
   },
-  // "오늘의 투두리스트" (node 176:1228, x:71 y:71 w:168 h:26)
+  // "오늘의 투두리스트" (node 694:2622, x:66.04 y:70 w:168 h:26)
   pageTitle: {
     position: 'absolute',
-    left: 71,
-    top: 71,
+    left: 66,
+    top: 70,
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '700',
@@ -447,49 +536,53 @@ const styles = StyleSheet.create({
     color: 'rgba(55, 56, 60, 0.61)',
   },
   // TODO-01 요약 멘트("오늘의 피부를 위한 미션") — 서버가 안 주는 문구라 Figma 고정 노드가 없다.
-  // 타이틀 바로 아래, 진행도 줄 위에 얹는다.
+  // 새 시안(694:2599) 기준 타이틀 하단(y≈96)과 진행도(y:106) 사이는 10px뿐이라 그 사이에 못
+  // 넣는다(억지로 욱여넣었더니 겹쳐 보였다) — 대신 진행도 줄과 "오늘은 피하세요" 카드(top:150)
+  // 사이 빈 공간(y:124~150, 26px)에 놓는다.
   summarySubtitle: {
     position: 'absolute',
     left: 27,
-    top: 100,
+    top: 130,
     fontSize: 13,
     lineHeight: 16,
     fontWeight: '500',
     color: 'rgba(55, 56, 60, 0.61)',
   },
 
-  // "진행도" (node 176:1229, x:78 y:107 w:103 h:17)
+  // "진행도" (node 694:2623, x:73.04 y:106 w:103.35 h:17.06) — 예전엔 다른(구) 프레임 노드
+  // (176:1229~1232) 좌표를 썼는데 새 시안(694:2599)과 세로로 16px 정도 어긋나 있었다.
   progressLabel: {
     position: 'absolute',
-    left: 78,
-    top: 122,
+    left: 73,
+    top: 106,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
     color: '#383838',
   },
-  // 진행 트랙 배경 value (node 176:1230, x:127 y:113 w:95 h:7, radius:6)
+  // 진행 트랙 배경 value (node 694:2624, x:122.21 y:112.02 w:95.4 h:6.98, radius:5.82)
   progressTrack: {
     position: 'absolute',
-    left: 127,
-    top: 128,
-    width: 95,
+    left: 122,
+    top: 112,
+    width: 95.4,
     height: 7,
     borderRadius: 6,
     backgroundColor: '#C2C2C2',
     overflow: 'hidden',
   },
-  // 진행 트랙 채움 value (node 176:1232, x:127 y:113 w:55 h:7, radius:6)
+  // 진행 트랙 채움 value (node 694:2626, 배경과 동일 위치, 너비만 progress로 동적 계산)
   progressFill: {
     height: '100%',
     borderRadius: 6,
     backgroundColor: '#1A1A1A',
   },
-  // "1/5" (node 176:1231, x:227 y:109 w:17 h:16)
+  // "1/5" (node 694:2625, x:222.09 y:108 w:17 h:16) — 예전 좌표(176:1231)와 세로로 16px 어긋나
+  // 있었다.
   progressCount: {
     position: 'absolute',
-    left: 227,
-    top: 124,
+    left: 222,
+    top: 108,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
@@ -545,28 +638,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // causeLabel 태그 — 예전엔 캡션 텍스트 한 줄이었지만, API가 명확히 "태그"로 규정한 필드라
-  // 배지 모양으로 감싼다(롱프레스로 더 긴 reason을 볼 수 있다는 걸 시각적으로도 암시).
-  avoidItemCauseTag: {
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(255, 66, 66, 0.1)',
-  },
-  avoidItemCauseTagText: {
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '600',
-    color: '#E52222',
+  // causeLabel 캡션 (node 694:2635 "혈색 저하의 원인" 등, Inter Regular 12.5px, lineHeight:18.75px,
+  // Tuna 61%) — 이전엔 빨간 배지(태그) 모양이었는데 Figma엔 그런 배지가 없고, 제목 아래 옅은 회색
+  // 캡션 한 줄일 뿐이다. 빨간색은 "오늘은 피하세요" 섹션 타이틀(avoidTitle)에서만 쓴다.
+  avoidItemCauseText: {
+    fontSize: 12.5,
+    lineHeight: 18.75,
+    fontWeight: '400',
+    color: 'rgba(55, 56, 60, 0.61)',
   },
 
-  // "오늘 밤 체크리스트" (node 432:1157, x:18 y:431 w:363)
-  checklistTitle: {
+  // "오늘 밤 체크리스트" 줄 (node 432:1157, x:18 y:431 w:363) — 전체 완료 보너스 배지를 제목
+  // 오른쪽에 얹으려고 절대좌표 Text 하나였던 걸 좌우 정렬 row로 바꿨다. 박스 좌표 자체는 그대로.
+  checklistTitleRow: {
     position: 'absolute',
     left: 21,
     top: 431,
     width: 363,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  checklistTitle: {
     fontSize: 16,
     lineHeight: 19,
     fontWeight: '700',
@@ -641,10 +734,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // DONE 항목은 취소선으로 완료를 표시한다(체크박스 색만으로는 스크롤 중 눈에 덜 띄어서 보강).
+  // DONE 항목 제목 색상 — Figma(node 694:2609)는 체크 여부와 무관하게 제목을 항상 Cod Gray로
+  // 그린다. 취소선은 없다(예전엔 넣었었는데 Figma에 없는 연출이라 뺐다).
   checklistItemTitleChecked: {
-    textDecorationLine: 'line-through',
     color: 'rgba(23, 23, 23, 0.55)',
+  },
+  // "+5 exp" 배지 (node 694:2610, Press Start 2P 12px, #3366FF) — ExpChangeBadge가 opacity/scale/
+  // translateY를 애니메이션으로 얹는다. flexShrink:0으로 옆 제목(flex:1)이 줄어들어도 이 텍스트
+  // 자체는 안 눌리게 한다.
+  expBadgeText: {
+    flexShrink: 0,
+    fontSize: 12,
+    fontFamily: PRESS_START_2P,
+    color: Colors.accentBlue,
   },
 
   // ── AvoidDetailModal (node 541:3131) ────────────────────────────────────

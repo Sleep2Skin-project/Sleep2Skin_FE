@@ -125,7 +125,13 @@ export function AttendanceFlow({
               "빠뜨린 날"로 오인되지 않는다. */}
           {attendanceDays.map((day) => (
             <View key={day.label}>
-              <Text style={[styles.dayLabel, { left: day.labelX }]}>{day.label}</Text>
+              <Text
+                style={[
+                  styles.dayLabel,
+                  { left: day.labelX, color: day.status === 'ATTENDED' ? ATTENDANCE_DAY_ATTENDED_BG : ATTENDANCE_LABEL_COLOR },
+                ]}>
+                {day.label}
+              </Text>
               <View
                 style={[
                   styles.dayCircle,
@@ -216,7 +222,8 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_SEMIBOLD,
     color: Colors.accentBlue,
   },
-  // 요일 라벨(node 509:297 등, y:542 w:15 h:20, Pretendard SemiBold 16.59px) — left는 인라인으로 개별 지정
+  // 요일 라벨(node 509:297 등, y:542 w:15 h:20, Pretendard SemiBold 16.59px) — left/color는
+  // 인라인으로 개별 지정(출석한 요일은 아래 원과 같은 파란색으로 강조)
   dayLabel: {
     position: 'absolute',
     top: 542,
@@ -224,7 +231,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 16.59,
     fontFamily: PRETENDARD_SEMIBOLD,
-    color: ATTENDANCE_LABEL_COLOR,
   },
   // 출석 원(node 509:298 등, y:570.65 w:32.47 h:32.47, radius: 원형) — left/backgroundColor는 인라인
   dayCircle: {

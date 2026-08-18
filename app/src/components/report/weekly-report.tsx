@@ -75,11 +75,6 @@ function formatDuration(minutes: number) {
 const CHART_PLOT_HEIGHT = 154;
 // 수면 점수는 0~100 스케일 — 막대 높이 계산용 표시 상수(다른 리포트 화면과 동일).
 const CHART_MAX_VALUE = 100;
-// "목표 수면 점수" 점선 — 이 API에 목표치 개념이 없어(개인 목표 설정 API 미등재) 여전히 목업이다.
-// 실제 목표 설정 기능이 생기면 이 상수 대신 그 값을 쓸 것.
-const WEEKLY_TARGET_SCORE_MOCK = 75;
-// 점선 위 점 색 — Figma가 점마다 남색/검정을 번갈아 썼다(node 348:1017~1023).
-const TARGET_DOT_COLORS = ['#031949', '#031949', '#000000', '#000000', '#000000', '#031949', '#031949'];
 // sleepScore: null(그날 세션 없음)인 막대 — 실측 0점과 헷갈리지 않도록 점선 테두리의 빈 막대로 구분
 // (월간 리포트의 avgSleepScore: null 처리와 동일한 방어).
 const BAR_COLOR_NO_DATA = '#F0F0F2';
@@ -114,7 +109,6 @@ type WeeklyReportState =
   | { status: 'full'; data: FullWeeklyReportData };
 
 function WeeklyBarChart({ days }: { days: WeeklyReportDailyScore[] }) {
-  const targetHeight = (WEEKLY_TARGET_SCORE_MOCK / CHART_MAX_VALUE) * CHART_PLOT_HEIGHT;
   // periodEnd(가장 최근 날짜) = 오늘 — Figma가 항상 마지막(가장 최근) 막대의 요일 라벨만 굵게
   // 강조한 것과 같은 규칙("오늘" 강조), 점수 순위로 매기는 게 아니다.
   const todayDate = days.length > 0 ? days[days.length - 1].date : null;
@@ -122,7 +116,6 @@ function WeeklyBarChart({ days }: { days: WeeklyReportDailyScore[] }) {
   return (
     <View>
       <View style={styles.chartPlot}>
-        <View style={[styles.targetLine, { bottom: targetHeight }]} />
         <View style={styles.barsRow}>
           {days.map((day) => {
             const hasScore = day.sleepScore !== null;
@@ -135,13 +128,6 @@ function WeeklyBarChart({ days }: { days: WeeklyReportDailyScore[] }) {
               </View>
             );
           })}
-        </View>
-        <View style={[styles.targetDotsRow, { bottom: targetHeight - 3 }]}>
-          {days.map((day, index) => (
-            <View key={day.date} style={styles.targetDotColumn}>
-              <View style={[styles.targetDot, { backgroundColor: TARGET_DOT_COLORS[index] }]} />
-            </View>
-          ))}
         </View>
       </View>
 
@@ -285,16 +271,13 @@ export function WeeklyReport({ nickname }: { nickname: string | null }) {
       </View>
 
       <View style={styles.chartCard}>
-        <View style={styles.chartHeaderRow}>
-          <View style={styles.chartTitleRow}>
-            <Image
-              source={require('@/assets/images/figma-icon-report-crescent-moon.png')}
-              style={styles.moonIcon}
-              contentFit="contain"
-            />
-            <ThemedText style={styles.chartTitle}>주간 수면 구간</ThemedText>
-          </View>
-          <ThemedText style={styles.chartLegend}>막대= 수면/ 점선= 목표</ThemedText>
+        <View style={styles.chartTitleRow}>
+          <Image
+            source={require('@/assets/images/figma-icon-report-crescent-moon.png')}
+            style={styles.moonIcon}
+            contentFit="contain"
+          />
+          <ThemedText style={styles.chartTitle}>주간 수면 구간</ThemedText>
         </View>
         <ThemedText style={styles.chartSubRange}>
           {formatDotDate(data.periodStart)} - {formatDotDate(data.periodEnd)}
@@ -404,11 +387,6 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 20,
   },
-  chartHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   chartTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,13 +403,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#031949',
   },
-  // "막대= 수면/ 점선= 목표" (node 348:939)
-  chartLegend: {
-    fontSize: 10.5,
-    lineHeight: 13,
-    fontWeight: '400',
-    color: '#9C9C9C',
-  },
   // "26.08.08 - 26.08.14" (node 348:940)
   chartSubRange: {
     marginTop: 6,
@@ -441,7 +412,7 @@ const styles = StyleSheet.create({
     color: '#909090',
   },
 
-  // 막대 플롯 영역 — 막대는 바닥 정렬, 목표선/점은 절대 좌표로 얹는다.
+  // 막대 플롯 영역 — 막대는 바닥 정렬.
   chartPlot: {
     marginTop: 18,
     height: CHART_PLOT_HEIGHT,
@@ -469,32 +440,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: BAR_BORDER_NO_DATA,
   },
-  // 목표선 (점선) — node 348:1024~1029 스트로크를 하나의 가로 점선으로 옮겼다.
-  targetLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderTopWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#031949',
-  },
-  targetDotsRow: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-  },
-  targetDotColumn: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  // 목표선 점 (node 348:1017~1023, 3x3 원)
-  targetDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-
   dayLabelsRow: {
     marginTop: 8,
     flexDirection: 'row',

@@ -1,6 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useDesignScale } from '@/hooks/use-design-scale';
 
@@ -54,6 +55,28 @@ export function SleepScoreGamificationModal({
 }) {
   const [fontsLoaded] = useFonts(GAMIFICATION_MODAL_FONTS);
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // "+ N exp" 등장 애니메이션 — 투두 화면(todo.tsx)의 ExpGainBadge와 완전히 같은 모션(작게
+  // 시작해 스프링으로 살짝 오버슈트하며 통통 튀어 오르듯 커지고, 위로 살짝 떠오르며 페이드인).
+  // 이 팝업은 한 번 뜨면 닫힐 때까지 마운트 상태가 유지되므로(todo의 배지처럼 항목별로
+  // 마운트/언마운트를 반복하지 않는다) 그대로 유지되고, 별도로 사라질 필요는 없다.
+  const [expScale] = useState(() => new Animated.Value(0.4));
+  const [expTranslateY] = useState(() => new Animated.Value(6));
+  const [expOpacity] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    // 폰트 로드 전엔(아래에서 null을 렌더하는 동안) 애니메이션을 시작하지 않는다 — 여기서 바로
+    // 시작해버리면 실제 텍스트가 화면에 나타나기도 전에 스프링이 다 끝나버려서 "통통 튀는" 게
+    // 안 보이고 처음부터 다 켜진 채로 보인다.
+    if (!fontsLoaded) return;
+    Animated.parallel([
+      Animated.spring(expScale, { toValue: 1, friction: 3.5, tension: 220, useNativeDriver: true }),
+      Animated.timing(expOpacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+      Animated.timing(expTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontsLoaded]);
+
   // 폰트 로드 전엔 아예 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 타이틀이 줄바꿈되는 걸 막는다.
   if (!fontsLoaded) return null;
 
@@ -99,8 +122,17 @@ export function SleepScoreGamificationModal({
 
             {/* "+ 10 exp" (node 514:820) — Figma가 카드 왼쪽 경계보다 18px 더 왼쪽(x:-18)에서
                 시작하도록 배치해뒀는데, 앞의 공백 5칸이 그 여백을 메워 실제 보이는 글자("+")는
-                카드 안쪽에서 시작한다(투두 화면의 "+5 exp" 배지와 동일한 트릭). */}
-            <Text style={styles.expBadge}>{'     '}+ {expGained} exp</Text>
+                카드 안쪽에서 시작한다(투두 화면의 "+5 exp" 배지와 동일한 트릭). scale 트랜스폼은
+                텍스트 박스 중심 기준이라, 고정 width(371)를 그대로 두면 보이지도 않는 왼쪽 여백까지
+                포함해 중심이 잡혀 튀어 오르는 지점이 실제 글자와 어긋나 보인다 — width를 없애고
+                내용물(공백+글자)에 맞춰 자동으로 감싸게 해서 최종 위치는 그대로 두되 중심만 바로잡았다. */}
+            <Animated.Text
+              style={[
+                styles.expBadge,
+                { opacity: expOpacity, transform: [{ scale: expScale }, { translateY: expTranslateY }] },
+              ]}>
+              {'     '}+ {expGained} exp
+            </Animated.Text>
 
             <Pressable onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
               <Text style={styles.closeButtonText}>닫기</Text>
@@ -238,13 +270,13 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_REGULAR,
     color: CARD_BODY_COLOR,
   },
-  // "+ 10 exp" 배지 (node 514:820, x:-18 y:659.57 w:371, Press Start 2P 22.43px) — x가 카드
-  // 왼쪽(20)보다 왼쪽인 이유는 위 주석 참고.
+  // "+ 10 exp" 배지 (node 514:820, x:-18 y:659.57, Press Start 2P 22.43px) — x가 카드 왼쪽(20)보다
+  // 왼쪽인 이유는 위 JSX 주석 참고. width는 명시하지 않고 내용물에 맞춰 자동으로 감싼다(등장
+  // 애니메이션의 scale 중심을 실제 글자 쪽으로 맞추기 위함 — 최종 위치·자간은 이전과 동일).
   expBadge: {
     position: 'absolute',
     left: -18,
     top: 659.57,
-    width: 371,
     fontSize: 22.43,
     fontFamily: PRESS_START_2P,
     color: CARD_EXP_COLOR,

@@ -48,6 +48,19 @@ export const LEVEL_CHARACTER_IMAGES: Record<number, number> = {
   5: require('@/assets/images/figma-character-level-5.png'),
 };
 
+// 홈 화면(index.tsx) 캐릭터 박스 — 레벨별로 Figma 원본 PNG의 내부 여백이 서로 달라(레벨4용
+// 박스를 5종 모두에 재사용하면 레벨2·3처럼 중앙이 안 맞았다), "홈 화면" 프레임 노드를 레벨별로
+// 그대로 읽어 박스 좌표를 옮겼다: 레벨1(541:2704 "image 73"), 레벨2(541:2629 "image 49"),
+// 레벨3(541:2706 "ghost2-transparent 1"), 레벨4(541:2747 "ghost3-nobg-shadow (1) 1"),
+// 레벨5(541:2787 "image 45"). 402x874 캔버스 기준 절대 좌표.
+export const LEVEL_CHARACTER_HOME_BOX: Record<number, { left: number; top: number; width: number; height: number }> = {
+  1: { left: 32, top: 231, width: 329, height: 220 },
+  2: { left: 89, top: 185, width: 205, height: 292 },
+  3: { left: -8, top: 144, width: 348, height: 348 },
+  4: { left: -14, top: 154, width: 367, height: 296 },
+  5: { left: 30, top: 189, width: 293, height: 270 },
+};
+
 export const HOME_SUMMARY_MOCK: HomeSummaryResponse = {
   greeting: { message: '좋은 아침이에요', emoji: '🌞' },
   skinForecast: {

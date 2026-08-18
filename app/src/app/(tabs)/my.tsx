@@ -340,6 +340,9 @@ export default function MyScreen() {
   // (서버가 타임존을 모르므로 앱의 로컬 "오늘"을 보내야 함, GET /skin/verification/summary와 동일 규칙).
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
+  // 투두 탭에서 exp를 얻고 이 탭으로 돌아왔을 때 레벨/exp가 곧바로 안 바뀌면 사용자가 버그로
+  // 오해할 수 있어, todoChangedSignal이 바뀔 때마다(=투두 체크 토글이 성공할 때마다) 다시
+  // 조회한다 — 홈 화면(index.tsx)도 동일한 패턴을 쓴다.
   useEffect(() => {
     getUserMe(TEMP_USER_ID, getTodayDateString())
       .then(({ data }) => setProfileState({ status: 'available', profile: data }))

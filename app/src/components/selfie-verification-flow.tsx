@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
@@ -20,11 +21,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  getSkinModel,
   getVerificationSummary,
   SelfieVerificationApiError,
   SkinModelUserNotFoundError,
   verifySelfie,
   type SelfieVerificationData,
+  type SkinModelDetail,
   type VerificationSummary,
   type VerificationVerdict,
 } from '@/api/skin';
@@ -157,6 +160,11 @@ const REPORT_NAVY = '#031949';
 const REPORT_DOLPHIN = '#6B6478';
 const REPORT_TARA_BG = '#E1F6EB';
 const REPORT_MEADOW = '#1FAA6A';
+// 적중률 링 "+6%p" 델타 필의 음수(하락) 버전 — Figma엔 상승(+) 케이스만 있어 별도 지정이 없다.
+// 이 파일에서 이미 "실패/경고"에 쓰는 빨강(STREAK_MODAL_DAY_FAILED_BORDER, #F91D33)과 톤을
+// 맞추고, 배경은 REPORT_TARA_BG와 같은 방식(10% 틴트)으로 만들었다.
+const REPORT_DELTA_DOWN_BG = 'rgba(249, 29, 51, 0.1)';
+const REPORT_DELTA_DOWN_TEXT = '#F91D33';
 const REPORT_TABLE_BORDER = 'rgba(112, 115, 124, 0.22)'; // Pale Sky 22%
 const REPORT_TABLE_DIVIDER = 'rgba(112, 115, 124, 0.08)'; // Pale Sky 8%
 const REPORT_HEADER_LABEL = 'rgba(55, 56, 60, 0.28)'; // Tuna 28%
@@ -174,6 +182,9 @@ const REPORT_SPARKLE_BG = 'rgba(0, 102, 255, 0.1)'; // Blue Ribbon 10%
 // 구분할 방법이 없어 동일하게 취급) 이 모달을 띄우고, 항상 "완료 1칸 + 5일 4칸"만 보여준다
 // (streakCount가 2 이상이면 이미 진행 중인 스트릭이므로 이 모달 자체를 띄우지 않는다 — 중간
 // 진행 상태를 보여주는 시안이 아니다).
+// "실패" 상태의 얼굴 에셋(figma-icon-my-streak-face-cry.png)·색상(STREAK_MODAL_DAY_FAILED_BORDER)·
+// 스타일(streakModalDayCircleFailed 등)은 나중에 백엔드가 일자별 이력을 내려주기 시작하면 바로 쓸 수
+// 있게 준비만 해뒀다 — 지금 이 파일 어디서도 조건부로 렌더링하지 않는다(위 이유와 동일).
 const STREAK_MODAL_BACKDROP = 'rgba(255, 255, 255, 0.4)';
 const STREAK_MODAL_TITLE = '#000000';
 const STREAK_MODAL_SUBTITLE = '#525252';
@@ -181,6 +192,9 @@ const STREAK_MODAL_PANEL_BG = 'rgba(209, 234, 255, 0.6)';
 const STREAK_MODAL_DAY_DONE_BG = '#8ECDFF';
 const STREAK_MODAL_DAY_DONE_BORDER = '#058BFC';
 const STREAK_MODAL_DAY_PENDING_BORDER = '#949597';
+// "실패" 상태(node 694:2150/2151, Figma 파일 9c7nKnuMLNcGYC33lmX8Im) 색상 — 위 주석대로 지금은
+// 이 상태를 실제로 띄울 일자별 데이터가 없어 스타일/에셋만 준비해두고 렌더링에는 아직 안 쓴다.
+const STREAK_MODAL_DAY_FAILED_BORDER = '#F91D33';
 const STREAK_MODAL_MARKER = '#008DFF';
 const STREAK_MODAL_PRIMARY_BTN_BG = '#008DFF';
 // 목표 일수(카드 안 "5일" 라벨과 동일한 값) — 진행 중 4칸의 라벨 문구에도 그대로 쓴다.
@@ -702,11 +716,44 @@ function AnalyzingStep({ imageUri, pending }: { imageUri: string | null; pending
   );
 }
 
+// ⚠️ 임시방편(TEMP) — "+N%p" 델타 필의 데이터 소스. 나중에 바뀔 수 있으니 이 블록을 건드릴 일이
+// 생기면 아래 배경부터 읽을 것.
+//
+// 서버(GET /api/v1/skin/verification/summary)는 "지금 이 순간의 누적 적중률"만 줄 뿐, "예전엔
+// 얼마였는지"(추세)는 아예 안 내려준다. 그래서 "지난번에 이 화면을 본 시점의 누적 적중률"을 이
+// 기기(AsyncStorage)에 직접 저장해뒀다가, 다음에 볼 때 지금 값과 비교해서 델타를 만든다.
+// 이 방식의 한계(둘 다 알고 있어야 함):
+// - 계정이 아니라 "이 기기"에 저장된다 — 다른 기기/재설치/앱 데이터 삭제 시 기준값이 사라져서
+//   그 다음 방문에서 델타가 다시 안 뜬다(첫 방문과 동일하게 취급).
+// - 이 화면을 실제로 "본" 시점만 스냅샷으로 남는다 — 백엔드에 과거 데이터를 통째로 시딩해도,
+//   시딩 이후 이 기기로 최초 한 번 열기 전까지는 비교 기준이 없다.
+// 서버가 나중에 "직전 대비 변화량" 또는 기간별 누적 적중률 스냅샷을 내려주기 시작하면, 이 로컬
+// 저장 로직은 통째로 걷어내고 서버 값을 쓰는 게 맞다.
+const HIT_RATE_SNAPSHOT_STORAGE_KEY = `skin:accuracy-hit-rate-snapshot:${TEMP_USER_ID}`;
+
+// 저장된 이전 누적 적중률을 읽어 델타를 계산하고, 그 자리에 지금 값을 다시 저장해 다음 방문의
+// 기준으로 삼는다. 저장된 값이 없으면(최초 방문이거나 기기가 바뀌었으면) null을 돌려줘서
+// 호출부가 델타 필 자체를 숨기게 한다 — "0%p"로 보여주면 마치 변화가 없었다는 뜻으로 오해된다.
+// 스토리지 읽기/쓰기가 실패해도(권한 문제 등) 조용히 null로 폴백한다 — 델타는 부가 정보라
+// 이것 때문에 리포트 화면 전체가 에러로 빠지면 안 된다.
+async function readAndUpdateHitRateSnapshot(currentHitRate: number): Promise<number | null> {
+  try {
+    const stored = await AsyncStorage.getItem(HIT_RATE_SNAPSHOT_STORAGE_KEY);
+    await AsyncStorage.setItem(HIT_RATE_SNAPSHOT_STORAGE_KEY, String(currentHitRate));
+    if (stored === null) return null;
+    const previousHitRate = Number(stored);
+    return Number.isNaN(previousHitRate) ? null : currentHitRate - previousHitRate;
+  } catch (error) {
+    console.error('❌ 적중률 스냅샷 읽기/쓰기 실패:', error);
+    return null;
+  }
+}
+
 type AccuracyBannerState =
   | { kind: 'loading' }
   | { kind: 'error' }
   | { kind: 'no_verification'; message: string | null }
-  | { kind: 'available'; baseDate: string; summary: VerificationSummary };
+  | { kind: 'available'; baseDate: string; summary: VerificationSummary; hitRateDelta: number | null };
 
 // "84% 예보 적중률" 링 + "N일 연속 검증 완료!" 스트릭 배지 (node 618:1656 리디자인 — 예전
 // node 243:1507 대비 스트릭 배지가 StreakChallengeModal과 똑같은 모양(얼굴 아이콘 원형 배지 +
@@ -727,12 +774,13 @@ function AccuracyCard() {
     const baseDate = getTodayDateString();
 
     getVerificationSummary(TEMP_USER_ID, baseDate)
-      .then(({ data }) => {
-        setState(
-          data.status === 'AVAILABLE'
-            ? { kind: 'available', baseDate: data.baseDate, summary: data.summary }
-            : { kind: 'no_verification', message: data.message }
-        );
+      .then(async ({ data }) => {
+        if (data.status !== 'AVAILABLE') {
+          setState({ kind: 'no_verification', message: data.message });
+          return;
+        }
+        const hitRateDelta = await readAndUpdateHitRateSnapshot(data.summary.hitRate);
+        setState({ kind: 'available', baseDate: data.baseDate, summary: data.summary, hitRateDelta });
       })
       .catch((error) => {
         if (error instanceof SkinModelUserNotFoundError) {
@@ -771,9 +819,16 @@ function AccuracyCard() {
     );
   }
 
-  const { summary, baseDate } = state;
+  const { summary, baseDate, hitRateDelta } = state;
   const todayInStreak = summary.streakCount > 0 && summary.latest.baseDate === baseDate;
   const totalBadges = Math.min(summary.streakCount, STREAK_BADGE_MAX);
+  // "+6%p" 델타 필(node 618:1737) — hitRateDelta는 위 readAndUpdateHitRateSnapshot(임시방편, 그
+  // 함수 선언부 주석 참고)이 계산한 "지난 방문 대비 누적 적중률 변화"다. 저장된 기준값이 없으면
+  // (최초 방문 등) null이 오는데, 이땐 "0%p"로 얼버무리지 않고 필 자체를 렌더링하지 않는다.
+  const hitRateDeltaView =
+    hitRateDelta === null
+      ? null
+      : { label: `${hitRateDelta > 0 ? '+' : ''}${hitRateDelta}%p`, isDown: hitRateDelta < 0 };
   const streakTitle =
     summary.streakCount === 0
       ? '오늘부터 연속 검증을 시작해보세요'
@@ -796,10 +851,14 @@ function AccuracyCard() {
               <Text style={styles.accuracyRateText}>{summary.hitRate}</Text>
               <Text style={styles.accuracyRatePercent}>%</Text>
             </View>
-            <Text style={styles.accuracyRateLabel}>누적 예보 적중률</Text>
-            <View style={styles.accuracyDeltaPill}>
-              <Text style={styles.accuracyDeltaText}>최근 검증 {summary.latest.hitRate}%</Text>
-            </View>
+            <Text style={styles.accuracyRateLabel}>예보 적중률</Text>
+            {hitRateDeltaView !== null && (
+              <View style={[styles.accuracyDeltaPill, hitRateDeltaView.isDown && styles.accuracyDeltaPillDown]}>
+                <Text style={[styles.accuracyDeltaText, hitRateDeltaView.isDown && styles.accuracyDeltaTextDown]}>
+                  {hitRateDeltaView.label}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -831,6 +890,36 @@ function AccuracyCard() {
         </View>
       </View>
     </View>
+  );
+}
+
+// "어제와 오늘 비교 데이터를 가시적으로 적어주기?" (node 246:569) 자리를 채우는 두 번째 줄.
+// insightBody(위 data.model.message)는 "이번 검증 한 번"으로 무엇이 바뀌었는지만 말해줘서, 마이
+// 탭 "내 모델"(my-model.tsx)에서 보여주는 "일반 대비 N.N배" · "누적 검증 N회"처럼 지금까지
+// 쌓인 전체 진행 상황은 안 보였다 — 같은 화면(REP-12, GET /api/v1/skin/model)을 그대로 재사용해
+// headline(가장 크게 벌어진 지표를 골라 서버가 만든 "일반 대비 배" 문장)과 verificationCount를
+// 붙여서 보여준다. 검증 직후 이 화면에 오는 것이므로 방금 반영된 값까지 포함된 최신 상태다.
+// 로딩/에러/미검증 상태는 이 줄이 부가 정보일 뿐이라 조용히 렌더링을 생략한다(에러 문구로
+// 리포트 화면을 어수선하게 만들지 않는다) — AccuracyCard처럼 화면을 대체하지 않는다.
+function ModelProgressLine() {
+  const [model, setModel] = useState<SkinModelDetail | null>(null);
+
+  useEffect(() => {
+    getSkinModel(TEMP_USER_ID)
+      .then(({ data }) => {
+        if (data.status === 'AVAILABLE') setModel(data.model);
+      })
+      .catch((error) => {
+        console.error('❌ 내 모델 진행 정보 조회 실패(인사이트 보조 문구):', error);
+      });
+  }, []);
+
+  if (!model) return null;
+
+  return (
+    <Text style={styles.insightProgressLine}>
+      누적 검증 {model.verificationCount}회 · {model.headline}
+    </Text>
   );
 }
 
@@ -933,6 +1022,23 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
 // - dayInCycle 2~5: "{dayInCycle}일 연속 검증에 성공했어요!"
 function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number; onDismiss: () => void }) {
   const [fontsLoaded] = useFonts(STREAK_MODAL_FONTS);
+
+  // node 694:2080/2081("셀피 리포트 팝업", Figma 파일 9c7nKnuMLNcGYC33lmX8Im) — 이 팝업이 뜬 동안
+  // 배경(리포트 화면)에 흰 wash(694:2080, opacity 0.4)와 카드 주변에 번지는 파란 글로우(694:2081,
+  // Gaussian blur 50)를 겹쳐 "지금 이 팝업에 집중하라"는 느낌을 준다. 등장할 때만 살짝
+  // 페이드인하고, 사라질 때는 별도 타이머 없이 팝업 자체(이 컴포넌트)가 언마운트되는 순간
+  // 함께 사라진다 — "피부 예보 확인하기"를 눌러 onDismiss가 호출되면 showStreakModal이 false가
+  // 되어 이 컴포넌트 전체(카드+wash+글로우)가 그대로 같이 사라지므로 별도 처리가 필요 없다.
+  const [washAnim] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    Animated.timing(washAnim, {
+      toValue: 1,
+      duration: 350,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [washAnim]);
+
   // 폰트 로드 전엔 아예 렌더하지 않는다 — 시스템 폰트로 잠깐 렌더돼 타이틀이 줄바꿈되는 걸 막는다.
   if (!fontsLoaded) return null;
 
@@ -944,6 +1050,19 @@ function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number;
 
   return (
     <Pressable style={styles.streakModalBackdrop} onPress={onDismiss}>
+      {/* wash + 글로우는 카드보다 먼저 그려야 카드 뒤에서 번지는 것처럼 보인다. pointerEvents="none"
+          이라 탭이 그대로 아래 backdrop Pressable로 전달돼 "바깥을 탭하면 닫힘" 동작을 안 막는다. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.streakModalWash, { opacity: Animated.multiply(washAnim, 0.4) }]}
+      />
+      <Animated.View pointerEvents="none" style={[styles.streakModalGlow, { opacity: washAnim }]}>
+        <Image
+          source={require('@/assets/images/figma-icon-streak-modal-glow.png')}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+        />
+      </Animated.View>
       {/* 카드 자체는 탭해도 안 닫히도록 backdrop과 별개 Pressable로 감싼다(이벤트 버블 차단). */}
       <Pressable style={styles.streakModalCard} onPress={() => {}}>
         <Text style={styles.streakModalTitle}>{title}</Text>
@@ -971,17 +1090,20 @@ function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number;
               <Text style={[styles.streakModalDayLabel, styles.streakModalDayLabelDone]}>완료</Text>
             </View>
           ))}
+          {/* 목표 배지 라벨은 "몇 번째 날인지" 표시(node 694:2163/2164 참고, "4일"/"5일"처럼 칸마다
+              다르다) — dayInCycle이 3이고 pendingCount가 2면 index 0→"4일", index 1→"5일"이 된다.
+              STREAK_CHALLENGE_GOAL_DAYS를 그대로 찍으면 모든 칸이 "5일"로 똑같이 나오는 버그였다. */}
           {Array.from({ length: pendingCount }).map((_, index) => (
             <View key={`pending-${index}`} style={styles.streakModalDayItem}>
               <View style={styles.streakModalMarkerSlot} />
               <View style={[styles.streakModalDayCircle, styles.streakModalDayCirclePending]}>
                 <Image
-                  source={require('@/assets/images/figma-icon-my-streak-face.png')}
+                  source={require('@/assets/images/figma-icon-my-streak-face-neutral.png')}
                   style={styles.streakModalDayFacePending}
                   contentFit="contain"
                 />
               </View>
-              <Text style={styles.streakModalDayLabel}>{STREAK_CHALLENGE_GOAL_DAYS}일</Text>
+              <Text style={styles.streakModalDayLabel}>{dayInCycle + index + 1}일</Text>
             </View>
           ))}
         </View>
@@ -1128,6 +1250,7 @@ function ReportStep({
         </View>
         <Text style={styles.insightTitle}>내 모델이 한 걸음 정밀해졌어요</Text>
         <Text style={styles.insightBody}>{data.model.message}</Text>
+        <ModelProgressLine />
       </ScrollView>
 
       <View style={styles.reportFooter}>
@@ -1932,6 +2055,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
   },
+  // 흰 wash(node 694:2080, x:-18 y:-102 w:431 h:1016, fill:#FFFFFF opacity:0.4) — 캔버스(402x874)
+  // 경계를 살짝 넘어서까지 덮는다. backdrop(Pressable) 기준 절대 좌표.
+  streakModalWash: {
+    position: 'absolute',
+    left: -18,
+    top: -102,
+    width: 431,
+    height: 1016,
+    backgroundColor: '#FFFFFF',
+  },
+  // 파란 글로우(node 694:2081, 레이아웃 박스 x:23 y:162 w:349 h:456 radius:35 + Gaussian blur 50,
+  // 카드(top:204 h:346, 중심 y=377) 주변에 번지도록 배치) — Figma가 내보낸 PNG는 blur 여백(각 변
+  // 100px)까지 포함해 549x656이라, 레이아웃 박스와 같은 중심점을 갖도록 좌표를 역산했다.
+  streakModalGlow: {
+    position: 'absolute',
+    left: -76.5,
+    top: 62,
+    width: 549,
+    height: 656,
+  },
   // 카드(node 618:1938/1939, w:332 h:346, radius:35.8) — Figma는 배경에 blur(5.11px) 프로스티드
   // 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로 근사했다
   // (예전 시안(487:543)과 동일한 근사 방식). 가로는 (402-332)/2=35로 가운데 정렬, 세로는 예전
@@ -2035,6 +2178,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: STREAK_MODAL_DAY_PENDING_BORDER,
   },
+  // "실패" 상태(node 694:2150/2151) — 아직 렌더링에 쓰이진 않지만(위 STREAK_MODAL_DAY_FAILED_BORDER
+  // 주석 참고) 데이터가 생기면 바로 붙일 수 있게 준비해둔다.
+  streakModalDayCircleFailed: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: STREAK_MODAL_DAY_FAILED_BORDER,
+  },
   // 완료 배지 아이콘(node 618:1959, 39.6x33.66)이 목표 배지 아이콘(node 618:1947, 34.85x28.53)보다
   // 살짝 크다 — Figma 원본 그대로 두 크기를 구분한다.
   streakModalDayFaceDone: {
@@ -2045,6 +2195,11 @@ const styles = StyleSheet.create({
     width: 35,
     height: 28.5,
   },
+  // 실패 배지 아이콘(node 694:2152, 38.73x31.98)
+  streakModalDayFaceFailed: {
+    width: 39,
+    height: 32,
+  },
   streakModalDayLabel: {
     fontSize: 13,
     fontFamily: PRETENDARD_SEMIBOLD,
@@ -2052,6 +2207,9 @@ const styles = StyleSheet.create({
   },
   streakModalDayLabelDone: {
     color: STREAK_MODAL_DAY_DONE_BORDER,
+  },
+  streakModalDayLabelFailed: {
+    color: STREAK_MODAL_DAY_FAILED_BORDER,
   },
   // "피부 예보 확인하기" 버튼 (node 618:1943/1944, x:21 y:261 w:283 h:55, radius:26)
   streakModalPrimaryButton: {
@@ -2233,11 +2391,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: REPORT_TARA_BG,
   },
+  // 델타가 음수(최근 검증이 누적 평균보다 낮음)일 때 — Figma엔 상승 케이스만 있어 위 REPORT_TARA_BG
+  // 톤을 참고해 만든 빨강 버전.
+  accuracyDeltaPillDown: {
+    backgroundColor: REPORT_DELTA_DOWN_BG,
+  },
   // "+6%p" 텍스트 (node 618:1738, Inter Bold 10.5px, Mountain Meadow)
   accuracyDeltaText: {
     fontSize: 10.5,
     fontWeight: '700',
     color: REPORT_MEADOW,
+  },
+  accuracyDeltaTextDown: {
+    color: REPORT_DELTA_DOWN_TEXT,
   },
   // "div"(node 618:1520류, gap:10)
   accuracyStreakColumn: {
@@ -2433,6 +2599,15 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 20,
     color: REPORT_VALUE_MUTED,
+  },
+  // "누적 검증 N회 · {headline}" (ModelProgressLine) — Figma엔 없는 보조 줄이라 insightBody 바로
+  // 아래 여백만 조금 주고 같은 톤으로 맞췄다.
+  insightProgressLine: {
+    marginTop: 4,
+    fontSize: 12.5,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: REPORT_BLUE,
   },
   reportFooter: {
     paddingTop: Spacing.two,

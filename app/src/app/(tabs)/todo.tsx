@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { signalTodoChanged } from '@/hooks/use-todo-changed-signal';
 
 // AvoidDetailModal 전용 Pretendard 폰트(4종) — 온보딩(onboarding-flow.tsx)과 동일한 로컬 번들링 패턴.
 const PRETENDARD_LIGHT = 'Pretendard-Light';
@@ -43,9 +44,9 @@ const AVOID_DETAIL_FONTS = {
 // 응답 대기 중 어색하지 않도록 낙관적 업데이트(먼저 화면부터 바꾸고, 실패하면 되돌림)를 쓴다.
 // exp가 실제로 움직였을 때(gained !== 0, 플러스든 마이너스든)만 ExpGainPopup을 띄운다 — 이
 // 팝업은 HOME-04(출석 체크인)와 완전히 같은 exp 모양(AttendanceExpInfo)을 공유하는 컴포넌트다.
-// 다른 화면과 공유하는 전역 store(use-checklist-store.ts)는 여전히 구 mock(TODO_SUMMARY_MOCK)
-// 기반이라 여기서는 쓰지 않는다 — 실 API의 id(숫자)와 mock의 id(문자열 슬러그)가 서로 달라
-// 지금 연결하면 MY 탭의 "오늘의 투두 n/5"가 오히려 깨진다(이 화면 자체 상태로만 관리).
+// 이 화면의 checklistItems 자체는 여전히 이 화면 상태로만 관리한다(HOME/MY와 형태가 다른
+// 화면 전용 파생값이 많아 그대로 공유하기엔 안 맞음). 다만 토글이 성공하면 signalTodoChanged()로
+// HOME(레벨/exp)과 MY(exp 바·오늘의 투두 n/5)에 "다시 조회해라"만 알린다(use-todo-changed-signal.ts).
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
 // transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
@@ -246,6 +247,9 @@ export default function TodoScreen() {
       const { data } = await updateTodoStatus(item.id, nextStatus, TEMP_USER_ID);
       // 서버가 돌려준 진짜 status로 다시 덮어쓴다 — 낙관적 값과 다를 일은 거의 없지만 서버가 최종 진실.
       setChecklistItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status: data.status } : it)));
+      // HOME(레벨/exp)과 MY(exp 바·오늘의 투두 n/5)에 이 화면의 변경을 알린다 — 두 화면 다
+      // 마운트 시 한 번만 조회해서 그대로 두면 탭을 옮겨도 갱신되지 않는다(use-todo-changed-signal.ts).
+      signalTodoChanged();
       // exp는 상태가 "실제로" 바뀔 때만 움직인다 — gained가 0(같은 상태 재요청 등)이면 아무것도 안 띄운다.
       // gained가 음수(되돌리기로 인한 회수)여도 정상 케이스이므로 부호와 무관하게 0이 아니면 띄운다.
       if (data.exp.gained !== 0) {

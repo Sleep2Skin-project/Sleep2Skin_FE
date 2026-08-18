@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
-import { getDailyTimeline, type DailyTimelineSegment, type SleepTimelineStage } from '@/api/report';
+import { getDailyReport, getDailyTimeline, type DailyTimelineSegment, type SleepTimelineStage } from '@/api/report';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TEMP_USER_ID } from '@/constants/config';
@@ -18,7 +18,12 @@ import { formatTimeKST } from '@/utils/format-time';
 // 수면 총 시간" 같은 합계를 만들면 안 된다(그 합계는 이미 GET /report/daily가 계산해서 준다).
 // 그래서 아래 legend는 값(분)을 보여주지 않고 색상-라벨 범례로만 남긴다 — 예전 mock처럼 스테이지별
 // 총 분(minutes)을 표시하지 않는다.
-const AVG_HEART_RATE = '62 BPM AVG'; // 심박수는 이 API 범위 밖 — 아직 별도 목업
+//
+// 심박수는 이 화면이 쓰는 GET /report/daily/timeline엔 없지만, GET /report/daily(daily-report.tsx가
+// 이미 같은 필드를 쓴다)의 sleepSummary.summary.restingHeartRate에 실측값이 내려온다 — 예전엔
+// "62 BPM AVG"를 모든 사용자에게 고정으로 보여줬는데(진짜 데이터처럼 보여 오해 소지가 있었음),
+// 이 화면도 그 API를 한 번 더 호출해 실제 안정시 심박을 가져온다. 그 밤에 워치 미착용 등으로
+// 결측이면(null) "측정 불가"로 얼버무리지 않고 이 줄 자체를 렌더링하지 않는다.
 
 const STAGE_INFO: Record<SleepTimelineStage, { label: string; color: string }> = {
   DEEP: { label: 'Deep', color: '#1C3F94' },
@@ -60,6 +65,10 @@ type SleepDetailModalProps = {
 export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
   const theme = useTheme();
   const [timelineState, setTimelineState] = useState<TimelineState>({ status: 'loading' });
+  // GET /report/daily/timeline엔 심박수가 없어 GET /report/daily를 한 번 더 불러 안정시 심박만
+  // 뽑아 쓴다(위 AVG_HEART_RATE 자리 주석 참고). 로딩/에러/결측이면 조용히 null로 남아 footerRow
+  // 자체를 렌더링하지 않는다 — 다른 화면들의 "null이면 그 줄을 아예 안 그린다" 규칙과 동일하다.
+  const [restingHeartRate, setRestingHeartRate] = useState<number | null>(null);
 
   useEffect(() => {
     getDailyTimeline(getTodayDateString(), TEMP_USER_ID)
@@ -76,6 +85,16 @@ export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
         );
       })
       .catch(() => setTimelineState({ status: 'error' }));
+
+    getDailyReport(getTodayDateString(), TEMP_USER_ID)
+      .then(({ data }) => {
+        if (data.sleepSummary.status === 'AVAILABLE') {
+          setRestingHeartRate(data.sleepSummary.summary.restingHeartRate);
+        }
+      })
+      .catch((error) => {
+        console.error('❌ 안정시 심박 조회 실패:', error);
+      });
   }, []);
 
   return (
@@ -149,11 +168,13 @@ export function SleepDetailModal({ visible, onClose }: SleepDetailModalProps) {
               </>
             )}
 
-            <View style={[styles.footerRow, { borderTopColor: theme.backgroundSelected }]}>
-              <ThemedText type="small" themeColor="textSecondary">
-                ♥ {AVG_HEART_RATE}
-              </ThemedText>
-            </View>
+            {restingHeartRate !== null && (
+              <View style={[styles.footerRow, { borderTopColor: theme.backgroundSelected }]}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  ♥ {restingHeartRate} BPM
+                </ThemedText>
+              </View>
+            )}
           </ThemedView>
         </Pressable>
       </Pressable>

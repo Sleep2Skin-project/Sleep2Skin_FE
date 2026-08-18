@@ -64,6 +64,16 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+const WEEKDAY_LABELS_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+// "2026년 8월 15일 토요일" (node 541:3016) — Figma 목업 문구가 그대로 하드코딩돼 있어서 날짜가
+// 절대 안 바뀌는 버그였다(홈 화면 index.tsx의 formatTodayHeading과 동일한 원인으로 이미 한 번
+// 고쳤던 것과 같은 패턴). 로컬 Date에서 직접 계산해 오늘 날짜가 그대로 반영되게 한다.
+function formatTodayHeadingFull(): string {
+  const now = new Date();
+  return `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAY_LABELS_KO[now.getDay()]}요일`;
+}
+
 // MY-02(GET /api/v1/users/me/data-status) — baseDate가 없는 API다(날짜별로 달라지는 값이 응답에
 // 없음). NO_SLEEP_DATA도 에러가 아닌 정상 빈 상태라 loading/error/no_data/available 네 상태로 관리한다.
 type DataStatusState =
@@ -122,6 +132,17 @@ const WEEK_STREAK_COLORS: Record<WeekStreakState, { ring: string; circleBg: stri
   done: { ring: '#058BFC', circleBg: '#8ECDFF' },
   missed: { ring: '#F91D33', circleBg: '#FFFFFF' },
   upcoming: { ring: '#949597', circleBg: '#FFFFFF' },
+};
+
+// Figma "Ui (복사)" 파일, node-id=694-2660 하단 요일 배지 스프라이트 — done/missed/upcoming 세
+// 배지가 모두 같은 원본 이미지(imageRef 05d22fc4...)에서 서로 다른 cropTransform으로 잘라낸
+// 표정(웃음/울음/무표정)이다. 예전엔 이 세 표정 에셋이 이미 assets에 준비돼 있었는데도 실제
+// 렌더링에서는 상태와 무관하게 항상 웃는 얼굴(-face.png) 하나만 썼다 — 여기서 상태별로 바로
+// 연결한다.
+const WEEK_STREAK_FACE_IMAGES: Record<WeekStreakState, number> = {
+  done: require('@/assets/images/figma-icon-my-streak-face.png'),
+  missed: require('@/assets/images/figma-icon-my-streak-face-cry.png'),
+  upcoming: require('@/assets/images/figma-icon-my-streak-face-neutral.png'),
 };
 
 const WEEKDAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'] as const;
@@ -462,19 +483,10 @@ export default function MyScreen() {
               주석 참고. */}
           <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
 
-          {/* 날짜 내비게이션 (node 541:3016/3017/3019) — 실제 날짜별 데이터가 없어 화살표는
-              장식용이고 탭해도 아무 동작이 없다(다른 화면들의 정적 목업과 동일한 취급). */}
-          <Image
-            source={require('@/assets/images/figma-icon-my-date-chevron-left.svg')}
-            style={[styles.dateChevron, styles.dateChevronLeft]}
-            contentFit="contain"
-          />
-          <ThemedText style={styles.dateText}>2026년 8월 15일 토요일</ThemedText>
-          <Image
-            source={require('@/assets/images/figma-icon-my-date-chevron-right.svg')}
-            style={[styles.dateChevron, styles.dateChevronRight]}
-            contentFit="contain"
-          />
+          {/* 날짜 표시 (node 541:3017) — 좌우 화살표(node 541:3016/3019)는 탭해도 아무 동작이
+              없는 장식용이라 제거했다(실제 날짜별로 넘겨볼 데이터 자체가 없음). 오늘 날짜는
+              하드코딩 문자열이 아니라 로컬 Date에서 직접 계산한다(위 formatTodayHeadingFull 참고). */}
+          <ThemedText style={styles.dateText}>{formatTodayHeadingFull()}</ThemedText>
 
           {/* 이번 주 출석 스트릭 (node 541:2985, HOME-04 weekDays 실연동 — 위 buildWeekStreakDays 주석 참고) */}
           <View style={styles.weekStreakRow}>
@@ -487,7 +499,7 @@ export default function MyScreen() {
                   </View>
                   <View style={[styles.weekStreakCircle, { backgroundColor: colors.circleBg, borderColor: colors.ring }]}>
                     <Image
-                      source={require('@/assets/images/figma-icon-my-streak-face.png')}
+                      source={WEEK_STREAK_FACE_IMAGES[day.state]}
                       style={styles.weekStreakFace}
                       contentFit="contain"
                     />
@@ -635,8 +647,8 @@ const styles = StyleSheet.create({
     color: 'rgba(3, 25, 73, 0.55)',
   },
   // 캐릭터 (node 551:1316) — 그림자(node 541:2984)를 지운 뒤, "검증 N회 · 연속 N일" 텍스트
-  // 블록(trustLevelText, top:109 + lineHeight:14 = bottom 123)과 날짜 표시 행(dateChevron,
-  // top:395) 사이 빈 공간의 정중앙(123과 395의 중점 = 259)에 오도록 top을 다시 잡았다
+  // 블록(trustLevelText, top:109 + lineHeight:14 = bottom 123)과 날짜 표시 행(dateText,
+  // top:398) 사이 빈 공간의 정중앙(123과 395의 중점 = 259)에 오도록 top을 다시 잡았다
   // (top = 259 - height/2). 레벨별 이미지의 가로세로 비율이 서로 달라(1·2는 눕고 넓은 포즈,
   // 3은 서 있는 세로 포즈 등) contentFit="contain"이 안쪽에서 알아서 맞추므로, 박스 자체는
   // width만 넉넉히(캔버스 402 기준 좌우 22px 여백, weekStreakRow와 동일한 여백 관례) 잡고
@@ -648,22 +660,8 @@ const styles = StyleSheet.create({
     width: 358,
     height: 250,
   },
-  // 날짜 화살표 (node 541:3017/3019, w:33 h:33)
-  dateChevron: {
-    position: 'absolute',
-    top: 395,
-    width: 33,
-    height: 33,
-  },
-  dateChevronLeft: {
-    left: 57,
-  },
-  dateChevronRight: {
-    left: 331,
-  },
-  // "2026년 8월 15일 토요일" (node 541:3016, x:98.69 y:396.74 w:228) — Figma는 22.6px를 쓰지만
-  // 그대로 옮기면 폭 228px에 두 줄로 넘어간다. 화살표 사이 여백(x:90~331, 약 240px)에 한 줄로
-  // 들어가도록 줄였다.
+  // 오늘 날짜 (node 541:3016, x:98.69 y:396.74 w:228) — Figma는 22.6px를 쓰지만 그대로 옮기면
+  // 폭 228px에 두 줄로 넘어간다. 캔버스(402) 정중앙에 한 줄로 들어가도록 폭을 240px로 줄였다.
   dateText: {
     position: 'absolute',
     left: 81,

@@ -26,7 +26,20 @@ import { formatTimeKST } from '@/utils/format-time';
 // 연동한다. 두 API는 완전히 독립적이라(같은 baseDate라도 서로 다른 status를 가질 수 있음) 아래
 // sleepSummaryState/skinForecastState/sleepWindowState 세 상태를 각자 따로 관리한다 — 한쪽이
 // NO_SLEEP_DATA라고 다른 쪽까지 숨기지 않는다.
-const DATE_RANGE_LABEL = '최근 7일 · 7/25 – 7/31';
+/**
+ * baseDate(YYYY-MM-DD) 기준 "최근 7일 · M/D – M/D" 라벨. 예전엔 '최근 7일 · 7/25 – 7/31'
+ * 문자열이 그대로 하드코딩돼 있어서 날짜가 절대 안 바뀌는 버그였다(index.tsx/my.tsx에서 고쳤던
+ * 것과 동일 패턴). 이 API(GET /report/daily)는 하루치 데이터만 주고 기간 정보를 안 내려주므로
+ * (주간/월간 리포트처럼 API의 periodStart/periodEnd를 쓸 수 없다), baseDate에서 로컬로 6일을
+ * 빼 계산한다(주간 리포트와 동일하게 "최근 7일 = baseDate-6 ~ baseDate").
+ */
+function formatRecentWeekRangeLabel(baseDate: string): string {
+  const end = new Date(`${baseDate}T00:00:00`);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+  return `최근 7일 · ${fmt(start)} – ${fmt(end)}`;
+}
 
 /** "OOO님의 어제" — nickname은 report.tsx가 GET /api/v1/users/me로 한 번만 불러 내려준다. 로딩/에러
  * 중(null)엔 이름 없이도 자연스러운 "나의 어제"로 대체한다. */
@@ -381,7 +394,7 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
         />
       )}
 
-      <ThemedText style={styles.dateRange}>{DATE_RANGE_LABEL}</ThemedText>
+      <ThemedText style={styles.dateRange}>{formatRecentWeekRangeLabel(getTodayDateString())}</ThemedText>
       <ThemedText style={styles.heading}>{buildUserHeading(nickname)}</ThemedText>
 
       <View style={styles.sleepCard}>

@@ -422,8 +422,6 @@ export default function HomeScreen() {
                 contentFit="contain"
               />
             </Pressable>
-
-            <View style={styles.divider} />
           </View>
         </View>
       </SafeAreaView>
@@ -718,15 +716,5 @@ const styles = StyleSheet.create({
   chevronImage: {
     width: '100%',
     height: '100%',
-  },
-
-  // Line 1 (node 187:2674, x:-12 y:800 w:440 h:0, stroke #C7C7C7)
-  divider: {
-    position: 'absolute',
-    left: -12,
-    top: 800,
-    width: 440,
-    height: 1,
-    backgroundColor: '#C7C7C7',
   },
 });

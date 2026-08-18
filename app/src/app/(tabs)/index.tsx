@@ -1,8 +1,8 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,7 +22,7 @@ import { SleepDetailModal } from '@/components/sleep-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { HOME_SUMMARY_MOCK, LEVEL_CHARACTER_IMAGES } from '@/constants/mockData';
+import { HOME_SUMMARY_MOCK, LEVEL_CHARACTER_HOME_BOX, LEVEL_CHARACTER_IMAGES } from '@/constants/mockData';
 import { consumeAppStartForecast } from '@/hooks/use-app-start-forecast';
 import { useDesignScale } from '@/hooks/use-design-scale';
 
@@ -210,15 +210,22 @@ export default function HomeScreen() {
   // 항상 일치해야 함).
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
+  // 투두 탭 등 다른 화면에서 exp를 얻고 홈으로 돌아왔을 때 레벨/exp가 곧바로 안 바뀌면 사용자가
+  // 버그로 오해할 수 있어, 마운트 시 한 번뿐인 아래 useEffect와 별개로 이 탭이 포커스될 때마다
+  // (처음 마운트될 때 포함) 매번 다시 조회한다 — 마이 탭(my.tsx)도 동일한 패턴을 쓴다.
+  useFocusEffect(
+    useCallback(() => {
+      getUserMe(TEMP_USER_ID, getTodayDateString())
+        .then(({ data }) => setProfileState({ status: 'available', profile: data }))
+        .catch((error) => {
+          console.error('❌ 프로필 조회 실패:', error);
+          setProfileState({ status: 'error' });
+        });
+    }, [])
+  );
+
   useEffect(() => {
     const baseDate = getTodayDateString();
-
-    getUserMe(TEMP_USER_ID, baseDate)
-      .then(({ data }) => setProfileState({ status: 'available', profile: data }))
-      .catch((error) => {
-        console.error('❌ 프로필 조회 실패:', error);
-        setProfileState({ status: 'error' });
-      });
 
     // 앱 시작 시 _layout.tsx가 POST /sleep/sessions로 이미 오늘 예보를 받아왔다면 그 값을
     // 그대로 쓴다 — GET /skin/forecast는 "이미 받은 예보를 날짜 바꿔 다시 볼 때"만 필요하다는
@@ -297,6 +304,7 @@ export default function HomeScreen() {
   const tooltipContent = buildTooltipContent(interpretationState);
   const expDisplay = getLevelExpDisplay(profile);
   const characterImage = LEVEL_CHARACTER_IMAGES[level] ?? LEVEL_CHARACTER_IMAGES[1];
+  const characterBox = LEVEL_CHARACTER_HOME_BOX[level] ?? LEVEL_CHARACTER_HOME_BOX[1];
 
   return (
     <>
@@ -329,8 +337,14 @@ export default function HomeScreen() {
               </ThemedText>
             )}
 
-            {/* 캐릭터 — MY-01의 level로 5종 이미지 중 하나를 고른다(LEVEL_CHARACTER_IMAGES). */}
-            <Image source={characterImage} style={styles.characterImage} contentFit="contain" />
+            {/* 캐릭터 — MY-01의 level로 5종 이미지 중 하나를 고른다(LEVEL_CHARACTER_IMAGES). 박스도
+                레벨별로 다르다(LEVEL_CHARACTER_HOME_BOX) — 레벨마다 Figma 원본 PNG의 내부 여백이
+                달라 5종 공용 박스를 쓰면 레벨2·3처럼 중앙이 안 맞았다. */}
+            <Image
+              source={characterImage}
+              style={[styles.characterImage, characterBox]}
+              contentFit="cover"
+            />
 
             {/* 수면 요약 툴팁 카드 */}
             <Pressable onPress={() => router.push('/report')} style={({ pressed }) => [pressed && styles.pressed]}>
@@ -509,13 +523,9 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
   },
 
-  // ghost3-nobg-shadow (1) 1 (node 187:2678, x:-17 y:162 w:367 h:296)
+  // 레벨별 박스는 LEVEL_CHARACTER_HOME_BOX(mockData.ts)에서 인라인으로 얹는다.
   characterImage: {
     position: 'absolute',
-    left: -17,
-    top: 162,
-    width: 367,
-    height: 296,
   },
 
   // "div" 수면 요약 툴팁 카드 (node 187:2679, x:181 y:158 w:199 h:78, radius:25.3) — 목업 시절엔

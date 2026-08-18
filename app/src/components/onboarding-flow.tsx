@@ -46,7 +46,6 @@ const HEALTH_TEXT_HINT = '#9E9E9E';
 const PRIVACY_TEXT_TITLE = '#000000';
 const PRIVACY_TEXT_MUTED = '#868686';
 const PRIVACY_TEXT_DESC = '#858585';
-const PRIVACY_LINK_COLOR = '#4B7CEA';
 
 // ONB-01/02/03/04 전용 Pretendard 폰트(라이트~볼드 5종). Figma 시안 텍스트가 전부 이 폰트
 // 기준으로 크기·박스가 잡혀 있어, 시스템 폴백 폰트로 렌더하면 글자 폭이 달라져 줄바꿈/잘림이
@@ -124,11 +123,8 @@ function ValueStep({ onNext }: { onNext: () => void }) {
         <Text style={styles.valuePrimaryButtonText}>시작하기</Text>
       </Pressable>
 
-      {/* "이미 계정이 있어요" (node 256:565, x:125 y:781 w:157 h:17) */}
-      {/* TODO: 기존 계정 로그인 플로우가 생기면 아래 버튼에 연결한다. */}
-      <Pressable hitSlop={8} style={({ pressed }) => [styles.valueSecondaryButton, pressed && styles.pressed]}>
-        <Text style={styles.valueSecondaryButtonText}>이미 계정이 있어요</Text>
-      </Pressable>
+      {/* "「오늘부터 시작되는 작은 변화」" (node 541:2913, x:96 y:776 w:211 h:17) — 프레임 폭 기준 중앙 정렬 */}
+      <Text style={styles.valueFooterCaption}>「오늘부터 시작되는 작은 변화」</Text>
     </View>
   );
 }
@@ -215,22 +211,6 @@ function PrivacyStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
       <Text style={styles.privacyPointDesc3}>
         분석 후 원본 이미지는 바로 삭제돼요.
       </Text>
-
-      {/* 푸터 (group node 464:898, 절대 x:87 y:782 w:263 h:36) — Figma 원본은 텍스트(node 464:887)
-          맨 앞에 아이콘 자리만큼 공백 3칸을 넣어두고, "image 61"(node 464:896, rel(10,0)→박스
-          기준 x:10 y:0 w:17 h:16) 아이콘을 그 공백 위에 겹쳐 그린 구조다. flexbox gap/margin으로
-          근사하지 않고 이 구조를 그대로 재현해 아이콘과 글자가 항상 정확히 같은 간격으로 붙는다. */}
-      <View style={styles.privacyFooterBox}>
-        <Image
-          source={require('@/assets/images/figma-icon-onboarding-privacy-lock-tiny.png')}
-          style={styles.privacyFooterIcon}
-          contentFit="contain"
-        />
-        <Text style={styles.privacyFooterText}>
-          {'   '}모든 데이터는 암호화되어 안전하게 관리돼요{'\n'}자세한 내용은{' '}
-          <Text style={styles.privacyFooterLink}>개인정보처리방침</Text>에서 확인 할 수 있어요.
-        </Text>
-      </View>
 
       {/* "시작하기" 버튼 (node 432:881/882, x:25 y:706 w:351 h:53, radius:13) — ONB-01
           "시작하기" 버튼과 동일 스타일/좌표. */}
@@ -594,18 +574,16 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_SEMIBOLD,
     color: Colors.white,
   },
-  // "이미 계정이 있어요" (node 256:565, x:125 y:781 w:157 h:17) — 프레임 폭 기준 중앙 정렬
-  valueSecondaryButton: {
+  // "「오늘부터 시작되는 작은 변화」" (node 541:2913, x:96 y:776 w:211 h:17) — 프레임 폭 기준 중앙 정렬
+  valueFooterCaption: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 781,
-    alignItems: 'center',
-  },
-  valueSecondaryButtonText: {
-    fontSize: 15,
-    fontFamily: PRETENDARD_MEDIUM,
+    top: 776,
+    fontSize: 13,
+    fontFamily: PRETENDARD_REGULAR,
     color: '#5E5E5E',
+    textAlign: 'center',
   },
 
   // ── ONB-04 "온보딩 4"=셀피 프라이버시 공지(node 432:880) 전용 ─────────────────────────
@@ -739,35 +717,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: PRIVACY_TEXT_DESC,
   },
-  // 푸터 박스 (group node 464:898, 절대 x:87 y:782 w:263 h:36) — 아이콘("image 61")과 텍스트가
-  // 이 박스 안에서 겹쳐 배치된다.
-  privacyFooterBox: {
-    position: 'absolute',
-    left: 87,
-    top: 782,
-    width: 263,
-  },
-  // "image 61" (node 464:896, 박스 원점 기준 rel(10,0) → w:17 h:16) — 텍스트 첫 줄의 공백 3칸
-  // 위에 그대로 겹쳐 그린다.
-  privacyFooterIcon: {
-    position: 'absolute',
-    left: 10,
-    top: 0,
-    width: 17,
-    height: 16,
-  },
-  // 푸터 텍스트 (node 464:887, w:263 h:36, 원문 그대로 첫 줄 앞에 공백 3칸 + \n 2줄)
-  privacyFooterText: {
-    textAlign: 'center',
-    fontSize: 12,
-    fontFamily: PRETENDARD_MEDIUM,
-    lineHeight: 18,
-    color: PRIVACY_TEXT_MUTED,
-  },
-  privacyFooterLink: {
-    color: PRIVACY_LINK_COLOR,
-  },
-
   // ── ONB-02 "온보딩 2"(node 256:573) 전용 ────────────────────────────────────────
   // "image 38"(node 256:617, 프레임 원점 기준 x:152 y:193 w:65 h:80) — 애플워치 아이콘
   sleepWatchIconWrap: {

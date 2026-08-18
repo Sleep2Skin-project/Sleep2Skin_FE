@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -334,14 +334,19 @@ export default function MyScreen() {
   // (서버가 타임존을 모르므로 앱의 로컬 "오늘"을 보내야 함, GET /skin/verification/summary와 동일 규칙).
   const [profileState, setProfileState] = useState<ProfileState>({ status: 'loading' });
 
-  useEffect(() => {
-    getUserMe(TEMP_USER_ID, getTodayDateString())
-      .then(({ data }) => setProfileState({ status: 'available', profile: data }))
-      .catch((error) => {
-        console.error('❌ 프로필 조회 실패:', error);
-        setProfileState({ status: 'error' });
-      });
-  }, []);
+  // 투두 탭에서 exp를 얻고 이 탭으로 돌아왔을 때 레벨/exp가 곧바로 안 바뀌면 사용자가 버그로
+  // 오해할 수 있어, 마운트 시 한 번만 도는 일반 useEffect 대신 이 탭이 포커스될 때마다(처음
+  // 마운트될 때 포함) 매번 다시 조회한다 — 홈 화면(index.tsx)도 동일한 패턴을 쓴다.
+  useFocusEffect(
+    useCallback(() => {
+      getUserMe(TEMP_USER_ID, getTodayDateString())
+        .then(({ data }) => setProfileState({ status: 'available', profile: data }))
+        .catch((error) => {
+          console.error('❌ 프로필 조회 실패:', error);
+          setProfileState({ status: 'error' });
+        });
+    }, [])
+  );
 
   // 로딩/에러 중엔 레벨 관련 UI가 깨지지 않도록 안전한 기본값(1레벨, 만렙 아님)을 쓴다 — 실제
   // 값이 오면 즉시 이 값들로 교체된다.
@@ -447,8 +452,6 @@ export default function MyScreen() {
             </ThemedText>
           )}
 
-          {/* 캐릭터 그림자 (node 541:2984, blur 근사) */}
-          <View style={styles.characterShadow} />
           {/* 캐릭터 (node 551:1316) — 홈 화면(index.tsx)과 동일한 LEVEL_CHARACTER_IMAGES 맵을 써서
               레벨(level)에 맞는 이미지를 고른다 — 항상 "홈 화면에 있는 현재 캐릭터"와 같은
               그림이 보이도록 한다. */}
@@ -625,16 +628,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: '500',
     color: 'rgba(3, 25, 73, 0.55)',
-  },
-  // 캐릭터 그림자 (node 541:2984, x:131 y:362 w:169 h:13, blur 근사)
-  characterShadow: {
-    position: 'absolute',
-    left: 131,
-    top: 362,
-    width: 169,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: 'rgba(179, 204, 250, 0.5)',
   },
   // 캐릭터 (node 551:1316, x:41 y:90 w:319 h:257) — figma-character.png는 홈 화면과 동일 이미지
   characterImage: {

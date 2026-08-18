@@ -16,6 +16,12 @@ const SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis";
 const HRV_TYPE = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN";
 const RESTING_HR_TYPE = "HKQuantityTypeIdentifierRestingHeartRate";
 
+// 인접 수면 샘플 사이의 공백이 이 값 이상이면 서로 다른 밤(세션)으로 본다. HealthKit은
+// "낮 동안 안 잠"을 별도 샘플로 주지 않고 그냥 샘플이 없는 공백으로만 남기므로, 세션 경계는
+// 이 공백으로 판단할 수밖에 없다. 짧은 재취침/낮잠까지 별도 세션으로 쪼개지지 않도록
+// 일반적인 낮 활동 시간대(3시간 이상 연속 비수면)를 기준으로 잡았다.
+const SESSION_GAP_THRESHOLD_MS = 3 * 60 * 60 * 1000;
+
 export async function initHealthKit(): Promise<string> {
   try {
     await requestAuthorization({
@@ -28,6 +34,36 @@ export async function initHealthKit(): Promise<string> {
   }
 }
 
+// 시간순으로 정렬된 수면 샘플을 인접 샘플 간 공백(gap) 기준으로 밤 단위 세션으로 나누고,
+// 가장 최근 세션(마지막 클러스터)의 샘플만 반환한다. 여러 소스(Watch/iPhone 수동 입력)가
+// 겹치는 구간을 가질 수 있어 "지금까지 본 최대 endDate"를 기준으로 공백을 계산한다.
+function getMostRecentSleepSession(samples: any[]): any[] {
+  if (samples.length === 0) {
+    return [];
+  }
+
+  const sorted = [...samples].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+  );
+
+  let sessionStartIndex = 0;
+  let maxEndSoFar = new Date(sorted[0].endDate).getTime();
+
+  for (let i = 1; i < sorted.length; i++) {
+    const currentStart = new Date(sorted[i].startDate).getTime();
+    const currentEnd = new Date(sorted[i].endDate).getTime();
+
+    if (currentStart - maxEndSoFar >= SESSION_GAP_THRESHOLD_MS) {
+      sessionStartIndex = i;
+      maxEndSoFar = currentEnd;
+    } else {
+      maxEndSoFar = Math.max(maxEndSoFar, currentEnd);
+    }
+  }
+
+  return sorted.slice(sessionStartIndex);
+}
+
 export async function getSleepData(): Promise<any[]> {
   const allSamples = await queryCategorySamples(SLEEP_TYPE, { limit: 0 });
 
@@ -37,7 +73,7 @@ export async function getSleepData(): Promise<any[]> {
     return sampleTime >= sevenDaysAgo;
   });
 
-  return recentSamples;
+  return getMostRecentSleepSession(recentSamples);
 }
 
 export async function getHrvData(): Promise<any[]> {
@@ -124,7 +160,41 @@ export function mapSleepSamplesToSegments(rawSamples: any[]): SleepSegment[] {
     (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
   );
 
-  return segments;
+  return trimOverlappingSegments(segments);
+}
+
+// 여러 소스(Watch/iPhone 수동 입력 등)나 수동 편집 오차로 인접 구간이 몇 분씩 겹칠 수 있다.
+// 뒤 구간의 시작을 앞 구간의 끝으로 잘라 붙여서 겹침을 없앤다(데이터 유실 최소화 — 뒤 구간을
+// 통째로 버리지 않음). 자른 결과 시작이 끝과 같거나 더 뒤로 밀리면(앞 구간에 완전히 포함된
+// 경우) 그 구간은 버린다. segments는 startTime 오름차순 정렬이 되어 있어야 한다.
+function trimOverlappingSegments(segments: SleepSegment[]): SleepSegment[] {
+  const trimmed: SleepSegment[] = [];
+
+  for (const segment of segments) {
+    const prev = trimmed[trimmed.length - 1];
+
+    if (!prev) {
+      trimmed.push(segment);
+      continue;
+    }
+
+    const prevEndMs = new Date(prev.endTime).getTime();
+    const currentStartMs = new Date(segment.startTime).getTime();
+
+    if (currentStartMs >= prevEndMs) {
+      trimmed.push(segment);
+      continue;
+    }
+
+    const currentEndMs = new Date(segment.endTime).getTime();
+    if (currentEndMs <= prevEndMs) {
+      continue;
+    }
+
+    trimmed.push({ ...segment, startTime: prev.endTime });
+  }
+
+  return trimmed;
 }
 
 function getMostRecentQuantity(samples: any[]): number | undefined {

@@ -34,13 +34,18 @@ import {
 import { ExpGainPopup } from '@/components/exp-gain-popup';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TabSymbol } from '@/components/ui/tab-symbol';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
-import { TAB_ITEMS, tabBarStyles, type TabItem } from '@/constants/tabs';
+import {
+  NAV_BAR_ACTIVE_COLOR,
+  NAV_BAR_ICON_SOURCES,
+  NAV_BAR_INACTIVE_COLOR,
+  TAB_ITEMS,
+  tabBarStyles,
+  type TabItem,
+} from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
 import { useDesignScale } from '@/hooks/use-design-scale';
-import { useTheme } from '@/hooks/use-theme';
 import { showAlert } from '@/utils/platform-alert';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
@@ -987,18 +992,17 @@ function SkippedComparisonRow({ label, actual, reason }: { label: string; actual
 // 없어, 같은 소스에서 파생된 구성으로 정적으로 재현하고 탭을 누르면 모달을 닫은 뒤 해당 라우트로
 // 실제 이동시킨다.
 function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
-  const theme = useTheme();
-
   return (
-    <View style={[tabBarStyles.bar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
+    <View style={tabBarStyles.bar}>
       {TAB_ITEMS.map((item) => {
         // 이 모달은 HOME에서만 열리므로 HOME이 실제 활성 탭이다.
         const active = item.name === 'index';
-        const themeColor = active ? 'text' : 'textSecondary';
+        const color = active ? NAV_BAR_ACTIVE_COLOR : NAV_BAR_INACTIVE_COLOR;
+        const iconSource = NAV_BAR_ICON_SOURCES[item.name][active ? 'active' : 'inactive'];
         return (
           <Pressable key={item.name} onPress={() => onNavigate(item)} hitSlop={8} style={tabBarStyles.item}>
-            <TabSymbol sf={item.sf} android={item.android} tintColor={theme[themeColor]} size={22} />
-            <ThemedText type="small" themeColor={themeColor} style={tabBarStyles.label}>
+            <Image source={iconSource} style={styles.reportTabIcon} contentFit="contain" />
+            <ThemedText type="small" style={[tabBarStyles.label, { color }]}>
               {item.label}
             </ThemedText>
           </Pressable>
@@ -1508,6 +1512,10 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  reportTabIcon: {
+    width: 22,
+    height: 22,
   },
 
   // 공통 화면 셸

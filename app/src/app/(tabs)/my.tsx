@@ -20,6 +20,7 @@ import { TEMP_USER_ID } from '@/constants/config';
 import { LEVEL_CHARACTER_IMAGES, LEVEL_EXP_MAX } from '@/constants/mockData';
 import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { useTodoChangedSignal } from '@/hooks/use-todo-changed-signal';
 
 // MY — Figma 'Ui (복사)' 파일 노드 541:2981("iPhone 17 - 22")를 Figma REST API로 직접 읽어와
 // index.tsx(홈 화면)와 동일하게 402x874 고정 해상도로 좌표/스타일을 그대로 옮긴 것.
@@ -313,6 +314,11 @@ export default function MyScreen() {
   // "오늘의 투두 n/5" — 위 TodoProgressState 주석 참고. todo 탭과 별개로 이 화면이 직접 조회한다.
   const [todoProgressState, setTodoProgressState] = useState<TodoProgressState>({ status: 'loading' });
 
+  // TODO 탭에서 체크리스트를 토글하면 이 화면도 다시 조회해야 한다 — 탭 네비게이터가 화면을
+  // 언마운트하지 않아서 마운트 시 한 번만 조회하면 탭을 옮겨도 옛 값에 머문다
+  // (use-todo-changed-signal.ts). 아래 profileState effect도 같은 이유로 이 신호를 쓴다.
+  const todoChangedSignal = useTodoChangedSignal();
+
   useEffect(() => {
     getDailyTodos(getTodayDateString(), TEMP_USER_ID)
       .then(({ data }) => {
@@ -324,7 +330,7 @@ export default function MyScreen() {
         console.error('❌ 오늘의 투두 조회 실패:', error);
         setTodoProgressState({ status: 'error' });
       });
-  }, []);
+  }, [todoChangedSignal]);
 
   const completedCount = todoProgressState.status === 'available' ? todoProgressState.completed : 0;
   const totalCount = todoProgressState.status === 'available' ? todoProgressState.total : 0;
@@ -341,7 +347,7 @@ export default function MyScreen() {
         console.error('❌ 프로필 조회 실패:', error);
         setProfileState({ status: 'error' });
       });
-  }, []);
+  }, [todoChangedSignal]);
 
   // 로딩/에러 중엔 레벨 관련 UI가 깨지지 않도록 안전한 기본값(1레벨, 만렙 아님)을 쓴다 — 실제
   // 값이 오면 즉시 이 값들로 교체된다.

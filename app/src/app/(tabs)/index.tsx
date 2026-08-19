@@ -230,8 +230,9 @@ export default function HomeScreen() {
   // 개발자 확인 완료). 그 간접적인 방식 대신 최종 배율에 직접 곱해서 확실히 줄인다.
   // 처음엔 셰브론이 절반 잘리는 상태 기준으로 8%(0.92)를 줬는데, 그 결과(docs/아이폰
   // 16-5.jpg)를 보니 셰브론 아래로 탭바까지 약 52pt나 남아 과하게 줄었었다 — 원래 필요했던
-  // 여유는 5pt 안팎이었다. 버튼 크기를 다시 키우려고 4%(0.96)로 낮췄다(약 23pt 여유 예상).
-  const HOME_EXTRA_SHRINK = 0.96;
+  // 여유는 5pt 안팎이었다. 4%(0.96)로 낮췄더니(docs/아이폰 16-6.jpg) 셰브론 아래 여유가
+  // 약 23pt로 줄었고, 안전 여유(~10pt)만 남기고 2.5%(0.975)로 한 번 더 낮췄다.
+  const HOME_EXTRA_SHRINK = 0.975;
   const scale = rawScale * HOME_EXTRA_SHRINK;
   const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
@@ -496,10 +497,13 @@ const styles = StyleSheet.create({
   },
 
   // "8월 6일 목요일 좋은 아침이에요" (node 187:2710, x:31 y:55 w:195 h:68) — 혼합 스타일 텍스트 런
+  // 🚨 top이 다른 요소들처럼 일괄 -55가 아니라 -35다 — 상태바 바로 아래에 혼자 너무 붙어
+  // 보이고 LEVEL.3와의 사이 공백이 커 보여서(docs/아이폰 16-6.jpg), 이 블록만 20pt 더
+  // 내렸다. 다른 요소는 안 건드려서 하단 배치엔 영향 없다.
   dateGreetingBlock: {
     position: 'absolute',
     left: 31,
-    top: 0,
+    top: 20,
   },
   dateText: {
     fontSize: 18,
@@ -603,8 +607,8 @@ const styles = StyleSheet.create({
   // 목업 2줄 문구 기준으로 16px이었는데, 실제 메시지는 한 문장으로 오는 경우가 많아 그대로 두면
   // 글자가 카드 밖으로 잘렸다. 폭 안에서 여러 줄로 편하게 접히도록 줄였다.
   tooltipText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: '700',
     color: '#1C2430',
   },
@@ -620,8 +624,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(51, 102, 255, 0.14)',
   },
   tooltipFocusChipText: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '700',
     color: Colors.accentBlue,
   },
@@ -635,12 +639,15 @@ const styles = StyleSheet.create({
   },
 
   // "오늘의 피부 예보" 카드 (node 187:2683, x:22 y:481 w:358 h:185.77, radius:16.6)
+  // 🚨 height가 원본(186)보다 10 크다 — 안 내용 글씨 크기를 키우면서(아래 forecastTitle 등)
+  // 세로 공간이 더 필요해져 늘렸다. 바로 아래 verifyButton(top:631) 위치는 안 건드려서,
+  // 카드-버튼 간격만 19pt→9pt로 줄어든다(안 겹침).
   forecastCard: {
     position: 'absolute',
     left: 22,
     top: 426,
     width: 358,
-    height: 186,
+    height: 196,
     borderRadius: 17,
     backgroundColor: 'rgba(255, 255, 255, 0.62)',
     borderWidth: 1,
@@ -658,8 +665,8 @@ const styles = StyleSheet.create({
     height: 22,
   },
   forecastTitle: {
-    fontSize: 17,
-    lineHeight: 21,
+    fontSize: 18,
+    lineHeight: 22,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -672,9 +679,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   gaugeLabel: {
-    width: 58,
-    fontSize: 12,
-    lineHeight: 17,
+    width: 62,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500',
     color: '#6B6B6B',
   },
@@ -691,21 +698,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
   },
   gaugeValue: {
-    width: 86,
+    width: 90,
     textAlign: 'right',
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500',
     color: '#1A1A1A',
   },
   gaugeStatus: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
   },
   forecastDisclaimer: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '400',
     color: '#9E9E9E',
   },
@@ -723,8 +730,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
   },
   verifyButtonText: {
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 16,
+    lineHeight: 19,
     fontWeight: '500',
     color: Colors.white,
   },

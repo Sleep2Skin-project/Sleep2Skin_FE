@@ -492,9 +492,12 @@ const styles = StyleSheet.create({
   // 화면을 오갈 때 맨 위 시작 지점이 어긋나 보이지 않게 했다(한때 위쪽 그룹 전체를 여기서
   // +35 내린 적이 있었는데 그 이동을 되돌렸다 — 대신 아래쪽 빈 공간은 체크리스트 박스
   // 자체를 키워서 메운다, checklistItem 주석 참고).
+  // 아이폰16 규격 맞추기 — 카드 왼쪽 정렬선(x:3, 8개 카드 marginLeft:-18 적용 후 최종 좌표)과
+  // 맞추는 요청이라 left를 22→3으로 옮겼다(델타 -19). notepadIcon↔pageTitle 사이 간격(13pt)은
+  // 그대로 유지해야 해서 pageTitle.left도 같은 델타(-19)만큼 같이 옮겼다.
   notepadIcon: {
     position: 'absolute',
-    left: 22,
+    left: 3,
     top: 20,
     width: 31,
     height: 31,
@@ -502,9 +505,10 @@ const styles = StyleSheet.create({
   // "오늘의 투두리스트" (node 694:2622, x:66.04 y:70 w:168 h:26)
   // 🚨 fontSize/lineHeight/fontWeight가 홈 화면(index.tsx) "좋은 아침이에요"(greetingText)와
   // 완전히 같다(25/35/700) — 그것과 같은 볼드체·크기로 맞춰달라는 요청.
+  // 아이폰16 규격 맞추기 — notepadIcon과 같이 -19 이동(66→47), 둘 사이 간격(13pt)은 그대로.
   pageTitle: {
     position: 'absolute',
-    left: 66,
+    left: 47,
     top: 20,
     fontSize: 25,
     lineHeight: 35,
@@ -516,9 +520,11 @@ const styles = StyleSheet.create({
   // 🚨 1.2배(89→107) 키웠다. top은 위 notepadIcon/pageTitle과 같이 다시 올라간 만큼(-35) 맞춰
   // 원래 Figma 관계(제목보다 15pt 더 위에서 시작)를 유지했다 — 정확한 중심 보존 대신 이 값을
   // 쓴 이유는, 중심을 그대로 유지하면 top이 음수(-4)가 되어 캔버스 위로 살짝 잘리기 때문이다.
+  // 아이폰16 규격 맞추기 — 캐릭터 오른쪽 끝을 카드 오른쪽 끝(x:402, 캔버스 폭과 동일)과
+  // 맞추는 요청이라 left를 291→295로 옮겼다(295+107=402). 크기(width/height)는 그대로.
   ghostImage: {
     position: 'absolute',
-    left: 291,
+    left: 295,
     top: 5,
     width: 107,
     height: 107,
@@ -551,9 +557,15 @@ const styles = StyleSheet.create({
   // 기준) 전체를 한 그룹으로 위로 18px 당겼다(top:458→440) — 위 "오늘은 피하세요" 카드 3개는
   // 전혀 안 건드리고, 이 그룹만 통째로 이동. 그룹 내부 상대 간격(제목-진행도-체크리스트
   // 사이 간격)은 전부 그대로 유지.
+  // 아이폰16 규격 맞추기 — "진행도" 바(label+track+count) 그룹의 왼쪽 시작 위치를 카드 왼쪽
+  // 정렬선(x:3)에 맞추는 요청이라 그룹 전체에 델타 -18(21→3)을 적용했다. 그룹 내부 상대
+  // 간격(label→track, track→count)은 전부 그대로 유지.
+  // 좌측 정렬선 미세 이동 — 카드보다 9pt(1.5mm) 안쪽에서 시작하도록 그룹 전체에 +9를 다시
+  // 적용했다(3→12). avoidTitle/checklistTitleRow와 동일한 정렬선(x:12) 공유, 그룹 내부
+  // 상대 간격은 그대로.
   progressLabel: {
     position: 'absolute',
-    left: 21,
+    left: 12,
     top: 390,
     fontSize: 15,
     lineHeight: 18,
@@ -561,9 +573,10 @@ const styles = StyleSheet.create({
     color: '#383838',
   },
   // 진행 트랙 배경 value — progressLabel과 같이 18px 위로 이동(top 464→446).
+  // 아이폰16 규격 맞추기 — progressLabel과 같이 -18 이동(70→52), 이후 +9 재이동(52→61).
   progressTrack: {
     position: 'absolute',
-    left: 70,
+    left: 61,
     top: 396,
     width: 95.4,
     height: 7,
@@ -578,9 +591,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A',
   },
   // "1/5" — progressLabel과 같이 18px 위로 이동(top 460→442).
+  // 아이폰16 규격 맞추기 — progressLabel과 같이 -18 이동(170→152), 이후 +9 재이동(152→161).
   progressCount: {
     position: 'absolute',
-    left: 170,
+    left: 161,
     top: 392,
     fontSize: 11,
     lineHeight: 16,
@@ -618,9 +632,18 @@ const styles = StyleSheet.create({
   // "오늘은 피하세요" (node 187:2507, w:368 h:21)
   // 🚨 fontSize가 17이 아니라 20이다 — 홈 화면(index.tsx) "오늘의 피부 예보" 카드 제목
   // (forecastTitle)과 같은 크기로 맞췄다.
+  // 아이폰16 규격 맞추기 — fontSize +0.5pt(20→20.5, lineHeight도 같이 +0.5)와, 카드 왼쪽 정렬선
+  // (x:3)에 맞추는 가로 정렬 요청. 이 텍스트는 avoidCard의 padding(16)에 의해 원래
+  // x:21(=avoidCard.left 5 + padding 16)에서 시작하는데, marginLeft:-18로 avoidItem 카드와
+  // 동일한 x:3까지 당겼다(avoidCard/avoidList 자체는 안 건드림, overflow 지정이 없어 부모 밖
+  // 살짝 나가도 안 잘림).
+  // 좌측 정렬선 미세 이동 — "오늘은 피하세요"/"오늘 밤 체크리스트"/진행도 바를 카드보다 9pt
+  // (1.5mm) 안쪽에서 시작하도록 오른쪽으로 옮기는 요청이라 marginLeft를 -18→-9로 줄였다
+  // (x:3→12, 카드 왼쪽 끝과는 더 이상 일치하지 않음, 의도된 결과).
   avoidTitle: {
-    fontSize: 20,
-    lineHeight: 25,
+    marginLeft: -9,
+    fontSize: 20.5,
+    lineHeight: 25.5,
     fontWeight: '700',
     color: '#FF4242',
   },
@@ -632,8 +655,25 @@ const styles = StyleSheet.create({
   // 🚨 width/paddingVertical/borderRadius가 원본과 다르다(368→363, 13→15, 12→14) — 체크리스트
   // 박스(checklistItem)와 크기가 미묘하게 달라 보인다는 피드백으로, 그 세 값을 그대로 맞췄다.
   // 배경/테두리 색은 의도적으로 다르므로(투명 vs 반투명 흰색) 안 건드렸다.
+  // 아이폰16 규격 맞추기 — 카드 가로 폭을 18pt(3mm) 넓히는 요청(363→381)이라 width만 키웠다.
+  // avoidList/avoidCard는 안 건드렸는데, avoidCard의 padding(16)에 의해 이 카드는 원래
+  // x:21~384 구간에 좌측 정렬로 그려진다 — width만 키우면 오른쪽으로만 늘어나 중앙 정렬이
+  // 깨지므로, marginLeft:-9로 늘어난 폭의 절반(9pt)만큼 왼쪽으로 당겨 x:12~393 구간에
+  // 좌우 대칭으로 넓어지게 했다(캔버스 폭 402 안쪽이라 안 잘림, avoidCard/avoidList 모두
+  // overflow 지정이 없어 부모 밖으로 살짝 나가도 시각적으로 잘리지 않는다). paddingVertical/
+  // borderRadius 등 세로 관련 값과 카드 안 텍스트 스타일은 전혀 안 건드렸다.
+  // 추가 확장(2차) — 12pt(2mm) 더 넓히는 요청. width 381→393, marginLeft -9→-15로 늘려서
+  // (늘어난 12pt의 절반인 6pt를 왼쪽으로 추가로 더 당김) 좌우 대칭을 유지했다. 최종 좌표
+  // x:6~399(원래 flow 시작점 21 기준 marginLeft:-15), 캔버스 폭 402 안쪽이라 안 잘린다.
+  // ⚠️ 추가 확장(3차) — 요청은 12pt(2mm)였지만 전부 반영하면 잘린다. 2차 확장 후 우측 여백이
+  // 이미 3pt(x:6~399, 캔버스 폭 402)까지 줄어 있었는데, 좌우 대칭을 유지하며 12pt를 더
+  // 넓히려면 양쪽 여백을 각각 6pt씩 줄여야 한다 — 좌측(6)은 가능하지만 우측(3)은 6pt를 줄일
+  // 여유가 3pt 부족해 캔버스(overflow:hidden) 밖으로 잘린다. 그래서 대칭을 유지할 수 있는
+  // 최대치인 6pt(양쪽 각 3pt씩)만 적용했다(width 393→399, marginLeft -15→-18) — 최종 좌표
+  // x:3~402로, 우측이 캔버스 경계에 정확히 맞닿아 이 이상은 대칭 확장이 불가능하다.
   avoidItem: {
-    width: 363,
+    width: 399,
+    marginLeft: -18,
     backgroundColor: 'rgba(255, 255, 255, 0)',
     borderWidth: 1,
     borderColor: 'rgba(112, 115, 124, 0.22)',
@@ -644,9 +684,10 @@ const styles = StyleSheet.create({
   },
   // (node 187:2516/187:2521, w:338 h:18)
   // 🚨 fontSize가 15가 아니라 17이다 — 박스 안 글씨를 전부 +2 키워달라는 요청.
+  // 아이폰16 규격 맞추기 — 카드 안 텍스트 fontSize +0.5pt 요청(17→17.5, lineHeight도 +0.5).
   avoidItemTitle: {
-    fontSize: 17,
-    lineHeight: 20,
+    fontSize: 17.5,
+    lineHeight: 20.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -654,9 +695,10 @@ const styles = StyleSheet.create({
   // Tuna 61%) — 이전엔 빨간 배지(태그) 모양이었는데 Figma엔 그런 배지가 없고, 제목 아래 옅은 회색
   // 캡션 한 줄일 뿐이다. 빨간색은 "오늘은 피하세요" 섹션 타이틀(avoidTitle)에서만 쓴다.
   // 🚨 fontSize가 12.5가 아니라 14.5다 — avoidItemTitle과 같은 이유로 +2.
+  // 아이폰16 규격 맞추기 — 카드 안 텍스트 fontSize +0.5pt 요청(14.5→15, lineHeight도 +0.5).
   avoidItemCauseText: {
-    fontSize: 14.5,
-    lineHeight: 20.75,
+    fontSize: 15,
+    lineHeight: 21.25,
     fontWeight: '400',
     color: 'rgba(55, 56, 60, 0.61)',
   },
@@ -665,9 +707,14 @@ const styles = StyleSheet.create({
   // 그룹(제목+진행도 바+체크리스트) 전체를 18px 위로 당겨 top:431→413. 위 "오늘은 피하세요"
   // 카드 3개(avoidCard, top:110)와 그 사이 여백은 전혀 안 건드렸다 — 세 번째 카드 밑과 이
   // 줄 사이 간격만 좁아진 것.
+  // 아이폰16 규격 맞추기 — 카드 왼쪽 정렬선(x:3)에 맞추는 요청이라 left를 21→3으로 옮겼다
+  // (델타 -18). width(363)는 요청 범위 밖이라 안 건드렸다 — 오른쪽 exp 보너스 배지의
+  // space-between 위치는 이 행 자체의 폭 기준이라 이전과 동일하게 유지된다.
+  // 좌측 정렬선 미세 이동 — 카드보다 9pt(1.5mm) 안쪽에서 시작하도록 left를 3→12로 옮겼다
+  // (avoidTitle/progressLabel과 동일한 +9 이동, 셋이 계속 같은 정렬선을 공유).
   checklistTitleRow: {
     position: 'absolute',
-    left: 21,
+    left: 12,
     top: 363,
     width: 363,
     flexDirection: 'row',
@@ -675,9 +722,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   // 🚨 fontSize가 16이 아니라 20이다 — avoidTitle과 같은 이유로 홈 화면 forecastTitle과 맞췄다.
+  // 아이폰16 규격 맞추기 — fontSize +0.5pt(20→20.5, lineHeight도 +0.5). 왼쪽 정렬은 부모
+  // checklistTitleRow의 left 이동으로 이미 반영됨(이 텍스트 자체에 별도 left 없음).
   checklistTitle: {
-    fontSize: 20,
-    lineHeight: 25,
+    fontSize: 20.5,
+    lineHeight: 25.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -695,7 +744,20 @@ const styles = StyleSheet.create({
   // 세로를 조금씩 키워서 채웠다(항목당 +10pt ≈ 5개 합쳐 +50pt). 스크롤이 없는 화면이라 탭바
   // 바로 위까지 딱 채우지는 않고(실측 여유 ≈67pt 중 50pt만 씀) 안전 여유를 좀 남겼다. 간격
   // (gap)이 아니라 패딩을 키운 이유는 박스 자체가 커 보이길 원해서다.
+  // 아이폰16 규격 맞추기 — 카드 가로 폭을 18pt(3mm) 넓히는 요청. 원래 width를 따로 안 주고
+  // checklistList(width:363)의 flex stretch로 폭을 물려받았는데, 늘리면서 중앙 정렬(좌우
+  // 여백 균등 감소)을 맞추려면 폭을 stretch가 아니라 직접 지정해야 해서 width:381을 명시하고
+  // avoidItem과 동일한 원리로 marginLeft:-9를 줬다(늘어난 폭의 절반만큼 왼쪽으로 당겨 원래
+  // 중심을 유지, x:21~384 → x:12~393). checklistList/checklistTitleRow/진행도 바는 전혀 안
+  // 건드렸다. paddingVertical(높이) 등 세로 값과 카드 안 텍스트/체크박스 스타일도 그대로다.
+  // 추가 확장(2차) — 12pt(2mm) 더 넓히는 요청. width 381→393, marginLeft -9→-15로 늘려서
+  // avoidItem과 동일하게 최종 좌표 x:6~399를 만든다(캔버스 폭 402 안쪽이라 안 잘림).
+  // ⚠️ 추가 확장(3차) — avoidItem과 동일한 이유로 12pt 요청 중 6pt만 적용(우측 여백 3pt로는
+  // 대칭 확장에 필요한 6pt를 못 채움). width 393→399, marginLeft -15→-18, 최종 좌표
+  // x:3~402(우측이 캔버스 경계에 정확히 맞닿음). 자세한 계산은 avoidItem 주석 참고.
   checklistItem: {
+    width: 399,
+    marginLeft: -18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -751,10 +813,11 @@ const styles = StyleSheet.create({
   },
   // 항목 제목 (node 176:1174/1180/1186, fontSize:15 lh:18)
   // 🚨 fontSize가 15가 아니라 17이다 — avoidItemTitle과 같은 +2 요청.
+  // 아이폰16 규격 맞추기 — 카드 안 텍스트 fontSize +0.5pt 요청(17→17.5, lineHeight도 +0.5).
   checklistItemTitle: {
     flex: 1,
-    fontSize: 17,
-    lineHeight: 20,
+    fontSize: 17.5,
+    lineHeight: 20.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -766,9 +829,12 @@ const styles = StyleSheet.create({
   // "+5 exp" 배지 (node 694:2610, Press Start 2P 12px, #3366FF) — ExpChangeBadge가 opacity/scale/
   // translateY를 애니메이션으로 얹는다. flexShrink:0으로 옆 제목(flex:1)이 줄어들어도 이 텍스트
   // 자체는 안 눌리게 한다.
+  // 아이폰16 규격 맞추기 — "+5 exp"(항목별)와 "+30 exp"(전체 완료 보너스) 둘 다 이 스타일 하나를
+  // 공유하는 같은 ExpGainBadge 컴포넌트라, fontSize +2.5pt(12→14.5) 요청을 여기 한 곳만 고치면
+  // 둘 다 반영된다. 색상/애니메이션/표시 타이밍은 전혀 안 건드렸다.
   expBadgeText: {
     flexShrink: 0,
-    fontSize: 12,
+    fontSize: 14.5,
     fontFamily: PRESS_START_2P,
     color: Colors.accentBlue,
   },

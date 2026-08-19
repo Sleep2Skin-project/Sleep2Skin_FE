@@ -473,11 +473,15 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
       {heartRateItems.length > 0 && (
         <View style={styles.heartRateRow}>
           {heartRateItems.map((item) => (
-            <ThemedText key={item.key}>
-              {'❤️ '}
+            <View key={item.key} style={styles.heartRateItem}>
+              <Image
+                source={require('@/assets/images/figma-icon-heart-rate.png')}
+                style={styles.heartRateIcon}
+                contentFit="contain"
+              />
               <Text style={styles.statLabel}>{item.label} </Text>
               <Text style={styles.statValue}>{item.value}</Text>
-            </ThemedText>
+            </View>
           ))}
         </View>
       )}
@@ -668,8 +672,7 @@ const styles = StyleSheet.create({
   },
 
   // 심박변이도/안정시 심박 한 줄 — "지난밤 수면 구간" 카드(범례) 바로 아래, 통계 카드 그리드
-  // 앞. 하트 이모지를 아이콘처럼 텍스트 안에 그대로 넣었다(별도 아이콘 애셋 불필요).
-  // 아래 통계 카드들과 항목명/값 텍스트 스타일을 통일하기 위해 별도 스타일 없이
+  // 앞. 아래 통계 카드들과 항목명/값 텍스트 스타일을 통일하기 위해 별도 스타일 없이
   // statLabel/statValue를 그대로 재사용한다(JSX 참고) — 라벨은 statLabel(굵기 600, 회색),
   // 값은 statValue(굵기 700, 진한 색)로 카드와 동일하게 보인다.
   heartRateRow: {
@@ -678,6 +681,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     columnGap: 18,
     rowGap: 4,
+  },
+  heartRateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  // 하트 아이콘(Figma 파일 rRlkqaDDWAXmMtJf6THPV3, node 781:2071/2072, w:23.02 h:19.57) — 시스템
+  // 이모지(❤️)를 쓰면 OS/폰트마다 모양이 달라 시안과 어긋나 보였다. Figma가 내려준 벡터 그대로
+  // 비율(23.02:19.57)을 유지해 라스터화했다.
+  heartRateIcon: {
+    width: 16,
+    height: 13.6,
   },
 
   // 지표 카드 6개 (node 350:737~814) — 3열, 배경 투명(fill alpha 0) + 테두리만 있는 카드.

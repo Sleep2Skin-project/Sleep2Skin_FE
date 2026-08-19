@@ -496,14 +496,14 @@ const styles = StyleSheet.create({
     height: 31,
   },
   // "오늘의 투두리스트" (node 694:2622, x:66.04 y:70 w:168 h:26)
-  // 🚨 fontSize가 22가 아니라 23이다 — "오늘은 피하세요"(avoidTitle, 20)보다 3pt 크게
-  // 유지해달라는 요청으로 20+3=23.
+  // 🚨 fontSize/lineHeight/fontWeight가 홈 화면(index.tsx) "좋은 아침이에요"(greetingText)와
+  // 완전히 같다(25/35/700) — 그것과 같은 볼드체·크기로 맞춰달라는 요청.
   pageTitle: {
     position: 'absolute',
     left: 66,
     top: 55,
-    fontSize: 23,
-    lineHeight: 28,
+    fontSize: 25,
+    lineHeight: 35,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -621,29 +621,34 @@ const styles = StyleSheet.create({
   },
   // 카드 (node 541:2952/2957/2962, w:368 h:71, radius:12, fill: rgba(255,255,255,0) — 배경이
   // 없어 avoidCard/화면 배경(#DFEAFF)이 그대로 비친다. 흰 배경(#FFFFFF)이 아니다.
+  // 🚨 width/paddingVertical/borderRadius가 원본과 다르다(368→363, 13→15, 12→14) — 체크리스트
+  // 박스(checklistItem)와 크기가 미묘하게 달라 보인다는 피드백으로, 그 세 값을 그대로 맞췄다.
+  // 배경/테두리 색은 의도적으로 다르므로(투명 vs 반투명 흰색) 안 건드렸다.
   avoidItem: {
-    width: 368,
+    width: 363,
     backgroundColor: 'rgba(255, 255, 255, 0)',
     borderWidth: 1,
     borderColor: 'rgba(112, 115, 124, 0.22)',
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 14,
+    paddingVertical: 15,
     paddingHorizontal: 15,
     gap: 6,
   },
   // (node 187:2516/187:2521, w:338 h:18)
+  // 🚨 fontSize가 15가 아니라 17이다 — 박스 안 글씨를 전부 +2 키워달라는 요청.
   avoidItemTitle: {
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 17,
+    lineHeight: 20,
     fontWeight: '700',
     color: '#171717',
   },
   // causeLabel 캡션 (node 694:2635 "혈색 저하의 원인" 등, Inter Regular 12.5px, lineHeight:18.75px,
   // Tuna 61%) — 이전엔 빨간 배지(태그) 모양이었는데 Figma엔 그런 배지가 없고, 제목 아래 옅은 회색
   // 캡션 한 줄일 뿐이다. 빨간색은 "오늘은 피하세요" 섹션 타이틀(avoidTitle)에서만 쓴다.
+  // 🚨 fontSize가 12.5가 아니라 14.5다 — avoidItemTitle과 같은 이유로 +2.
   avoidItemCauseText: {
-    fontSize: 12.5,
-    lineHeight: 18.75,
+    fontSize: 14.5,
+    lineHeight: 20.75,
     fontWeight: '400',
     color: 'rgba(55, 56, 60, 0.61)',
   },
@@ -732,10 +737,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   // 항목 제목 (node 176:1174/1180/1186, fontSize:15 lh:18)
+  // 🚨 fontSize가 15가 아니라 17이다 — avoidItemTitle과 같은 +2 요청.
   checklistItemTitle: {
     flex: 1,
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 17,
+    lineHeight: 20,
     fontWeight: '700',
     color: '#171717',
   },

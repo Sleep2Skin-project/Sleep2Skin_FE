@@ -85,7 +85,7 @@ type ProfileState = { status: 'loading' } | { status: 'error' } | { status: 'ava
 const FORECAST_METRIC_LABELS = {
   darkCircle: '다크서클',
   complexion: '안색',
-  barrier: '장벽',
+  barrier: '피부 장벽',
 } as const;
 
 type ForecastState =

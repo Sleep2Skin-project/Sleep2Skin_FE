@@ -207,7 +207,7 @@ const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 const SKIN_METRIC_LABELS = {
   darkCircle: '다크서클',
   complexion: '혈색 저하',
-  barrier: '장벽 저하',
+  barrier: '피부 장벽 저하',
 } as const;
 
 type SleepSummaryState =

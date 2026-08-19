@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -57,9 +57,10 @@ const TODO_PIXEL_FONTS = {
 // 오늘의 투두 n/5)에 "다시 조회해라"만 알린다(use-todo-changed-signal.ts).
 //
 // 화면 잘림 방지: 캔버스 내부 좌표는 그대로 두고, useDesignScale로 계산한 배율만큼
-// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링).
-// 캔버스는 402x874 고정 프레임(overflow:hidden)이라 세로 스케일도 함께 계산하고,
-// 그래도 짧은 기기에서 남는 여백은 기존처럼 ScrollView로 감싸 안전하게 처리한다.
+// transform: scale로 캔버스 전체를 기기 화면에 맞게 축소/확대한다(비율 스케일링). 아이폰 16
+// 한 기기로 고정한 뒤로는 스크롤(예전엔 ScrollView로 감쌌었다)도 없앴다 — 스크롤바 없이
+// 한 화면에 다 들어오는 쪽을 선호해서, 아래 요소 좌표들을 화면 위쪽 여백을 줄이는 방향으로
+// 다시 잡았다(홈 화면 index.tsx와 같은 방식, SCALE_FIT_HEIGHT 관련 주석 참고).
 
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
@@ -241,8 +242,7 @@ export default function TodoScreen() {
   // 하단 네이티브 탭바가 실제로 차지하는 높이는 useSafeAreaInsets()로 알 수 없어(홈 화면
   // index.tsx의 SafeAreaView onLayout과 같은 이유 — 852 고정값 기준으로 계산하면 탭바 높이를
   // 반영 못 해 필요 이상으로 작게 그려진다), SafeAreaView 자신의 렌더링 높이를 onLayout으로
-  // 직접 재서 넘긴다. 이 화면은 이미 ScrollView로 감싸져 있어(위 주석 참고) 실측 전/후 스케일이
-  // 바뀌어도 잘리는 내용은 없다 — 콘텐츠가 넘치면 스크롤될 뿐이다.
+  // 직접 재서 넘긴다.
   const [screenHeight, setScreenHeight] = useState<number>();
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT, screenHeight);
   const [pixelFontLoaded] = useFonts(TODO_PIXEL_FONTS);
@@ -367,9 +367,8 @@ export default function TodoScreen() {
       style={styles.screen}
       edges={['top', 'left', 'right']}
       onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
-          <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+      <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
+        <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
             {/* 배경 (fill #DFEAFF) */}
             <View style={StyleSheet.absoluteFill} />
 
@@ -458,9 +457,8 @@ export default function TodoScreen() {
                 )}
               </>
             )}
-          </View>
         </View>
-      </ScrollView>
+      </View>
 
       <AvoidDetailModal item={selectedAvoidItem} onClose={() => setSelectedAvoidItem(null)} />
     </SafeAreaView>
@@ -468,15 +466,14 @@ export default function TodoScreen() {
 }
 
 const styles = StyleSheet.create({
+  // 🚨 스크롤(ScrollView)을 없앴다 — 원래는 useDesignScale이 못 맞추는 짧은 기기를 위한
+  // 안전장치로 감싸뒀었는데, 스크롤바 자체가 안 보이는 쪽을 선호해서(아이폰16 한 기기로
+  // 고정한 이상 굳이 스크롤로 도피할 필요가 없다) 뺐다. 캔버스가 화면에 안 들어가면 이제
+  // 스크롤 대신 아래쪽이 그대로 잘리니, 하단 요소 좌표를 바꾸면 실기기에서 꼭 확인한다.
   screen: {
     flex: 1,
-    backgroundColor: Colors.bgSoftBlue,
-  },
-  // useDesignScale이 화면 높이에 맞춰 캔버스를 축소하므로 보통은 스크롤이 필요 없지만,
-  // 만약을 대비해 안전장치로 스크롤 가능하게 감싼다 — 캔버스 자체의 크기·스타일은 그대로 유지한다.
-  scrollContent: {
     alignItems: 'center',
-    paddingBottom: 24,
+    backgroundColor: Colors.bgSoftBlue,
   },
   // 프레임(node 176:1165): 402x874, fill #DFEAFF — 홈 화면(index.tsx)과 동일한 고정 해상도
   canvas: {
@@ -494,7 +491,7 @@ const styles = StyleSheet.create({
   notepadIcon: {
     position: 'absolute',
     left: 22,
-    top: 70,
+    top: 20,
     width: 31,
     height: 31,
   },
@@ -502,7 +499,7 @@ const styles = StyleSheet.create({
   pageTitle: {
     position: 'absolute',
     left: 66,
-    top: 70,
+    top: 20,
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '700',
@@ -513,7 +510,7 @@ const styles = StyleSheet.create({
   ghostImage: {
     position: 'absolute',
     left: 309,
-    top: 55,
+    top: 5,
     width: 89,
     height: 89,
   },
@@ -522,7 +519,7 @@ const styles = StyleSheet.create({
   statusText: {
     position: 'absolute',
     left: 27,
-    top: 110,
+    top: 60,
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '500',
@@ -532,7 +529,7 @@ const styles = StyleSheet.create({
   emptyState: {
     position: 'absolute',
     left: 27,
-    top: 130,
+    top: 80,
     width: 348,
   },
   emptyStateText: {
@@ -548,7 +545,7 @@ const styles = StyleSheet.create({
   progressLabel: {
     position: 'absolute',
     left: 21,
-    top: 440,
+    top: 390,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
@@ -558,7 +555,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     position: 'absolute',
     left: 70,
-    top: 446,
+    top: 396,
     width: 95.4,
     height: 7,
     borderRadius: 6,
@@ -575,7 +572,7 @@ const styles = StyleSheet.create({
   progressCount: {
     position: 'absolute',
     left: 170,
-    top: 442,
+    top: 392,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
@@ -586,7 +583,7 @@ const styles = StyleSheet.create({
   toggleErrorText: {
     position: 'absolute',
     left: 26,
-    top: 474,
+    top: 424,
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '600',
@@ -602,7 +599,7 @@ const styles = StyleSheet.create({
   avoidCard: {
     position: 'absolute',
     left: 9,
-    top: 110,
+    top: 60,
     width: 400,
     borderRadius: 16,
     padding: 16,
@@ -654,7 +651,7 @@ const styles = StyleSheet.create({
   checklistTitleRow: {
     position: 'absolute',
     left: 21,
-    top: 413,
+    top: 363,
     width: 363,
     flexDirection: 'row',
     alignItems: 'center',
@@ -670,7 +667,7 @@ const styles = StyleSheet.create({
   checklistList: {
     position: 'absolute',
     left: 21,
-    top: 468,
+    top: 418,
     width: 363,
     gap: 10,
   },

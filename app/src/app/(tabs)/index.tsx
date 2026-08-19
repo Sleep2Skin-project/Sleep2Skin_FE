@@ -209,7 +209,10 @@ function ForecastGaugeRow({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const scale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT);
+  // 하단 네이티브 탭바가 실제로 차지하는 높이는 useSafeAreaInsets()로 알 수 없어(하단
+  // 안내 참고), SafeAreaView 자신의 렌더링 높이를 onLayout으로 직접 재서 넘긴다.
+  const [screenHeight, setScreenHeight] = useState<number>();
+  const scale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT, screenHeight);
   const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);
@@ -320,7 +323,11 @@ export default function HomeScreen() {
 
   return (
     <>
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={styles.screen} onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
+        {/* screenHeight 실측 전엔 렌더하지 않는다 — 실측 전 임시로 넓은 스케일(가로 기준)로
+            그렸다가 실측 직후 더 작은 스케일로 다시 그리면 화면이 뜨자마자 한 번 눈에 띄게
+            줄어드는 게 보인다(시연 녹화에서 특히 거슬림). 배경색만 잠깐 보이는 게 낫다. */}
+        {screenHeight !== undefined && (
         <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
           <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
             {/* 배경 (fill #DFEAFF) */}
@@ -435,6 +442,7 @@ export default function HomeScreen() {
             </Pressable>
           </View>
         </View>
+        )}
       </SafeAreaView>
 
       <SleepDetailModal visible={sleepModalVisible} onClose={() => setSleepModalVisible(false)} />

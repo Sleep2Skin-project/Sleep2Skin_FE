@@ -497,13 +497,14 @@ const styles = StyleSheet.create({
   },
 
   // "8월 6일 목요일 좋은 아침이에요" (node 187:2710, x:31 y:55 w:195 h:68) — 혼합 스타일 텍스트 런
-  // 🚨 top이 다른 요소들처럼 일괄 -55가 아니라 -35다 — 상태바 바로 아래에 혼자 너무 붙어
-  // 보이고 LEVEL.3와의 사이 공백이 커 보여서(docs/아이폰 16-6.jpg), 이 블록만 20pt 더
-  // 내렸다. 다른 요소는 안 건드려서 하단 배치엔 영향 없다.
+  // 🚨 top이 다른 요소들처럼 일괄 -55가 아니라 -20이다 — 상태바 바로 아래에 혼자 너무 붙어
+  // 보이고 LEVEL.3와의 사이 공백이 커 보여서(docs/아이폰 16-6.jpg) 20pt 내렸고, 그 뒤
+  // 캐릭터 위쪽 덩어리 전체(이 블록~tooltipIcon)를 캐릭터 쪽으로 15pt 더 내렸다
+  // (docs/아이폰 16-7.jpg, 캐릭터는 고정 기준점이라 안 건드림).
   dateGreetingBlock: {
     position: 'absolute',
     left: 31,
-    top: 20,
+    top: 35,
   },
   dateText: {
     fontSize: 18,
@@ -531,7 +532,7 @@ const styles = StyleSheet.create({
   levelText: {
     position: 'absolute',
     left: 37,
-    top: 79,
+    top: 94,
     fontSize: 15,
     lineHeight: 17,
     fontWeight: '700',
@@ -541,7 +542,7 @@ const styles = StyleSheet.create({
   levelTrack: {
     position: 'absolute',
     left: 107,
-    top: 85,
+    top: 100,
     width: LEVEL_TRACK_WIDTH,
     height: 7,
     borderRadius: 6,
@@ -558,7 +559,7 @@ const styles = StyleSheet.create({
   expText: {
     position: 'absolute',
     left: 38,
-    top: 105,
+    top: 120,
     fontSize: 11,
     lineHeight: 23,
     fontFamily: PRESS_START_2P,
@@ -577,7 +578,7 @@ const styles = StyleSheet.create({
   tooltipCard: {
     position: 'absolute',
     left: 181,
-    top: 103,
+    top: 118,
     width: 199,
     minHeight: 78,
     borderRadius: 25,
@@ -633,19 +634,20 @@ const styles = StyleSheet.create({
   tooltipIcon: {
     position: 'absolute',
     left: 198,
-    top: 131,
+    top: 146,
     width: 27,
     height: 27,
   },
 
   // "오늘의 피부 예보" 카드 (node 187:2683, x:22 y:481 w:358 h:185.77, radius:16.6)
   // 🚨 height가 원본(186)보다 10 크다 — 안 내용 글씨 크기를 키우면서(아래 forecastTitle 등)
-  // 세로 공간이 더 필요해져 늘렸다. 바로 아래 verifyButton(top:631) 위치는 안 건드려서,
-  // 카드-버튼 간격만 19pt→9pt로 줄어든다(안 겹침).
+  // 세로 공간이 더 필요해져 늘렸다. verifyButton과의 간격(원래 19pt→9pt)은 그대로 유지한 채
+  // 이 카드~chevronIcon(아래쪽 덩어리 전체)을 캐릭터 쪽으로 15pt 올렸다(docs/아이폰
+  // 16-7.jpg, 서로 간 간격은 그대로라 안 겹침).
   forecastCard: {
     position: 'absolute',
     left: 22,
-    top: 426,
+    top: 411,
     width: 358,
     height: 196,
     borderRadius: 17,
@@ -721,7 +723,7 @@ const styles = StyleSheet.create({
   verifyButton: {
     position: 'absolute',
     left: 29,
-    top: 631,
+    top: 616,
     width: 345,
     height: 52,
     borderRadius: 10,
@@ -740,7 +742,7 @@ const styles = StyleSheet.create({
   verificationTrigger: {
     position: 'absolute',
     left: 30,
-    top: 695,
+    top: 680,
     width: 345,
     alignItems: 'center',
   },
@@ -755,7 +757,7 @@ const styles = StyleSheet.create({
   chevronIcon: {
     position: 'absolute',
     left: 190,
-    top: 719,
+    top: 704,
     width: 23,
     height: 13,
   },

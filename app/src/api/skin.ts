@@ -433,6 +433,21 @@ export interface LatestVerificationSummary {
 }
 
 /**
+ * 직전 검증 1건 — "지난번 대비" 비교의 기준선. 검증이 1건뿐이면(비교 대상이 없으면) null.
+ *
+ * baseDate는 "전날"이 아니라 바로 앞 검증일이다 — 하루 걸러 검증했으면 이틀 전일 수 있다.
+ * hitRate는 latest와 마찬가지로 그날치(누적 아님) — 상승폭은 서버가 안 내려주므로
+ * `latest.hitRate - previous.hitRate`를 클라이언트가 직접 뺀다.
+ *
+ * ⚠️ 이 차이는 그날치끼리의 비교라 표본이 최대 3이라서 하루하루 크게 요동친다 — "예보가 얼마나
+ * 믿을 만한가"는 여전히 summary.hitRate(누적)가 말한다. 두 숫자를 같은 뜻으로 섞어 쓰지 말 것.
+ */
+export interface PreviousVerificationSummary {
+  baseDate: string;
+  hitRate: number;
+}
+
+/**
  * 배너에 쓰는 요약 통계.
  *
  * - hitRate: **누적** 적중률. 지금까지 모든 판정 중 HIT 비율이다. `latest.hitRate`(그날치)와는
@@ -449,12 +464,14 @@ export interface LatestVerificationSummary {
  *   저녁에 검증하는 사용자가 아침에 앱을 열었을 때 어제까지 쌓은 연속이 0으로 보이면 아직
  *   하지 않은 일로 사용자를 벌주는 것처럼 읽히기 때문. 이 계산을 위해 baseDate가 필수 파라미터다
  *   (서버는 "오늘"을 모르므로 없이 계산하면 연속이 하루 밀린다).
+ * - previous: 직전 검증 1건(비교 기준선). 위 PreviousVerificationSummary 참고.
  * - latest: 가장 최근 검증 1건의 상세.
  */
 export interface VerificationSummary {
   hitRate: number;
   verificationCount: number;
   streakCount: number;
+  previous: PreviousVerificationSummary | null;
   latest: LatestVerificationSummary;
 }
 

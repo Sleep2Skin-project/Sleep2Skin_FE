@@ -491,17 +491,19 @@ const styles = StyleSheet.create({
   notepadIcon: {
     position: 'absolute',
     left: 22,
-    top: 20,
+    top: 55,
     width: 31,
     height: 31,
   },
   // "오늘의 투두리스트" (node 694:2622, x:66.04 y:70 w:168 h:26)
+  // 🚨 fontSize가 22가 아니라 23이다 — "오늘은 피하세요"(avoidTitle, 20)보다 3pt 크게
+  // 유지해달라는 요청으로 20+3=23.
   pageTitle: {
     position: 'absolute',
     left: 66,
-    top: 20,
-    fontSize: 22,
-    lineHeight: 26,
+    top: 55,
+    fontSize: 23,
+    lineHeight: 28,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -510,7 +512,7 @@ const styles = StyleSheet.create({
   ghostImage: {
     position: 'absolute',
     left: 309,
-    top: 5,
+    top: 40,
     width: 89,
     height: 89,
   },
@@ -519,7 +521,7 @@ const styles = StyleSheet.create({
   statusText: {
     position: 'absolute',
     left: 27,
-    top: 60,
+    top: 95,
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '500',
@@ -529,7 +531,7 @@ const styles = StyleSheet.create({
   emptyState: {
     position: 'absolute',
     left: 27,
-    top: 80,
+    top: 115,
     width: 348,
   },
   emptyStateText: {
@@ -545,7 +547,7 @@ const styles = StyleSheet.create({
   progressLabel: {
     position: 'absolute',
     left: 21,
-    top: 390,
+    top: 425,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
@@ -555,7 +557,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     position: 'absolute',
     left: 70,
-    top: 396,
+    top: 431,
     width: 95.4,
     height: 7,
     borderRadius: 6,
@@ -572,7 +574,7 @@ const styles = StyleSheet.create({
   progressCount: {
     position: 'absolute',
     left: 170,
-    top: 392,
+    top: 427,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
@@ -583,7 +585,7 @@ const styles = StyleSheet.create({
   toggleErrorText: {
     position: 'absolute',
     left: 26,
-    top: 424,
+    top: 459,
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '600',
@@ -599,16 +601,18 @@ const styles = StyleSheet.create({
   avoidCard: {
     position: 'absolute',
     left: 9,
-    top: 60,
+    top: 95,
     width: 400,
     borderRadius: 16,
     padding: 16,
     gap: 10,
   },
   // "오늘은 피하세요" (node 187:2507, w:368 h:21)
+  // 🚨 fontSize가 17이 아니라 20이다 — 홈 화면(index.tsx) "오늘의 피부 예보" 카드 제목
+  // (forecastTitle)과 같은 크기로 맞췄다.
   avoidTitle: {
-    fontSize: 17,
-    lineHeight: 21,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '700',
     color: '#FF4242',
   },
@@ -651,15 +655,16 @@ const styles = StyleSheet.create({
   checklistTitleRow: {
     position: 'absolute',
     left: 21,
-    top: 363,
+    top: 398,
     width: 363,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // 🚨 fontSize가 16이 아니라 20이다 — avoidTitle과 같은 이유로 홈 화면 forecastTitle과 맞췄다.
   checklistTitle: {
-    fontSize: 16,
-    lineHeight: 19,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '700',
     color: '#171717',
   },
@@ -667,7 +672,7 @@ const styles = StyleSheet.create({
   checklistList: {
     position: 'absolute',
     left: 21,
-    top: 418,
+    top: 453,
     width: 363,
     gap: 10,
   },

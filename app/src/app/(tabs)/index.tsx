@@ -683,10 +683,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  // 🚨 width/fontSize가 원래(66/15)보다 크다/작다 — "다크서클"이 "다크서클 회복"으로 길어지면서
+  // 66pt 칸에서 두 줄로 넘쳤다. 최대한 폰트는 조금만(15→14) 줄이고, 대신 칸 너비를 넓혀서
+  // (66→96, 오른쪽 gaugeTrack 폭만 그만큼 줄어듦) 한 줄에 들어가게 했다.
   gaugeLabel: {
-    width: 66,
-    fontSize: 15,
-    lineHeight: 20,
+    width: 96,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: '500',
     color: '#6B6B6B',
   },

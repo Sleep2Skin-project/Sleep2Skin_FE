@@ -309,8 +309,13 @@ export function WeeklyReport({ nickname }: { nickname: string | null }) {
 }
 
 const styles = StyleSheet.create({
+  // paddingBottom: report.tsx의 공용 ScrollView(scrollContent)가 이미 하단 여백(BottomTabInset+
+  // Spacing.four)을 주지만, "한 주간 영향이 컸던 요인" 리스트의 마지막 그룹(피부장벽)이 그
+  // 여백 안에서도 살짝 잘렸다. 다른 탭(일간/종합)에 영향 없이 이 화면에만 여유를 더 주려고
+  // 공용 값을 안 건드리고 여기 로컬로 추가했다.
   container: {
     flexShrink: 1,
+    paddingBottom: 40,
   },
 
   statusText: {

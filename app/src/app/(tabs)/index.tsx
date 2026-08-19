@@ -647,10 +647,18 @@ const styles = StyleSheet.create({
   // 세로 공간이 더 필요해져 늘렸다. verifyButton과의 간격(원래 19pt→9pt)은 그대로 유지한 채
   // 이 카드~chevronIcon(아래쪽 덩어리 전체)을 캐릭터 쪽으로 15pt 올렸다(docs/아이폰
   // 16-7.jpg, 서로 간 간격은 그대로라 안 겹침).
+  // 아이폰16 규격 맞추기 — 이 카드~chevronIcon(아래쪽 4개 요소) 그룹 전체를 원본(411) 대비
+  // 총 12pt(9pt 1차 + 3pt 추가 = 2mm) 아래로 내리는 요청이라 4개 요소의 top에 전부 +12를
+  // 균등하게 더했다(411→423). 넷 다 같은 값만큼 이동해서 서로 간 상대 간격은 그대로
+  // 보존된다. 위쪽 요소(캐릭터/말풍선)와는 거리가 오히려 늘어나므로 겹칠 일이 없다. 아래쪽
+  // 경계 — chevronIcon 하단이 704+13=717(원본)에서 716+13=729로 내려가는데,
+  // SCALE_FIT_HEIGHT(775)까지 남는 여유가 58→46(캔버스 좌표 기준, 스케일 전)로 줄 뿐 여전히
+  // 넉넉해(이전 튜닝 기록상 필요했던 여유는 5~23pt 수준) 셰브론이 탭바에 걸리는 문제는
+  // 재발하지 않을 것으로 판단된다.
   forecastCard: {
     position: 'absolute',
     left: 22,
-    top: 411,
+    top: 423,
     width: 358,
     height: 196,
     borderRadius: 17,
@@ -729,7 +737,7 @@ const styles = StyleSheet.create({
   verifyButton: {
     position: 'absolute',
     left: 29,
-    top: 616,
+    top: 628,
     width: 345,
     height: 52,
     borderRadius: 10,
@@ -748,7 +756,7 @@ const styles = StyleSheet.create({
   verificationTrigger: {
     position: 'absolute',
     left: 30,
-    top: 680,
+    top: 692,
     width: 345,
     alignItems: 'center',
   },
@@ -763,7 +771,7 @@ const styles = StyleSheet.create({
   chevronIcon: {
     position: 'absolute',
     left: 190,
-    top: 704,
+    top: 716,
     width: 23,
     height: 13,
   },

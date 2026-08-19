@@ -96,7 +96,7 @@ type MetricStatus = 'pending' | 'active' | 'done';
 
 const METRIC_ITEMS = [
   { key: 'barrier', label: '피부 장벽 측정' },
-  { key: 'oil', label: '유분 측정' },
+  { key: 'oil', label: '혈색 측정' },
   { key: 'darkCircle', label: '다크서클 측정' },
   { key: 'compare', label: '어제 예보와 대조' },
 ] as const;

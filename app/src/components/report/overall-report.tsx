@@ -40,6 +40,14 @@ const SKIN_METRIC_LABELS: Record<string, string> = {
   BARRIER: '피부장벽',
 };
 
+// "Sleep2Skin이 돕는 것" 카드(아래 ScopeCard) 전용 라벨 — 다크서클 항목만 "다크서클 회복"으로
+// 표시한다. SKIN_METRIC_LABELS를 직접 바꾸면 3주 추세 섹션(TREND_METRIC_ORDER, 아래)까지 같이
+// 바뀌어버려서 별도로 뺐다.
+const APP_MANAGED_METRIC_LABELS: Record<string, string> = {
+  ...SKIN_METRIC_LABELS,
+  DARK_CIRCLE: '다크서클 회복',
+};
+
 // trends는 항상 이 3개 키 고정(서버가 늘릴 계획 없음) — SKIN_METRIC_LABELS와 같은 라벨을 쓴다.
 const TREND_METRIC_ORDER: { key: keyof OverallReportTrends; label: string }[] = [
   { key: 'darkCircle', label: SKIN_METRIC_LABELS.DARK_CIRCLE },
@@ -265,7 +273,7 @@ export function OverallReport() {
       <View style={styles.scopeRow}>
         <ScopeCard
           title="Sleep2Skin이 돕는 것"
-          items={data.appManaged.map((code) => SKIN_METRIC_LABELS[code] ?? code)}
+          items={data.appManaged.map((code) => APP_MANAGED_METRIC_LABELS[code] ?? code)}
         />
         <ClinicScopeCard clinicNeeded={data.clinicNeeded} />
       </View>

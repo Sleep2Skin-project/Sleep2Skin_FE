@@ -208,9 +208,9 @@ function buildHeartRateItems(hrv: number | null, restingHeartRate: number | null
 const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 
 const SKIN_METRIC_LABELS = {
-  darkCircle: '다크서클',
-  complexion: '혈색 저하',
-  barrier: '피부 장벽 저하',
+  darkCircle: '다크서클 회복',
+  complexion: '혈색',
+  barrier: '피부 장벽',
 } as const;
 
 type SleepSummaryState =

@@ -83,7 +83,7 @@ const UNAVAILABLE_METRIC_COLOR = '#9E9E9E';
 type ProfileState = { status: 'loading' } | { status: 'error' } | { status: 'available'; profile: UserMeData };
 
 const FORECAST_METRIC_LABELS = {
-  darkCircle: '다크서클',
+  darkCircle: '다크서클 회복',
   complexion: '혈색',
   barrier: '피부 장벽',
 } as const;

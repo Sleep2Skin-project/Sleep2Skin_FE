@@ -41,22 +41,30 @@ export const NAV_BAR_INACTIVE_COLOR = '#9E9E9E';
 // 마침 활성/비활성이었던 상태의 fill 색 하나만 담고 있어(예: REPORT는 활성=검정, 나머지는
 // 비활성=회색), 두 상태를 다 쓰려면 fill만 바꾼 사본이 필요해서 active/inactive 두 벌로
 // 나눠뒀다(모양은 완전히 동일, 색만 다름).
+//
+// 🚨 PNG를 쓴다, SVG가 아니다 — app-tabs.tsx(네이티브)는 expo-router의 <NativeTabs>로 진짜 OS
+// 탭바(iOS UITabBarItem/Android BottomNavigationView)를 그리는데, 그 네이티브 아이콘 로더는
+// 래스터 이미지만 디코딩하고 SVG(XML)는 못 읽어 아이콘이 빈 채로 뜬다(웹은 app-tabs.web.tsx가
+// <Image>로 그려 브라우저가 SVG를 직접 렌더링하므로 문제가 없었다 — 그래서 웹에서만 멀쩡해
+// 보였다). PNG는 두 경로 모두에서 동작하므로 플랫폼 분기 없이 하나로 공유한다. 원본 SVG에서
+// 세로 120px(원본 대비 약 6배, 작은 탭바 아이콘도 흐려지지 않게 여유를 둔 고해상도) 기준으로
+// 가로세로 비율을 유지해 래스터화했다.
 export const NAV_BAR_ICON_SOURCES: Record<TabItem['name'], { active: ImageSourcePropType; inactive: ImageSourcePropType }> = {
   index: {
-    active: require('@/assets/images/figma-icon-navbar-home-active.svg'),
-    inactive: require('@/assets/images/figma-icon-navbar-home-inactive.svg'),
+    active: require('@/assets/images/figma-icon-navbar-home-active.png'),
+    inactive: require('@/assets/images/figma-icon-navbar-home-inactive.png'),
   },
   todo: {
-    active: require('@/assets/images/figma-icon-navbar-todo-active.svg'),
-    inactive: require('@/assets/images/figma-icon-navbar-todo-inactive.svg'),
+    active: require('@/assets/images/figma-icon-navbar-todo-active.png'),
+    inactive: require('@/assets/images/figma-icon-navbar-todo-inactive.png'),
   },
   report: {
-    active: require('@/assets/images/figma-icon-navbar-report-active.svg'),
-    inactive: require('@/assets/images/figma-icon-navbar-report-inactive.svg'),
+    active: require('@/assets/images/figma-icon-navbar-report-active.png'),
+    inactive: require('@/assets/images/figma-icon-navbar-report-inactive.png'),
   },
   my: {
-    active: require('@/assets/images/figma-icon-navbar-my-active.svg'),
-    inactive: require('@/assets/images/figma-icon-navbar-my-inactive.svg'),
+    active: require('@/assets/images/figma-icon-navbar-my-active.png'),
+    inactive: require('@/assets/images/figma-icon-navbar-my-inactive.png'),
   },
 };
 

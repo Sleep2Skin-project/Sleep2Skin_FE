@@ -527,10 +527,11 @@ const styles = StyleSheet.create({
   },
 
   // "지난밤 수면 구간" 카드 (node 350:700, w362 h187, radius16, border Pale Sky 22%, y169 —
-  // heading 하단(y128+20=148) 대비 21)
+  // heading 하단(y128+20=148) 대비 21). 배경색은 HOME 화면(index.tsx)의 "오늘의 피부 예보"
+  // 카드(forecastCard)와 동일한 rgba(255,255,255,0.62)로 통일(원래 불투명 #FFFFFF였음).
   sleepCard: {
     marginTop: 21,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     borderWidth: 1,
     borderColor: 'rgba(112, 115, 124, 0.22)',
     borderRadius: 16,

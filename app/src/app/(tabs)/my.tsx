@@ -826,10 +826,13 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
   },
   // 0.3mm(≈2pt) 아래로(771→773) 내렸다 — syncStatusText와 같이 이동해 둘 사이 간격은 그대로.
+  // 아이폰16 규격 맞추기 — 1pt(0.2mm) 아래로 내리는 요청, 반올림해 1pt 적용(773→774). 위
+  // syncStatusText(top:756, bottom≈775)와의 간격은 오히려 넓어지는 방향이라 겹칠 위험이
+  // 줄어들 뿐 늘지 않는다.
   syncPolicyText: {
     position: 'absolute',
     left: 0,
-    top: 773,
+    top: 774,
     width: CANVAS_WIDTH,
     textAlign: 'center',
     fontSize: 13.5,

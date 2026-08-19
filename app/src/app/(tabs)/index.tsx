@@ -513,10 +513,15 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#646464',
   },
+  // 아이폰16 규격 맞추기 — "좋은 아침이에요"(아이콘+텍스트 행) 하나만 1pt(0.2mm) 왼쪽으로
+  // 이동하는 요청이라 marginLeft:-1을 줬다. dateGreetingBlock(부모, left:31)이나 형제인
+  // dateText는 안 건드려서, "8월 20일 목요일" 줄의 정렬선은 그대로 31에 남는다(의도된 결과 —
+  // 이제 이 두 줄만 1pt 어긋남).
   greetingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 2,
+    marginLeft: -1,
   },
   sunIcon: {
     width: 24,
@@ -532,20 +537,32 @@ const styles = StyleSheet.create({
   // "LEVEL. 3" (node 187:2703, x:37 y:134 w:103.35 h:17.06)
   // 🚨 top이 원래 자리(79)로 돌아왔다 — 한때 캐릭터 쪽으로 15pt 더 내린 적(94)이 있었는데
   // 되돌렸다(dateGreetingBlock/LEVEL_CHARACTER_HOME_BOX 주석 참고, 캐릭터만 대신 내려감).
+  // 아이폰16 규격 맞추기 — dateGreetingBlock(left:31)과 같은 왼쪽 정렬선에 맞추는 요청이라
+  // left를 37→31로 옮겼다(델타 -6). 옆 levelTrack과의 상대 간격은 그대로 유지해야 해서
+  // levelTrack도 같은 델타(-6)만큼 같이 옮겼다.
+  // 추가 미세 조정 — fontSize +2pt 요청(15→17, lineHeight도 같이 +2로 클리핑 방지). "LEVEL. 3"
+  // 텍스트 폭이 넓어져 옆 levelTrack(left:101)과의 간격(현재 70pt)이 줄어드는데, 실제 렌더
+  // 폭을 코드만으로 정확히 측정할 수 없어 이 부분은 실기기에서 겹침 여부를 특히 더 확인해야
+  // 한다(아래 요약 참고).
   levelText: {
     position: 'absolute',
-    left: 37,
+    left: 31,
     top: 79,
-    fontSize: 15,
-    lineHeight: 17,
+    fontSize: 17,
+    lineHeight: 19,
     fontWeight: '700',
     color: Colors.primaryDark,
   },
   // 레벨 트랙 배경 value (node 187:2704, x:107.17 y:140.02 w:95.4 h:6.98, radius:5.82)
+  // 아이폰16 규격 맞추기 — levelText와 같이 -6 이동(107→101), 텍스트-트랙 사이 간격(70pt)은 그대로.
+  // 미세 조정 — 0.6pt(0.1mm) 위로 올리는 요청, 반올림해 1pt 적용(85→84). levelText(top:79)는
+  // 안 건드렸고, 가로로 떨어져 있는 요소라(x:31 vs x:101) 겹칠 위험은 없다.
+  // 추가 미세 조정 — 다시 0.6pt(0.1mm) 위로, 반올림해 1pt 적용(84→83, 원본 85 대비 누적 2pt).
+  // 반올림 때문에 이전 값과 같아지지 않도록 명시적으로 1pt 차이를 뒀다.
   levelTrack: {
     position: 'absolute',
-    left: 107,
-    top: 85,
+    left: 101,
+    top: 83,
     width: LEVEL_TRACK_WIDTH,
     height: 7,
     borderRadius: 6,
@@ -559,11 +576,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
   },
   // "50/250 exp" (node 541:3482, x:38 y:160 w:177.64 h:23, Press Start 2P 11px)
+  // 아이폰16 규격 맞추기 — dateGreetingBlock(left:31)과 같은 왼쪽 정렬선에 맞추는 요청이라
+  // left를 38→31로 옮겼다(델타 -7). 추가로 3pt(0.5mm) 위로 올리는 요청이라 top도 105→102.
+  // 추가 미세 조정 — fontSize +2pt 요청(11→13). lineHeight(23)가 이미 fontSize보다 훨씬 커서
+  // (픽셀 폰트 특성상 여유를 크게 잡아둔 값) 13pt로 커져도 그대로 두면 충분히 안전하다.
   expText: {
     position: 'absolute',
-    left: 38,
-    top: 105,
-    fontSize: 11,
+    left: 31,
+    top: 102,
+    fontSize: 13,
     lineHeight: 23,
     fontFamily: PRESS_START_2P,
     color: Colors.primaryDark,
@@ -760,9 +781,10 @@ const styles = StyleSheet.create({
     width: 345,
     alignItems: 'center',
   },
+  // 아이폰16 규격 맞추기 — fontSize +1.5pt 요청(11→12.5, lineHeight도 같이 +1.5로 클리핑 방지).
   verificationSummary: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 18.5,
     fontWeight: '400',
     color: '#9E9E9E',
     textAlign: 'center',

@@ -238,7 +238,13 @@ function AvoidDetailModal({ item, onClose }: { item: TodoAvoidItem | null; onClo
 }
 
 export default function TodoScreen() {
-  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  // 하단 네이티브 탭바가 실제로 차지하는 높이는 useSafeAreaInsets()로 알 수 없어(홈 화면
+  // index.tsx의 SafeAreaView onLayout과 같은 이유 — 852 고정값 기준으로 계산하면 탭바 높이를
+  // 반영 못 해 필요 이상으로 작게 그려진다), SafeAreaView 자신의 렌더링 높이를 onLayout으로
+  // 직접 재서 넘긴다. 이 화면은 이미 ScrollView로 감싸져 있어(위 주석 참고) 실측 전/후 스케일이
+  // 바뀌어도 잘리는 내용은 없다 — 콘텐츠가 넘치면 스크롤될 뿐이다.
+  const [screenHeight, setScreenHeight] = useState<number>();
+  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT, screenHeight);
   const [pixelFontLoaded] = useFonts(TODO_PIXEL_FONTS);
   const [state, setState] = useState<TodoScreenState>({ status: 'loading' });
   const [selectedAvoidItem, setSelectedAvoidItem] = useState<TodoAvoidItem | null>(null);
@@ -357,7 +363,10 @@ export default function TodoScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={styles.screen}
+      edges={['top', 'left', 'right']}
+      onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
           <View style={[styles.canvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>

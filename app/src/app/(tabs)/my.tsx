@@ -2,23 +2,16 @@ import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { calculateRemainingExp, checkInAttendance, getLevelExpDisplay, type AttendanceWeekDay } from '@/api/game';
 import { getDailyTodos } from '@/api/todo';
-import {
-  calculateVerificationTrustLevel,
-  deleteUserMe,
-  getDataStatus,
-  getUserMe,
-  type UserMeData,
-} from '@/api/user';
+import { calculateVerificationTrustLevel, getDataStatus, getUserMe, type UserMeData } from '@/api/user';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
 import { TEMP_USER_ID } from '@/constants/config';
 import { LEVEL_CHARACTER_IMAGES, LEVEL_EXP_MAX } from '@/constants/mockData';
-import { signalAccountDeleted } from '@/hooks/use-account-reset-signal';
 import { useDesignScale } from '@/hooks/use-design-scale';
 import { useTodoChangedSignal } from '@/hooks/use-todo-changed-signal';
 
@@ -173,13 +166,18 @@ function buildWeekStreakDays(
 // 쌓는다. 전체 트랙 길이(EXP_BAR_TOTAL_LENGTH)를 LEVEL_COUNT칸으로 균등하게 나눠 현재 레벨만큼
 // 앞에서부터 채우고("4레벨이면 4칸이 차있게"), 칸 경계마다 "^" 표시를 그 경계까지 채워졌으면
 // 파란색(도달), 아니면 회색(미도달)으로 찍는다.
-const EXP_BAR_ROW_WIDTH = 330;
-const EXP_BAR_THICKNESS = 10;
+// 아이폰16 규격 맞추기(1차) — "오늘의 투두" 진행 바(todoProgressTrack)를 370으로 넓힌 것과
+// 정확히 같은 가로 길이가 되도록 330→370(비율 370/330≈1.1212)으로 키우고, 세로(THICKNESS/
+// ROWMID_TOP/ROW3_TOP과 그로부터 파생되는 두 연결 구간 높이)도 전부 같은 비율로 같이 키워
+// 뱀 모양 비율이 원본과 동일하게 유지되도록 했다. "^" 경계 표시나 채움 계산은 전부 이 상수들을
+// 참조하는 수식이라(pointAtDistance/LevelSegmentBar) 상대적 위치·로직은 자동으로 그대로 유지된다.
+const EXP_BAR_ROW_WIDTH = 370;
+const EXP_BAR_THICKNESS = 11;
 const EXP_BAR_ROW1_TOP = 0;
-const EXP_BAR_ROWMID_TOP = 47;
-const EXP_BAR_ROW3_TOP = 92;
-const EXP_BAR_RIGHT_CONNECTOR_HEIGHT = 57; // row1 오른쪽 끝 → 가운데 줄 오른쪽 끝
-const EXP_BAR_LEFT_CONNECTOR_HEIGHT = 55; // 가운데 줄 왼쪽 끝 → row3 왼쪽 끝
+const EXP_BAR_ROWMID_TOP = 53;
+const EXP_BAR_ROW3_TOP = 103;
+const EXP_BAR_RIGHT_CONNECTOR_HEIGHT = EXP_BAR_ROWMID_TOP + EXP_BAR_THICKNESS; // row1 오른쪽 끝 → 가운데 줄 오른쪽 끝
+const EXP_BAR_LEFT_CONNECTOR_HEIGHT = EXP_BAR_ROW3_TOP + EXP_BAR_THICKNESS - EXP_BAR_ROWMID_TOP; // 가운데 줄 왼쪽 끝 → row3 왼쪽 끝
 const EXP_BAR_TOTAL_LENGTH =
   EXP_BAR_ROW_WIDTH + EXP_BAR_RIGHT_CONNECTOR_HEIGHT + EXP_BAR_ROW_WIDTH + EXP_BAR_LEFT_CONNECTOR_HEIGHT + EXP_BAR_ROW_WIDTH;
 
@@ -273,58 +271,6 @@ function LevelSegmentBar({ level, progressPercent }: { level: number; progressPe
         );
       })}
     </View>
-  );
-}
-
-// MY-04(회원 탈퇴) 2단계 확인 다이얼로그 — 서버는 요청을 받으면 확인 없이 즉시 영구 삭제하므로
-// (soft delete 아님, 되돌릴 방법 없음) 이 확인은 100% 클라이언트 책임이다. RN Alert.alert는 이
-// 프로젝트가 신경 쓰는 웹 테스트 환경(react-native-web)에서 버튼별 onPress가 신뢰성 있게 동작하지
-// 않아, 다른 팝업들(AvoidDetailModal 등)과 동일하게 커스텀 Modal로 구현한다.
-function DeleteAccountConfirmModal({
-  visible,
-  deleting,
-  errorMessage,
-  onCancel,
-  onConfirm,
-}: {
-  visible: boolean;
-  deleting: boolean;
-  errorMessage: string | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  if (!visible) return null;
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.deleteModalBackdrop} onPress={deleting ? undefined : onCancel}>
-        <Pressable style={styles.deleteModalCard} onPress={() => {}}>
-          <Text style={styles.deleteModalTitle}>정말 삭제하시겠어요?</Text>
-          <Text style={styles.deleteModalBody}>
-            모든 수면 데이터와 적립 내역이{'\n'}영구적으로 삭제되며 복구할 수 없어요.
-          </Text>
-          {errorMessage && <Text style={styles.deleteModalError}>{errorMessage}</Text>}
-          <View style={styles.deleteModalActions}>
-            <Pressable
-              onPress={onCancel}
-              disabled={deleting}
-              style={({ pressed }) => [styles.deleteModalCancelButton, pressed && styles.pressed]}>
-              <Text style={styles.deleteModalCancelText}>취소</Text>
-            </Pressable>
-            <Pressable
-              onPress={onConfirm}
-              disabled={deleting}
-              style={({ pressed }) => [
-                styles.deleteModalConfirmButton,
-                pressed && styles.pressed,
-                deleting && styles.deleteModalConfirmButtonDisabled,
-              ]}>
-              <Text style={styles.deleteModalConfirmText}>{deleting ? '삭제 중...' : '영구 삭제'}</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -424,26 +370,6 @@ export default function MyScreen() {
       });
   }, []);
 
-  // MY-04 — 2단계 확인(먼저 버튼 탭, 그다음 모달에서 확정) 없이는 절대 API를 쏘지 않는다.
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const handleConfirmDelete = async () => {
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteUserMe(TEMP_USER_ID);
-      // hard delete 성공 — _layout.tsx에 "온보딩/동의 화면으로 강제로 돌아가라"는 신호를 보낸다.
-      // entryRoute가 바뀌면 (tabs) 트리 전체(이 화면 포함)가 곧바로 언마운트되므로 여기서 모달을
-      // 직접 닫을 필요는 없다.
-      signalAccountDeleted();
-    } catch (error) {
-      console.error('❌ 회원 탈퇴 실패:', error);
-      setDeleting(false);
-      setDeleteError('삭제에 실패했어요. 잠시 후 다시 시도해주세요.');
-    }
-  };
 
   // 폰트 로드 전엔 흰 배경만 렌더한다 — 시스템 폰트로 잠깐 렌더돼 줄바꿈이 튀는 걸 막는다.
   if (!fontsLoaded) {
@@ -510,8 +436,8 @@ export default function MyScreen() {
             })}
           </View>
 
-          {/* "+ EXP" 섹션 제목 (node 541:3021) */}
-          <Text style={styles.expSectionTitle}>+ EXP</Text>
+          {/* "+ exp" 섹션 제목 (node 541:3021) */}
+          <Text style={styles.expSectionTitle}>+ exp</Text>
           {/* EXP 구간 막대 (node 541:3024~3034) — 위 LevelSegmentBar 주석 참고, 실 레벨(level) 사용 */}
           <LevelSegmentBar level={level} progressPercent={expDisplay.percent} />
           {/* 다음 레벨까지 남은 exp — Figma 노드 없음. nextLevelExp가 null(만렙)이면 "MAX 레벨"로
@@ -519,7 +445,7 @@ export default function MyScreen() {
               사용, api/game.ts). 로딩 중엔 아무것도 보여주지 않는다(어중간한 값을 보여주지 않기 위함). */}
           {profileState.status === 'available' && (
             <ThemedText style={styles.expRemainingText}>
-              {remainingExp === null ? 'MAX 레벨' : `다음 레벨까지 ${remainingExp} EXP`}
+              {remainingExp === null ? 'MAX 레벨' : `다음 레벨까지 ${remainingExp}exp`}
             </ThemedText>
           )}
 
@@ -559,28 +485,8 @@ export default function MyScreen() {
           {dataStatusState.status !== 'loading' && (
             <ThemedText style={styles.syncPolicyText}>{SYNC_POLICY_TEXT}</ThemedText>
           )}
-
-          {/* MY-04 회원 탈퇴 — Figma 노드 없음. 누르면 API를 바로 쏘지 않고 확인 모달부터 띄운다
-              (DeleteAccountConfirmModal 주석 참고). */}
-          <Pressable
-            onPress={() => {
-              setDeleteError(null);
-              setDeleteModalVisible(true);
-            }}
-            hitSlop={8}
-            style={({ pressed }) => [styles.deleteAccountButton, pressed && styles.pressed]}>
-            <Text style={styles.deleteAccountButtonText}>모든 기록 삭제(회원 탈퇴)</Text>
-          </Pressable>
         </View>
       </View>
-
-      <DeleteAccountConfirmModal
-        visible={deleteModalVisible}
-        deleting={deleting}
-        errorMessage={deleteError}
-        onCancel={() => setDeleteModalVisible(false)}
-        onConfirm={handleConfirmDelete}
-      />
     </SafeAreaView>
   );
 }
@@ -600,10 +506,12 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-  // 톱니바퀴 아이콘 (node 541:3039, x:344 y:34 w:24 h:23)
+  // 톱니바퀴 아이콘 (node 541:3039, w:24 h:23)
+  // 아이폰16 규격 맞추기(7차) — left를 344→362로 옮겨, 오른쪽 끝(362+24=386)이 아래
+  // todoProgressTrack의 오른쪽 끝(16+370=386)과 정확히 일치하도록 맞췄다.
   settingsButton: {
     position: 'absolute',
-    left: 344,
+    left: 362,
     top: 34,
   },
   settingsIcon: {
@@ -611,75 +519,125 @@ const styles = StyleSheet.create({
     height: 23,
   },
   // "LEVEL. 4" (node 541:3037, x:143 y:39 w:137.72, 중앙 정렬) — 전체 폭 기준으로 중앙 정렬한다.
+  // 아이폰16 규격 맞추기(7차) — top을 39→34로 옮겨 settingsButton의 top(34)과 정확히 일치시켰다.
+  // (8차) 1.5mm(9pt) 위로(34→25) 당겼다가, (9차) 0.5mm(3pt) 다시 아래로(25→28) 내렸다 —
+  // settingsButton은 두 요청 다 포함되지 않아 여전히 34 그대로라, 7차에서 맞춘 정렬은 계속
+  // 어긋난 상태다(levelTitle:28 vs settingsButton:34). 정렬을 유지하려면 settingsButton도
+  // 같이 옮겨야 한다.
   levelTitle: {
     position: 'absolute',
     left: 0,
-    top: 39,
+    top: 28,
     width: CANVAS_WIDTH,
     textAlign: 'center',
-    fontSize: 31,
-    lineHeight: 37,
+    fontSize: 34,
+    lineHeight: 40,
     fontWeight: '700',
     color: Colors.primaryDark,
   },
   // "내 루틴을 찾았어요!" (node 541:3038, x:123 y:83 w:178, Pretendard SemiBold 21.7px)
+  // ⚠️ 아이폰16 규격 맞추기(7차) — 요청은 24pt(83→59) 위로 당기는 것이었지만, 바로 위
+  // levelTitle이 이번 라운드에 top:34로 옮겨져 바닥이 34+40=74가 됐다. 24pt 그대로 적용하면
+  // (59) levelTitle과 15px 겹친다. 2px 여유만 남기는 선까지만(7pt, 83→76) 당겼다.
   levelSubtitle: {
     position: 'absolute',
     left: 0,
-    top: 83,
+    top: 76,
     width: CANVAS_WIDTH,
     textAlign: 'center',
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 25,
+    lineHeight: 29,
     fontFamily: PRETENDARD_SEMIBOLD,
     color: Colors.primaryDark,
   },
-  // MY-01 검증 신뢰도 문구 — Figma 노드 없음, levelSubtitle(top:83, 높이~26) 바로 아래 여백에 얹는다.
+  // MY-01 검증 신뢰도 문구 — Figma 노드 없음, levelSubtitle 바로 아래 여백에 얹는다.
+  // ⚠️ 아이폰16 규격 맞추기(7차) — 요청은 18pt(109→91) 위로 당기는 것이었지만, 위
+  // levelSubtitle의 바닥이 76+29=105라 18pt 그대로 적용하면(91) 14px 겹친다. 2px 여유만
+  // 남기는 선까지만(2pt, 109→107) 당겼다 — levelSubtitle이 이미 거의 여유 없이 붙어서 이번
+  // 라운드에 더 못 밀었다.
   trustLevelText: {
     position: 'absolute',
     left: 0,
-    top: 109,
+    top: 107,
     width: CANVAS_WIDTH,
     textAlign: 'center',
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 14,
+    lineHeight: 17,
     fontWeight: '500',
     color: 'rgba(3, 25, 73, 0.55)',
   },
-  // 캐릭터 (node 551:1316) — 그림자(node 541:2984)를 지운 뒤, "검증 N회 · 연속 N일" 텍스트
-  // 블록(trustLevelText, top:109 + lineHeight:14 = bottom 123)과 날짜 표시 행(dateText,
-  // top:398) 사이 빈 공간의 정중앙(123과 395의 중점 = 259)에 오도록 top을 다시 잡았다
-  // (top = 259 - height/2). 레벨별 이미지의 가로세로 비율이 서로 달라(1·2는 눕고 넓은 포즈,
-  // 3은 서 있는 세로 포즈 등) contentFit="contain"이 안쪽에서 알아서 맞추므로, 박스 자체는
-  // width만 넉넉히(캔버스 402 기준 좌우 22px 여백, weekStreakRow와 동일한 여백 관례) 잡고
-  // height는 위아래 여백(11px)을 남기고 저 gap을 넘치지 않게 잡았다.
+  // 캐릭터 (node 551:1316) — 그림자(node 541:2984)를 지운 뒤 위치를 다시 잡았다. 레벨별 이미지의
+  // 가로세로 비율이 서로 달라(1·2는 눕고 넓은 포즈, 3은 서 있는 세로 포즈 등) contentFit="contain"이
+  // 안쪽에서 알아서 맞추므로, 박스 자체는 width만 넉넉히(캔버스 402 기준 좌우 22px 여백,
+  // weekStreakRow와 동일한 여백 관례) 잡았다.
+  // ⚠️ 아이폰16 규격 맞추기(7차) — 요청은 24pt(134→110) 위로 당기는 것이었지만, 위
+  // trustLevelText 바닥이 107+17=124라 24pt 그대로 적용하면(110) 14px 겹친다. 2px 여유만
+  // 남기는 선까지만(8pt, 134→126) 당겼다 — 아래 dateText(top:386)와는 여전히 10px 여유가
+  // 있어 안전하다.
   characterImage: {
     position: 'absolute',
     left: 22,
-    top: 134,
+    top: 126,
     width: 358,
     height: 250,
   },
   // 오늘 날짜 (node 541:3016, x:98.69 y:396.74 w:228) — Figma는 22.6px를 쓰지만 그대로 옮기면
-  // 폭 228px에 두 줄로 넘어간다. 캔버스(402) 정중앙에 한 줄로 들어가도록 폭을 240px로 줄였다.
+  // 폭 228px에 두 줄로 넘어간다. 폰트를 17→20으로 키우면서 같은 이유로 폭도 240→300으로 같이
+  // 넓혀야 한 줄에 계속 들어간다(캔버스 402 기준 정중앙 유지, left = (402-300)/2 = 51).
+  // fontSize는 1차 때부터 이미 20이라 6차 요청("정확히 20pt")은 이미 충족된 상태 — 그대로 뒀다.
+  // ⚠️ 아이폰16 규격 맞추기(6차) — 요청은 36pt(398→362) 위로 당기는 것이었지만, 바로 위
+  // characterImage가 당시 top:134+height:250로 정확히 y:384까지 차지하고 있어서(정확한 값)
+  // 36pt를 그대로 적용하면 22px 겹친다. characterImage는 이번 요청 범위 밖이라 건드리지 않고,
+  // 그 바로 아래 2px 여유만 남기는 선까지만(12pt, 398→386) 당겼다.
+  // ⚠️ (10차) 2mm(12pt) 추가로 위로(386→374) 당기는 요청이었지만, 7차에서 characterImage가
+  // top:126으로 올라와 바닥이 126+250=376이 됐다(384→376). 12pt 그대로 적용하면(374) 2px
+  // 겹친다. 2px 여유만 남기는 선까지만(8pt, 386→378) 당겼다.
+  // 0.3mm(≈2pt) 아래로(378→380) 내렸다 — 폰트는 요청하신 20pt가 1차 때부터 이미 적용된
+  // 상태라 변경 없음. 위 characterImage(바닥376)와는 4px 여유가 있어 안전하다.
+  // fontSize를 20→22로 키웠다(요청). lineHeight도 같은 비율(1.2배)로 24→26 같이 키웠다.
+  // top은 이번 요청에 없어 380 그대로라, 아래 weekStreakRow와의 여유가 5px→3px로 줄었다.
   dateText: {
     position: 'absolute',
-    left: 81,
-    top: 398,
-    width: 240,
+    left: 51,
+    top: 380,
+    width: 300,
     textAlign: 'center',
-    fontSize: 17,
-    lineHeight: 21,
+    fontSize: 22,
+    lineHeight: 26,
     fontFamily: PRETENDARD_SEMIBOLD,
     color: '#000000',
   },
   // 이번 주 출석 스트릭 (node 541:2985, x:28 y:434 w:358.06) — 요일 7개를 flex row로 균등 배치한다
   // (Figma 원본은 요일마다 좌표가 조금씩 불균일하지만 눈에 띄지 않는 차이라 통일했다).
+  // ⚠️ 아이폰16 규격 맞추기(4차) — 요청은 24pt(434→410) 위로 당기는 것이었지만, dateText가
+  // top:398 + lineHeight:24로 정확히 y:422까지 차지하고 있어서(추정치가 아니라 정확한 값) 24pt를
+  // 그대로 적용하면 이 그룹(markerSlot부터 시작)이 dateText와 12px 겹친다. dateText는 이번
+  // 요청 범위 밖이라("이 3가지 외의 다른 요소는 건드리지 마") 건드리지 않고, dateText 바로
+  // 아래 4px 여유만 남기는 선까지만(8pt, 434→426) 당겼다.
+  // ⚠️ (5차) 이번 요청은 추가로 12pt(426→414) 더 당기는 것이었으나, top을 그대로 유지했다 —
+  // 이 그룹의 세로 높이(markerSlot14+circle marginTop2+circle45+label marginTop6+label 한 줄
+  // ≈85)가 위 dateText 바닥(정확히 422)과 아래 expSectionTitle(이번 5차로 507) 사이 공간
+  // (507-422=85)과 이미 거의 정확히 같아서, 위아래 어느 쪽으로도 더 밀 여유가 없다(한쪽으로
+  // 밀면 반드시 다른 쪽과 겹친다). 더 당기려면 dateText를 위로 옮기거나 expSectionTitle을
+  // 아래로 내리는 것 중 하나가 필요한데 둘 다 이번 요청 3가지 밖이라 그대로 뒀다.
+  // ⚠️ (6차) 이번 라운드에서 dateText가 386으로 12pt 올라가면서(바닥이 422→410) 위쪽으로 여유가
+  // 다시 생겼다. 요청은 18pt(426→408)였지만, dateText 새 바닥(410)+2px 마진 = 412가 상한이라
+  // 14pt(426→412)까지만 당겼다 — expSectionTitle(507) 쪽과는 여전히 10px 여유가 있어 안전하다.
+  // (10차 이후) dateText가 378까지 더 올라와(바닥 402) 여유가 늘어, 0.5mm(3pt, 412→409)를
+  // 전부 그대로 적용했다 — 위(dateText 바닥 402, 여유7)/아래(expSectionTitle 507, 여유13) 둘 다 안전.
+  // 아이폰16 규격 맞추기(8차) — left/width를 28/358 → 16/370으로 바꿔 좌우 끝을 todoProgressTrack
+  // (left:16, width:370, 우측 끝 386)과 정확히 맞췄다. 이미 justifyContent:'space-between'을
+  // 쓰고 있어서 폭만 넓히면 7개 weekStreakDay(각각 width:46, 안 건드림) 사이 간격이 자동으로
+  // 균등하게 늘어난다 — 별도 로직 변경 없이 폭 값만으로 요청 2번(간격 균등 확대)까지 해결됨.
+  // 세로 배치(markerSlot/circle/label 순서·간격)는 전혀 안 건드렸다.
+  // ⚠️ 0.3mm(≈2pt) 위로(409→407) 당겼다. 같은 요청에서 dateText 폰트도 22pt로 커져 바닥이
+  // 406이 돼서, 이 그룹과의 간격이 1px까지 줄었다 — 겹치진 않지만 매우 타이트하니 실기기에서
+  // 꼭 확인 필요.
   weekStreakRow: {
     position: 'absolute',
-    left: 28,
-    top: 434,
-    width: 358,
+    left: 16,
+    top: 407,
+    width: 370,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
@@ -715,25 +673,34 @@ const styles = StyleSheet.create({
   // 요일 라벨 ("완료"/"N일", node 541:2998 등, Pretendard SemiBold ~12px)
   weekStreakLabel: {
     marginTop: 6,
-    fontSize: 12,
+    fontSize: 15,
     fontFamily: PRETENDARD_SEMIBOLD,
   },
-  // "+ EXP" (node 541:3021, x:34 y:531 w:85, Press Start 2P 17px)
+  // "+ exp" (node 541:3021) — 폰트 3pt 확대(17→20). left도 34→14로 당겨서, 아래로 넓어진
+  // expBarWrapper(왼쪽이 36→16으로 이동)와 같은 상대 오프셋(-2)을 유지하며 정렬을 맞췄다.
+  // 아이폰16 규격 맞추기(3차) — top을 12pt(531→519) 위로 당겼다. (4차) 9pt(519→510) 추가로
+  // 당겼다. (5차) expBarWrapper와 같이 3pt(510→507) 추가로 당겼다(둘 사이 간격은 그대로).
   expSectionTitle: {
     position: 'absolute',
-    left: 34,
-    top: 531,
-    fontSize: 17,
+    left: 14,
+    top: 507,
+    fontSize: 20,
     fontFamily: PRESS_START_2P,
     color: '#000000',
   },
-  // EXP 뱀 모양 막대 자리 (node 541:3024~3032 전체를 감싸는 영역, x:36 y:574 w:330 h:102) —
-  // 안의 5개 조각(row1/rightConnector/rowMid/leftConnector/row3)은 전부 이 안에서 로컬 좌표로
-  // 절대 배치된다(LevelSegmentBar 위 주석 참고).
+  // EXP 뱀 모양 막대 자리 (node 541:3024~3032 전체를 감싸는 영역) — 안의 5개 조각(row1/
+  // rightConnector/rowMid/leftConnector/row3)은 전부 이 안에서 로컬 좌표로 절대 배치된다
+  // (LevelSegmentBar 위 주석 참고). left를 36→16으로 옮겨 아래 todoProgressTrack과 같은 폭
+  // (370)으로 화면 중앙에 정렬했다(원래 36 그대로 두면 폭이 늘어난 만큼 우측이 캔버스 밖으로
+  // 넘친다). 아이폰16 규격 맞추기(3차) — top을 30pt(574→544) 위로 당겼다. 이 이동으로 row3의
+  // 실제 절대 위치가 647~658로 올라가서, 아래 expRemainingText(2차에서 겹침 우려가 있었던
+  // 667)와의 간격이 오히려 넓어져 2차 때 남겨둔 겹침 우려가 해소됐다(아래 expRemainingText
+  // 주석 참고). (4차) 6pt(544→538) 추가로 당겼다. (5차) expSectionTitle과 같이 3pt(538→535)
+  // 추가로 당겼다(둘 사이 간격은 그대로).
   expBarWrapper: {
     position: 'absolute',
-    left: 36,
-    top: 574,
+    left: 16,
+    top: 535,
     width: EXP_BAR_ROW_WIDTH,
     height: EXP_BAR_ROW3_TOP + EXP_BAR_THICKNESS,
   },
@@ -780,26 +747,31 @@ const styles = StyleSheet.create({
   expBarDividerUpcoming: {
     color: '#CBD4DD',
   },
-  // "오늘의 투두    n / 5" (node 541:3022, x:33 y:695 w:142, Pretendard SemiBold 19px)
-  // 다음 레벨까지 남은 exp — Figma 노드 없음, expBarWrapper(top:574 h:102, 끝 676)와
-  // todoSummaryText(top:695) 사이 여백에 얹는다.
+  // "오늘의 투두    n / 5" (node 541:3022, Pretendard SemiBold 19px)
+  // 다음 레벨까지 남은 exp — Figma 노드 없음. 2차에서 12pt(679→667) 당겼을 때 exp 바 row3
+  // (당시 절대 위치 677~688)와 겹칠 수 있다고 남겨뒀었는데, 3차에서 exp 바 자체가 30pt 위로
+  // 올라가면서(row3가 이제 647~658) 이 텍스트(top:661)와 다시 안 겹치게 됐다 — 3pt 여유.
+  // top을 6pt(667→661) 위로 추가로 당겼다.
   expRemainingText: {
     position: 'absolute',
-    left: 36,
-    top: 679,
+    left: 16,
+    top: 661,
     width: EXP_BAR_ROW_WIDTH,
     textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 14,
+    fontSize: 15,
+    lineHeight: 17,
     fontWeight: '600',
     color: 'rgba(3, 25, 73, 0.55)',
   },
+  // 아이폰16 규격 맞추기(2차) — left를 33→16으로 옮겨 아래 todoProgressTrack(left:16)과 좌측
+  // 정렬선을 맞췄고, top도 3pt(695→692) 위로 당겼다. (3차) top을 2pt(692→694) 아래로 내렸다.
+  // (5차) todoProgressTrack과 같이 3pt(694→691) 위로 당겼다(둘 사이 간격·좌측 정렬은 그대로).
   todoSummaryText: {
     position: 'absolute',
-    left: 33,
-    top: 695,
-    fontSize: 19,
-    lineHeight: 23,
+    left: 16,
+    top: 691,
+    fontSize: 22,
+    lineHeight: 26,
     fontFamily: PRETENDARD_SEMIBOLD,
     color: '#000000',
   },
@@ -820,12 +792,15 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_LIGHT,
     color: '#FFFFFF',
   },
-  // 오늘의 투두 진행 바 (node 541:3023/3025, x:33 y:739 w:332)
+  // 오늘의 투두 진행 바 (node 541:3023/3025)
+  // 아이폰16 규격 맞추기(1차) — 좌우 여백을 33/37→16/16으로 줄여 폭 332→370으로 넓혔다(가로
+  // 중앙 정렬 유지). 아래 LevelSegmentBar도 이 폭(EXP_BAR_ROW_WIDTH)에 맞춰 같이 넓혔다.
+  // (2차) top을 12pt(739→727) 위로 당겼다. (5차) todoSummaryText와 같이 3pt(727→724) 위로 당겼다.
   todoProgressTrack: {
     position: 'absolute',
-    left: 33,
-    top: 739,
-    width: 332,
+    left: 16,
+    top: 724,
+    width: 370,
     height: 10,
     borderRadius: 5,
     backgroundColor: 'rgba(203, 212, 221, 0.58)',
@@ -838,112 +813,28 @@ const styles = StyleSheet.create({
   },
 
   // MY-02 수면 데이터 연결 상태 — Figma 노드 없음, todoProgressTrack(top:739 h:10, 끝 749) 아래 여백에 얹는다.
+  // 0.3mm(≈2pt) 아래로(754→756) 내렸다.
   syncStatusText: {
     position: 'absolute',
     left: 0,
-    top: 754,
+    top: 756,
     width: CANVAS_WIDTH,
     textAlign: 'center',
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 16,
+    lineHeight: 19,
     fontWeight: '700',
     color: Colors.primaryDark,
   },
+  // 0.3mm(≈2pt) 아래로(771→773) 내렸다 — syncStatusText와 같이 이동해 둘 사이 간격은 그대로.
   syncPolicyText: {
     position: 'absolute',
     left: 0,
-    top: 771,
+    top: 773,
     width: CANVAS_WIDTH,
     textAlign: 'center',
-    fontSize: 10.5,
-    lineHeight: 13,
+    fontSize: 13.5,
+    lineHeight: 16,
     fontWeight: '500',
     color: '#9E9E9E',
-  },
-
-  // MY-04 회원 탈퇴 버튼 — Figma 노드 없음, 화면 맨 아래 여백에 얹는다.
-  deleteAccountButton: {
-    position: 'absolute',
-    left: 0,
-    top: 810,
-    width: CANVAS_WIDTH,
-    alignItems: 'center',
-  },
-  deleteAccountButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(229, 34, 34, 0.7)',
-    textDecorationLine: 'underline',
-  },
-
-  // ── DeleteAccountConfirmModal ────────────────────────────────────────────
-  deleteModalBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingHorizontal: 32,
-  },
-  deleteModalCard: {
-    width: '100%',
-    maxWidth: 320,
-    borderRadius: 20,
-    paddingVertical: 26,
-    paddingHorizontal: 22,
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  deleteModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    textAlign: 'center',
-  },
-  deleteModalBody: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
-    color: 'rgba(55, 56, 60, 0.75)',
-    textAlign: 'center',
-  },
-  deleteModalError: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#E52222',
-    textAlign: 'center',
-  },
-  deleteModalActions: {
-    marginTop: 12,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  deleteModalCancelButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(112, 115, 124, 0.12)',
-  },
-  deleteModalCancelText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  deleteModalConfirmButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E52222',
-  },
-  deleteModalConfirmButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteModalConfirmText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 });

@@ -6,6 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // 가로세로 비율이 크게 다른 환경에서 캔버스가 한쪽 구석에 작게 배치되고 남는 공간에 배경색만
 // 넓게 칠해져 어색해 보였다. 이제 기기 하나로 고정했으니 그 경우가 없다.
 const TARGET_DEVICE_WIDTH = 393;
+// measuredContainerHeight를 아직 안 넘기는 화면들(대부분 이 파일 아래 목록)이 쓰는 대략치 —
+// 정확하진 않지만(네이티브 탭바 높이를 모른다, 아래 안내 참고) 이 훅을 쓰는 모든 화면을
+// onLayout 실측으로 옮기기 전까지는 기존 동작을 그대로 유지하기 위한 값이다.
+const FALLBACK_DEVICE_HEIGHT = 852;
 
 /**
  * Figma 캔버스(고정 designWidth x designHeight, 기본 402x874)를 아이폰 16 화면에 맞춰
@@ -31,10 +35,11 @@ export function useDesignScale(designWidth: number, designHeight?: number, measu
   const widthScale = availableWidth / designWidth;
   if (!designHeight) return widthScale;
 
-  // 아직 실측 전(첫 렌더)이면 세로 제약 없이 폭 기준으로만 그려서, 실측 후 스케일이
-  // 커지는 쪽으로만 바뀌게 한다(작아지는 쪽으로 바뀌면 순간적으로 눈에 띄게 덜컹인다).
-  if (!measuredContainerHeight) return widthScale;
-
-  const availableHeight = measuredContainerHeight - insets.top - insets.bottom;
+  // measuredContainerHeight를 안 넘긴 호출부는 예전처럼 852(고정 상수) 기준으로 계산한다
+  // (탭바 높이를 무시하는 부정확한 값이지만, 그 화면들을 개별 검토하기 전까지는 최소한
+  // 이전 동작을 그대로 유지해야 한다 — 여기서 fallback을 잘못 바꿨다가 손 안 댄 화면들이
+  // 전부 같이 밀리는 회귀가 난 적이 있다).
+  const containerHeight = measuredContainerHeight ?? FALLBACK_DEVICE_HEIGHT;
+  const availableHeight = containerHeight - insets.top - insets.bottom;
   return Math.min(widthScale, availableHeight / designHeight);
 }

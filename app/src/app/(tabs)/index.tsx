@@ -43,15 +43,20 @@ const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
 // 🚨 스케일 계산에는 CANVAS_HEIGHT(874)가 아니라 이 값을 쓴다 — 실제 콘텐츠는 셰브론
-// 아이콘(top:774 + h:13)에서 끝나고(y:787), 그 아래 874까지 87pt는 예전에 캔버스 안에 직접
-// 그려져 있던 하단 탭바가 네이티브 탭바(app-tabs.tsx)로 옮겨가면서 남은 빈 배경이다. 이 빈
-// 여백까지 안전 영역에 욱여넣으려고 useDesignScale이 캔버스 전체를 필요 이상으로(약 0.87배)
-// 축소해서, 아이폰 16 실기기에서 버튼·캐릭터 등이 다 작아 보이고 화면 좌우에 빈 여백이 남는
-// 문제가 있었다(docs/아이폰16.jpg). 실제 콘텐츠 높이(+약간의 여유)만 기준으로 스케일을 잡으면
-// 이 빈 공간은 화면 아래로(탭바 뒤로) 자연스럽게 넘어가고 보이는 내용물은 거의 원본 크기로
-// 나온다. 콘텐츠가 늘어나 이 값을 넘으면(예: 텍스트가 길어져 요소가 밀리면) 다시 잘릴 수 있으니
+// 아이콘에서 끝나고, 그 아래 874까지는 예전에 캔버스 안에 직접 그려져 있던 하단 탭바가
+// 네이티브 탭바(app-tabs.tsx)로 옮겨가면서 남은 빈 배경이다. 이 빈 여백까지 안전 영역에
+// 욱여넣으려고 하면 useDesignScale이 캔버스 전체를 필요 이상으로 축소해서, 아이폰 16
+// 실기기에서 버튼·캐릭터 등이 다 작아 보이고 화면 좌우에 빈 여백이 남는 문제가 있었다
+// (docs/아이폰16.jpg).
+//
+// 🚨 아래 모든 요소의 top 값은 Figma 원본보다 일괄 40pt 작다 — 실제 세로 여유 공간
+// (아이폰 16, 네이티브 탭바 위 실측 영역)이 원본 디자인 높이보다 좁아서, 맨 위 여백
+// (상태바 아래 순수 디자인 여백 55pt)을 15pt로 줄이고 그만큼 모든 요소를 통째로 위로
+// 당겼다(docs/아이폰16-2.jpg 확인 후 결정, 요소 간 상대 간격은 그대로라 겹침 없음).
+// 상태바 자체 높이(useSafeAreaInsets)는 별도로 SafeAreaView가 처리하므로 안 건드렸다.
+// 콘텐츠가 늘어나 이 값을 넘으면(예: 텍스트가 길어져 요소가 밀리면) 다시 잘릴 수 있으니
 // 하단 요소 좌표가 바뀌면 이 값도 같이 확인한다.
-const SCALE_FIT_HEIGHT = 800;
+const SCALE_FIT_HEIGHT = 760;
 
 // 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 getLevelExpDisplay의 percent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
@@ -479,7 +484,7 @@ const styles = StyleSheet.create({
   dateGreetingBlock: {
     position: 'absolute',
     left: 31,
-    top: 55,
+    top: 15,
   },
   dateText: {
     fontSize: 18,
@@ -507,7 +512,7 @@ const styles = StyleSheet.create({
   levelText: {
     position: 'absolute',
     left: 37,
-    top: 134,
+    top: 94,
     fontSize: 15,
     lineHeight: 17,
     fontWeight: '700',
@@ -517,7 +522,7 @@ const styles = StyleSheet.create({
   levelTrack: {
     position: 'absolute',
     left: 107,
-    top: 140,
+    top: 100,
     width: LEVEL_TRACK_WIDTH,
     height: 7,
     borderRadius: 6,
@@ -534,7 +539,7 @@ const styles = StyleSheet.create({
   expText: {
     position: 'absolute',
     left: 38,
-    top: 160,
+    top: 120,
     fontSize: 11,
     lineHeight: 23,
     fontFamily: PRESS_START_2P,
@@ -553,7 +558,7 @@ const styles = StyleSheet.create({
   tooltipCard: {
     position: 'absolute',
     left: 181,
-    top: 158,
+    top: 118,
     width: 199,
     minHeight: 78,
     borderRadius: 25,
@@ -609,7 +614,7 @@ const styles = StyleSheet.create({
   tooltipIcon: {
     position: 'absolute',
     left: 198,
-    top: 186,
+    top: 146,
     width: 27,
     height: 27,
   },
@@ -618,7 +623,7 @@ const styles = StyleSheet.create({
   forecastCard: {
     position: 'absolute',
     left: 22,
-    top: 481,
+    top: 441,
     width: 358,
     height: 186,
     borderRadius: 17,
@@ -694,7 +699,7 @@ const styles = StyleSheet.create({
   verifyButton: {
     position: 'absolute',
     left: 29,
-    top: 686,
+    top: 646,
     width: 345,
     height: 52,
     borderRadius: 10,
@@ -713,7 +718,7 @@ const styles = StyleSheet.create({
   verificationTrigger: {
     position: 'absolute',
     left: 30,
-    top: 750,
+    top: 710,
     width: 345,
     alignItems: 'center',
   },
@@ -728,7 +733,7 @@ const styles = StyleSheet.create({
   chevronIcon: {
     position: 'absolute',
     left: 190,
-    top: 774,
+    top: 734,
     width: 23,
     height: 13,
   },

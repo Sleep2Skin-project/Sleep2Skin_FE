@@ -42,6 +42,17 @@ import { useTodoChangedSignal } from '@/hooks/use-todo-changed-signal';
 const CANVAS_WIDTH = 402;
 const CANVAS_HEIGHT = 874;
 
+// 🚨 스케일 계산에는 CANVAS_HEIGHT(874)가 아니라 이 값을 쓴다 — 실제 콘텐츠는 셰브론
+// 아이콘(top:774 + h:13)에서 끝나고(y:787), 그 아래 874까지 87pt는 예전에 캔버스 안에 직접
+// 그려져 있던 하단 탭바가 네이티브 탭바(app-tabs.tsx)로 옮겨가면서 남은 빈 배경이다. 이 빈
+// 여백까지 안전 영역에 욱여넣으려고 useDesignScale이 캔버스 전체를 필요 이상으로(약 0.87배)
+// 축소해서, 아이폰 16 실기기에서 버튼·캐릭터 등이 다 작아 보이고 화면 좌우에 빈 여백이 남는
+// 문제가 있었다(docs/아이폰16.jpg). 실제 콘텐츠 높이(+약간의 여유)만 기준으로 스케일을 잡으면
+// 이 빈 공간은 화면 아래로(탭바 뒤로) 자연스럽게 넘어가고 보이는 내용물은 거의 원본 크기로
+// 나온다. 콘텐츠가 늘어나 이 값을 넘으면(예: 텍스트가 길어져 요소가 밀리면) 다시 잘릴 수 있으니
+// 하단 요소 좌표가 바뀌면 이 값도 같이 확인한다.
+const SCALE_FIT_HEIGHT = 800;
+
 // 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 getLevelExpDisplay의 percent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
 
@@ -198,7 +209,7 @@ function ForecastGaugeRow({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const scale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT);
   const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);

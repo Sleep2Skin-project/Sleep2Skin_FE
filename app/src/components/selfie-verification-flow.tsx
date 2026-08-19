@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
@@ -728,37 +727,16 @@ function AnalyzingStep({ imageUri, pending }: { imageUri: string | null; pending
   );
 }
 
-// ⚠️ 임시방편(TEMP) — "+N%p" 델타 필의 데이터 소스. 나중에 바뀔 수 있으니 이 블록을 건드릴 일이
-// 생기면 아래 배경부터 읽을 것.
-//
-// 서버(GET /api/v1/skin/verification/summary)는 "지금 이 순간의 누적 적중률"만 줄 뿐, "예전엔
-// 얼마였는지"(추세)는 아예 안 내려준다. 그래서 "지난번에 이 화면을 본 시점의 누적 적중률"을 이
-// 기기(AsyncStorage)에 직접 저장해뒀다가, 다음에 볼 때 지금 값과 비교해서 델타를 만든다.
-// 이 방식의 한계(둘 다 알고 있어야 함):
-// - 계정이 아니라 "이 기기"에 저장된다 — 다른 기기/재설치/앱 데이터 삭제 시 기준값이 사라져서
-//   그 다음 방문에서 델타가 다시 안 뜬다(첫 방문과 동일하게 취급).
-// - 이 화면을 실제로 "본" 시점만 스냅샷으로 남는다 — 백엔드에 과거 데이터를 통째로 시딩해도,
-//   시딩 이후 이 기기로 최초 한 번 열기 전까지는 비교 기준이 없다.
-// 서버가 나중에 "직전 대비 변화량" 또는 기간별 누적 적중률 스냅샷을 내려주기 시작하면, 이 로컬
-// 저장 로직은 통째로 걷어내고 서버 값을 쓰는 게 맞다.
-const HIT_RATE_SNAPSHOT_STORAGE_KEY = `skin:accuracy-hit-rate-snapshot:${TEMP_USER_ID}`;
-
-// 저장된 이전 누적 적중률을 읽어 델타를 계산하고, 그 자리에 지금 값을 다시 저장해 다음 방문의
-// 기준으로 삼는다. 저장된 값이 없으면(최초 방문이거나 기기가 바뀌었으면) null을 돌려줘서
-// 호출부가 델타 필 자체를 숨기게 한다 — "0%p"로 보여주면 마치 변화가 없었다는 뜻으로 오해된다.
-// 스토리지 읽기/쓰기가 실패해도(권한 문제 등) 조용히 null로 폴백한다 — 델타는 부가 정보라
-// 이것 때문에 리포트 화면 전체가 에러로 빠지면 안 된다.
-async function readAndUpdateHitRateSnapshot(currentHitRate: number): Promise<number | null> {
-  try {
-    const stored = await AsyncStorage.getItem(HIT_RATE_SNAPSHOT_STORAGE_KEY);
-    await AsyncStorage.setItem(HIT_RATE_SNAPSHOT_STORAGE_KEY, String(currentHitRate));
-    if (stored === null) return null;
-    const previousHitRate = Number(stored);
-    return Number.isNaN(previousHitRate) ? null : currentHitRate - previousHitRate;
-  } catch (error) {
-    console.error('❌ 적중률 스냅샷 읽기/쓰기 실패:', error);
-    return null;
-  }
+// "+N%p" 델타 필의 데이터 소스 — summary.previous(직전 검증 1건, 비교 대상 없으면 null)와
+// summary.latest(가장 최근 검증)를 서버가 같이 내려줘서, 그 둘의 그날치 적중률 차이를 여기서
+// 뺀다. 예전엔 서버가 "지금 순간의 누적 적중률"만 내려줘서 "지난 방문 시점 값"을 기기
+// (AsyncStorage)에 직접 저장해뒀다가 비교하는 임시방편을 썼는데, 서버가 previous를 내려주기
+// 시작해서 그 로컬 저장 로직은 걷어냈다 — 계정이 아니라 "이 기기"에만 저장되던 한계도 이제 없다.
+// previous가 null이면(검증이 1건뿐이라 비교 대상이 없으면) 델타 필 자체를 렌더링하지 않는다 —
+// "0%p"로 보여주면 마치 변화가 없었다는 뜻으로 오해된다.
+function computeHitRateDelta(summary: VerificationSummary): number | null {
+  if (summary.previous === null) return null;
+  return summary.latest.hitRate - summary.previous.hitRate;
 }
 
 type AccuracyBannerState =
@@ -786,12 +764,12 @@ function AccuracyCard() {
     const baseDate = getTodayDateString();
 
     getVerificationSummary(TEMP_USER_ID, baseDate)
-      .then(async ({ data }) => {
+      .then(({ data }) => {
         if (data.status !== 'AVAILABLE') {
           setState({ kind: 'no_verification', message: data.message });
           return;
         }
-        const hitRateDelta = await readAndUpdateHitRateSnapshot(data.summary.hitRate);
+        const hitRateDelta = computeHitRateDelta(data.summary);
         setState({ kind: 'available', baseDate: data.baseDate, summary: data.summary, hitRateDelta });
       })
       .catch((error) => {
@@ -834,9 +812,9 @@ function AccuracyCard() {
   const { summary, baseDate, hitRateDelta } = state;
   const todayInStreak = summary.streakCount > 0 && summary.latest.baseDate === baseDate;
   const totalBadges = Math.min(summary.streakCount, STREAK_BADGE_MAX);
-  // "+6%p" 델타 필(node 618:1737) — hitRateDelta는 위 readAndUpdateHitRateSnapshot(임시방편, 그
-  // 함수 선언부 주석 참고)이 계산한 "지난 방문 대비 누적 적중률 변화"다. 저장된 기준값이 없으면
-  // (최초 방문 등) null이 오는데, 이땐 "0%p"로 얼버무리지 않고 필 자체를 렌더링하지 않는다.
+  // "+6%p" 델타 필(node 618:1737) — hitRateDelta는 위 computeHitRateDelta가 계산한
+  // "latest.hitRate - previous.hitRate"(직전 검증 대비, 둘 다 그날치)다. previous가 없으면
+  // (검증 1건뿐이면) null이 오는데, 이땐 "0%p"로 얼버무리지 않고 필 자체를 렌더링하지 않는다.
   const hitRateDeltaView =
     hitRateDelta === null
       ? null

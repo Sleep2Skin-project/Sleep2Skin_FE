@@ -207,7 +207,17 @@ export function BarChart({
 }
 
 const styles = StyleSheet.create({
+  // 아이폰16 규격 맞추기 — 탭 바 전체를 6pt(1mm) 아래로 내리는 요청이라 marginTop을 줬다.
+  // 이 트랙은 report.tsx의 tabsWrap(일반 flow, position 지정 없음) 안에서 렌더되므로, 아래로
+  // 밀리는 만큼 그 다음에 오는 ScrollView 콘텐츠도 같이 밀려 겹칠 일이 없다.
+  // 재점검(화면 반영이 거의 안 보인다는 피드백): CTA 버튼 때와 달리 이건 flex-grow 부모가
+  // 아니라 그냥 일반 flow(View) 안의 marginTop이라 상쇄되는 구조가 아니다 — React Native/Yoga는
+  // 웹 CSS와 달리 margin collapsing이 아예 없어서, 이 marginTop은 항상 그대로 반영된다(tabsWrap도
+  // paddingBottom만 있을 뿐 이 값과 충돌하는 자체 padding/margin이 없음). 실제로는 6pt(1mm)
+  // 자체가 화면 맨 위, 비교 기준선도 없는 곳에서의 이동이라 육안으로 인지하기 어려울 만큼
+  // 작은 값이었을 가능성이 높다. 추가 요청(+2pt)까지 반영해 6→8로 늘렸다.
   tabTrack: {
+    marginTop: 8,
     flexDirection: 'row',
     borderRadius: 999,
     padding: 3,
@@ -226,8 +236,10 @@ const styles = StyleSheet.create({
   tabItemPressed: {
     opacity: 0.6,
   },
+  // 폰트 크기 +2pt 요청(12→14) — ThemedText type="smallBold"의 기본 lineHeight(20)가 이미
+  // fontSize14보다 훨씬 여유 있어(20>14) 알약 패딩(paddingVertical:8) 안에서 잘리지 않는다.
   tabLabel: {
-    fontSize: 12,
+    fontSize: 14,
   },
 
   insightBanner: {

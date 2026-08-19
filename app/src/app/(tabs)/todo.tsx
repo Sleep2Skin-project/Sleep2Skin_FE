@@ -488,10 +488,14 @@ const styles = StyleSheet.create({
 
   // Spiral Notepad (node 694:2659, x:22.04 y:70 w:31 h:31) — 예전엔 다른(구) 프레임 노드(187:2551)
   // 좌표를 썼는데 새 시안(694:2599)과 5px 정도 어긋나 있었다.
+  // 🚨 top이 20이다 — 홈 화면(index.tsx) dateGreetingBlock과 정확히 같은 값으로 맞춰서, 두
+  // 화면을 오갈 때 맨 위 시작 지점이 어긋나 보이지 않게 했다(한때 위쪽 그룹 전체를 여기서
+  // +35 내린 적이 있었는데 그 이동을 되돌렸다 — 대신 아래쪽 빈 공간은 체크리스트 박스
+  // 자체를 키워서 메운다, checklistItem 주석 참고).
   notepadIcon: {
     position: 'absolute',
     left: 22,
-    top: 55,
+    top: 20,
     width: 31,
     height: 31,
   },
@@ -501,7 +505,7 @@ const styles = StyleSheet.create({
   pageTitle: {
     position: 'absolute',
     left: 66,
-    top: 55,
+    top: 20,
     fontSize: 25,
     lineHeight: 35,
     fontWeight: '700',
@@ -509,12 +513,13 @@ const styles = StyleSheet.create({
   },
 
   // ghost2-transparent 1 (node 187:2526, x:309 y:55 w:89 h:89)
-  // 🚨 1.2배(89→107) 키웠다 — 가운데(원래 중심 x=353.5, y=84.5)는 그대로 유지하도록
-  // left/top도 같이 다시 계산했다.
+  // 🚨 1.2배(89→107) 키웠다. top은 위 notepadIcon/pageTitle과 같이 다시 올라간 만큼(-35) 맞춰
+  // 원래 Figma 관계(제목보다 15pt 더 위에서 시작)를 유지했다 — 정확한 중심 보존 대신 이 값을
+  // 쓴 이유는, 중심을 그대로 유지하면 top이 음수(-4)가 되어 캔버스 위로 살짝 잘리기 때문이다.
   ghostImage: {
     position: 'absolute',
     left: 291,
-    top: 31,
+    top: 5,
     width: 107,
     height: 107,
   },
@@ -523,7 +528,7 @@ const styles = StyleSheet.create({
   statusText: {
     position: 'absolute',
     left: 27,
-    top: 95,
+    top: 60,
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '500',
@@ -533,7 +538,7 @@ const styles = StyleSheet.create({
   emptyState: {
     position: 'absolute',
     left: 27,
-    top: 115,
+    top: 80,
     width: 348,
   },
   emptyStateText: {
@@ -549,7 +554,7 @@ const styles = StyleSheet.create({
   progressLabel: {
     position: 'absolute',
     left: 21,
-    top: 425,
+    top: 390,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
@@ -559,7 +564,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     position: 'absolute',
     left: 70,
-    top: 431,
+    top: 396,
     width: 95.4,
     height: 7,
     borderRadius: 6,
@@ -576,7 +581,7 @@ const styles = StyleSheet.create({
   progressCount: {
     position: 'absolute',
     left: 170,
-    top: 427,
+    top: 392,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
@@ -587,7 +592,7 @@ const styles = StyleSheet.create({
   toggleErrorText: {
     position: 'absolute',
     left: 26,
-    top: 459,
+    top: 424,
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '600',
@@ -604,7 +609,7 @@ const styles = StyleSheet.create({
   avoidCard: {
     position: 'absolute',
     left: 5,
-    top: 95,
+    top: 60,
     width: 395,
     borderRadius: 16,
     padding: 16,
@@ -663,7 +668,7 @@ const styles = StyleSheet.create({
   checklistTitleRow: {
     position: 'absolute',
     left: 21,
-    top: 398,
+    top: 363,
     width: 363,
     flexDirection: 'row',
     alignItems: 'center',
@@ -680,16 +685,21 @@ const styles = StyleSheet.create({
   checklistList: {
     position: 'absolute',
     left: 21,
-    top: 453,
+    top: 418,
     width: 363,
     gap: 10,
   },
   // 항목 카드 (node 176:1170/1177/1183, w:363 h:53~54, radius:14)
+  // 🚨 paddingVertical이 15가 아니라 20이다 — 위 notepadIcon/pageTitle 등을 홈 화면과 맞추려고
+  // 맨 위 여백을 다시 줄이면서(top:55→20 되돌림) 생긴 아래쪽 빈 공간을, 체크리스트 항목 5개의
+  // 세로를 조금씩 키워서 채웠다(항목당 +10pt ≈ 5개 합쳐 +50pt). 스크롤이 없는 화면이라 탭바
+  // 바로 위까지 딱 채우지는 않고(실측 여유 ≈67pt 중 50pt만 씀) 안전 여유를 좀 남겼다. 간격
+  // (gap)이 아니라 패딩을 키운 이유는 박스 자체가 커 보이길 원해서다.
   checklistItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 15,
+    paddingVertical: 20,
     paddingHorizontal: 15,
     borderRadius: 14,
     borderWidth: 1,

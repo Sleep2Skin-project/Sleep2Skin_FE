@@ -46,9 +46,16 @@ export const NAV_BAR_INACTIVE_COLOR = '#9E9E9E';
 // 탭바(iOS UITabBarItem/Android BottomNavigationView)를 그리는데, 그 네이티브 아이콘 로더는
 // 래스터 이미지만 디코딩하고 SVG(XML)는 못 읽어 아이콘이 빈 채로 뜬다(웹은 app-tabs.web.tsx가
 // <Image>로 그려 브라우저가 SVG를 직접 렌더링하므로 문제가 없었다 — 그래서 웹에서만 멀쩡해
-// 보였다). PNG는 두 경로 모두에서 동작하므로 플랫폼 분기 없이 하나로 공유한다. 원본 SVG에서
-// 세로 120px(원본 대비 약 6배, 작은 탭바 아이콘도 흐려지지 않게 여유를 둔 고해상도) 기준으로
-// 가로세로 비율을 유지해 래스터화했다.
+// 보였다). PNG는 두 경로 모두에서 동작하므로 플랫폼 분기 없이 하나로 공유한다.
+//
+// 🚨 반드시 @2x/@3x 밀도 변형을 같이 둔다 — <NativeTabs.Icon>은 web과 달리 크기를 지정하는
+// props가 없어서(style/width/height 없음), 아이콘이 화면에 그려지는 크기가 RN의 이미지 asset
+// 해상도 추론에 그대로 좌우된다. 파일명에 "@2x"/"@3x"가 없으면 RN은 그 이미지를 1x(=파일의
+// 픽셀 치수를 곧 pt 치수로) 취급하는데, 예전엔 세로 120px짜리 원본 하나만 있어서 네이티브 탭바
+// 아이콘이 실제로 세로 120pt로(3배 기기에서는 이보다 더) 커져 있었다. 지금은 세로 26pt(Apple
+// HIG/Android 권장 탭 아이콘 크기 범위) 기준으로 `<이름>.png`(1x, 26pt)/`<이름>@2x.png`(52px)/
+// `<이름>@3x.png`(78px) 세 벌을 두고, require()는 그대로 베이스 파일명(1x)만 가리키면 Metro가
+// 기기 밀도에 맞는 파일을 알아서 골라 쓴다.
 export const NAV_BAR_ICON_SOURCES: Record<TabItem['name'], { active: ImageSourcePropType; inactive: ImageSourcePropType }> = {
   index: {
     active: require('@/assets/images/figma-icon-navbar-home-active.png'),

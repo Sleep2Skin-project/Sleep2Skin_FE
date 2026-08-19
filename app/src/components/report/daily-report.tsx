@@ -148,13 +148,24 @@ function buildTimelineSegments(stats: SleepStats): SleepTimelineSegment[] {
 
 // 범례(node 350:715) — 바와 같은 4개 단계 색을 그대로 재사용하고("각성"만 횟수라 별도 빨강),
 // 문구는 SleepStats에서 매번 계산해서 만든다.
-type LegendItem = { key: string; color: string; label: string; icon?: 'ring' };
+// textColor(선택) — 점(dot)/그래프 세그먼트는 STAGE_COLORS 원래 색을 그대로 쓰되(color),
+// 텍스트만 다른 색을 쓰고 싶을 때만 지정한다. 없으면 기존처럼 color를 텍스트에도 그대로 쓴다.
+type LegendItem = { key: string; color: string; textColor?: string; label: string; icon?: 'ring' };
+
+// STAGE_COLORS.core(#D1D9E9)가 너무 연해서 범례 텍스트 가독성이 떨어졌다 — 점/그래프 색은
+// 그대로 두고 텍스트에만 쓸 살짝 더 진한 색(다른 범례들과 비슷한 시인성 수준으로).
+const CORE_LEGEND_TEXT_COLOR = '#9AA3B5';
 
 function buildLegendRows(stats: SleepStats): LegendItem[][] {
   return [
     [
       { key: 'deep', color: STAGE_COLORS.deep, label: `깊은 수면 ${formatDuration(stats.deepSleepMinutes)}` },
-      { key: 'core', color: STAGE_COLORS.core, label: `코어수면 ${formatDuration(stats.coreSleepMinutes)}` },
+      {
+        key: 'core',
+        color: STAGE_COLORS.core,
+        textColor: CORE_LEGEND_TEXT_COLOR,
+        label: `코어수면 ${formatDuration(stats.coreSleepMinutes)}`,
+      },
     ],
     [
       { key: 'rem', color: STAGE_COLORS.rem, label: `REM 수면 ${formatDuration(stats.remSleepMinutes)}` },
@@ -453,7 +464,7 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
                         <View style={[styles.legendDot, { backgroundColor: item.color }]} />
                       )}
                       <ThemedText
-                        style={[styles.legendText, { color: item.color }]}
+                        style={[styles.legendText, { color: item.textColor ?? item.color }]}
                         numberOfLines={1}
                         adjustsFontSizeToFit
                         minimumFontScale={0.5}>
@@ -732,18 +743,36 @@ const styles = StyleSheet.create({
 
   // "오늘의 피부 예보" (node 350:742/743, title fontSize20) — statGrid 하단(y457+카드높이≈529)
   // 대비 24.
+  // 아이폰16 규격 맞추기 — statGrid ↔ "오늘의 피부 예보" 제목 사이 여백(이 값은 제목과 아래
+  // 3개 항목 사이 간격이 아니다 — 그건 metricList.marginTop, 아래 참고). 1차 때 이 값을 잘못
+  // 건드려 22까지 늘렸었는데(원래 요청은 제목-항목 간격이었음, metricList 쪽 주석 참고) 원복
+  // 했고, 8로 고정. 텍스트 자체 위치 조정은 forecastTitle의 marginTop으로 따로 처리한다(아래).
+  // 아이폰16 규격 맞추기(2차) — "제목+3개 항목" 그룹 전체를 24pt(4mm) 위로 당기는 요청이라,
+  // 이 값(그룹 앞의 여백)에서 24pt를 뺐다: 8→-16. forecastTitle.marginTop(42, 안 건드림)과
+  // 합친 실질 간격(statGrid 바닥→제목 텍스트)이 8+42=50 → -16+42=26으로 정확히 24pt 줄어든다.
+  // forecastSection 자체엔 배경/테두리가 없어(투명 래퍼) 박스가 음수만큼 statGrid 쪽으로
+  // 겹쳐도 실제로 그려지는 건 없고, 실 텍스트(제목)는 여전히 26px 여유를 두고 그 아래에서
+  // 시작하므로 겹침 없다. 그룹 내부(제목-항목 간격, 항목 간 간격, 라벨-숫자-바 배치)는
+  // metricList/gaugeRow 등 다른 스타일을 전혀 안 건드려서 그대로 유지된다.
+  // (3차) 1.5mm(9pt) 추가로 위로: -16→-25. 실질 간격(statGrid 바닥→제목 텍스트) 26→17,
+  // 여전히 양수라 겹침 없음.
   forecastSection: {
-    marginTop: 14,
+    marginTop: -25,
   },
+  // "오늘의 피부 예보" 텍스트 자체 위치 — forecastSection.marginTop(통계 카드 ↔ 섹션 전체
+  // 여백)과는 별개로, 이 텍스트만 아래로 내리기 위해 marginTop을 직접 줬다. 7mm(42pt) 적용.
   forecastTitle: {
+    marginTop: 42,
     fontSize: 20,
     lineHeight: 24,
     fontWeight: '700',
     color: '#171717',
   },
-  // node 350:744 자체 paddingTop(5.78) — 제목 하단 여백(2) 포함해 8.
+  // "오늘의 피부 예보" 제목 ↔ 아래 3개 항목(다크서클 회복/혈색/피부 장벽) 사이 간격 — 아이폰16
+  // 규격 맞추기 1차에서 8pt(1.3mm) 늘려달라는 요청이 있었는데 당시 forecastSection.marginTop을
+  // 잘못 건드렸어서(위 주석 참고), 여기서 바로잡아 6→14로 적용했다.
   metricList: {
-    marginTop: 6,
+    marginTop: 14,
     gap: 10,
   },
   metricRow: {
@@ -755,9 +784,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   // node style_1c6a76d0 — Inter Bold ~13.5, Cod Gray
+  // 아이폰16 규격 맞추기(1차) — 항목명("다크서클 회복"/"혈색"/"피부 장벽") 폰트만 2pt 키웠다
+  // (13.5→15.5). 점수/화살표(metricValue/metricDelta)는 안 건드렸다.
   metricLabel: {
-    fontSize: 13.5,
-    lineHeight: 17,
+    fontSize: 15.5,
+    lineHeight: 19,
     fontWeight: '700',
     color: '#171717',
   },

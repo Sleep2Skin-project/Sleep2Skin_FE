@@ -498,9 +498,10 @@ const styles = StyleSheet.create({
   factorSection: {
     marginTop: 12,
   },
+  // 폰트 크기 +1.5pt 요청(16.6→18.1) — lineHeight도 같이 +1.5(21→22.5)해서 클리핑 방지.
   factorSectionTitle: {
-    fontSize: 16.6,
-    lineHeight: 21,
+    fontSize: 18.1,
+    lineHeight: 22.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -515,24 +516,32 @@ const styles = StyleSheet.create({
   correlationGroup: {
     gap: 10,
   },
+  // 폰트 크기 +1.5pt 요청(13→14.5) — lineHeight도 같이 +1.5(17→18.5).
   correlationGroupTitle: {
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 14.5,
+    lineHeight: 18.5,
     fontWeight: '700',
     color: '#031949',
   },
   factorRow: {
     gap: 6,
   },
+  // 폰트 확대(factorLabel 13.5→15)로 왼쪽 라벨이 길어질 때 오른쪽 상태 텍스트(factorInsufficientText/
+  // factorStrength)와 겹치지 않도록 gap을 추가하고, factorLabel에 flexShrink를 줘서 넘치는 대신
+  // 자연스럽게 줄바꿈되게 했다(monthly-report.tsx와 동일한 보정).
   factorHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   // node style_92ec3dff — Inter Bold ~13.68, Cod Gray
+  // 폰트 크기 +1.5pt 요청(13.5→15) — lineHeight도 같이 +1.5(17→18.5). flexShrink:1은 위
+  // factorHeader 주석 참고(오른쪽 상태 텍스트와의 겹침 방지).
   factorLabel: {
-    fontSize: 13.5,
-    lineHeight: 17,
+    flexShrink: 1,
+    fontSize: 15,
+    lineHeight: 18.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -541,16 +550,18 @@ const styles = StyleSheet.create({
   factorLabelMuted: {
     color: INSUFFICIENT_SAMPLE_COLOR,
   },
+  // 폰트 크기 +1.5pt 요청(12→13.5) — lineHeight도 같이 +1.5(15→16.5).
   factorInsufficientText: {
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 13.5,
+    lineHeight: 16.5,
     fontWeight: '700',
     color: INSUFFICIENT_SAMPLE_COLOR,
   },
   // node style_6e2192a5 — Inter Bold ~11.72, 강도별 색은 CORRELATION_STRENGTH_META에서 덮어씀
+  // 폰트 크기 +1.5pt 요청(12→13.5) — lineHeight도 같이 +1.5(15→16.5).
   factorStrength: {
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 13.5,
+    lineHeight: 16.5,
     fontWeight: '700',
   },
   // 트랙 (node 348:ea96261c 계열, h5.86→6, radius2.93→3, Pale Sky 8%) + widthPercent만큼 채워지는 막대.

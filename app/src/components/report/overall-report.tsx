@@ -309,8 +309,8 @@ const styles = StyleSheet.create({
   },
   // 로딩/에러 상태 텍스트 — Figma 노드 없음, 다른 리포트 탭과 동일한 패턴.
   statusText: {
-    fontSize: 13.5,
-    lineHeight: 17,
+    fontSize: 15,
+    lineHeight: 19,
     fontWeight: '500',
     color: 'rgba(55, 56, 60, 0.61)',
   },
@@ -332,22 +332,22 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   pillText: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12.5,
+    lineHeight: 16,
     fontWeight: '500',
     color: Colors.white,
   },
   // "수면으로는 잡히지 않는 신호가 있어요" (node 306:2956) — Pretendard SemiBold 20, lineHeight 1.4em
   heroHeading: {
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 21.5,
+    lineHeight: 30,
     fontWeight: '600',
     color: Colors.white,
   },
   // node 306:2957 — fontSize12, lineHeight 1.55em, opacity 0.75
   heroSubtext: {
-    fontSize: 12,
-    lineHeight: 19,
+    fontSize: 13.5,
+    lineHeight: 21,
     fontWeight: '400',
     color: 'rgba(255, 255, 255, 0.75)',
   },
@@ -363,14 +363,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   recordPromptHeading: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16.5,
+    lineHeight: 24,
     fontWeight: '700',
     color: '#1A1A1A',
   },
   recordPromptSubtext: {
-    fontSize: 12,
-    lineHeight: 19,
+    fontSize: 13.5,
+    lineHeight: 21,
     fontWeight: '400',
     color: 'rgba(55, 56, 60, 0.61)',
   },
@@ -386,8 +386,8 @@ const styles = StyleSheet.create({
   },
   // "이렇게 판단했어요" (node 306:2959) — Bold 15, lineHeight 1.45em
   reasonCardTitle: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16.5,
+    lineHeight: 24,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -415,15 +415,15 @@ const styles = StyleSheet.create({
   },
   // node style_e872cc2c — Medium 15, lineHeight 1.45em
   reasonTitle: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16.5,
+    lineHeight: 24,
     fontWeight: '500',
     color: '#1A1A1A',
   },
   // node style_2e329da4 — Regular 11, lineHeight 1.5em
   reasonDetail: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 19,
     fontWeight: '400',
     color: '#9E9E9E',
   },
@@ -449,8 +449,8 @@ const styles = StyleSheet.create({
   },
   // node style_ef978d32 — Bold 12, lineHeight 1.4em
   scopeTitle: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13.5,
+    lineHeight: 19,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -459,15 +459,15 @@ const styles = StyleSheet.create({
   },
   // node style_2e329da4 — Regular 11, lineHeight 1.5em
   scopeItem: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 19,
     fontWeight: '400',
     color: '#6B6B6B',
   },
   // clinicNeeded 전체 null(이력 없음) / 감지 항목 0개 — Figma 노드 없음, scopeItem과 같은 톤.
   scopeEmptyText: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 19,
     fontWeight: '400',
     color: '#9E9E9E',
   },
@@ -483,17 +483,39 @@ const styles = StyleSheet.create({
   },
   // node — Medium 15
   ctaText: {
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 16.5,
+    lineHeight: 20,
     fontWeight: '500',
     color: Colors.white,
   },
-  // node 306:2990 — Regular 10, lineHeight 1.5em, 중앙 정렬
+  // node 306:2990 — 원본 Regular 10, lineHeight 1.5em, 중앙 정렬 (fontSize는 아래에서 12로 조정됨)
+  //
+  // 아이폰16 규격 맞추기(1차 재시도) — 버튼+안내 문구 그룹을 48pt(8mm) 위로 올리는 요청.
+  // 처음엔 ctaButton.marginTop:48을 줬는데 화면상 이동이 거의 없었다: 위 spacer가 flex:1이라,
+  // ctaButton에 marginTop을 주면 그 48px만큼 spacer의 flex-grow 몫이 그대로 줄어들어서
+  // "spacer가 준 공간"이 "margin이 차지하는 공간"으로 자리만 바뀔 뿐 ctaButton의 실제 화면
+  // 좌표는 그대로였다(상쇄).
+  // 같은 이유로 spacer 자기 자신에 margin을 주는 것도 안 된다 — flex-grow:1인 아이템은
+  // free space 계산에서 자기 margin만큼을 먼저 빼고 그 뺀 만큼을 다시 grow로 채우기 때문에,
+  // spacer의 바깥 크기(outer size)가 margin 유무와 무관하게 항상 똑같아진다(자기 자신에게
+  // 주는 margin은 flex-grow 아이템에서 구조적으로 무효화됨).
+  // 진짜로 움직이려면 spacer "다음"에 오면서 flex-grow가 아닌 고정 크기 아이템에 여백을 줘야
+  // spacer가 실제로 줄어든다 — disclaimer는 container의 마지막 자식이자 flex:1이 아니므로,
+  // 여기 marginBottom을 주면 spacer가 그만큼 줄고 그만큼 버튼+안내문구 그룹 전체가 순수하게
+  // 위로 이동한다(빈 공간은 disclaimer 아래, 화면 맨 밑으로 밀려남 — 그 아래는 report.tsx의
+  // ScrollView contentContainer가 이미 갖고 있는 탭바용 paddingBottom이라 탭바와 겹치거나
+  // 시각적으로 어색해지지 않는다). 버튼↔disclaimer 사이 간격은 container의 공용 gap:12를
+  // 그대로 쓰므로 안 건드렸다.
+  // (1차 재시도: 48 = 8mm 위로. 1차 재조정: 8mm 올린 상태에서 2mm/12pt만큼 다시 내리기 위해
+  // 48 → 36으로 축소.)
+  // 폰트 크기 +2pt 요청(10→12) — 클리핑 방지를 위해 lineHeight도 원래 비율(1.5em) 그대로
+  // 12*1.5=18로 같이 키웠다(위치/색상/marginBottom 등 다른 값은 안 건드림).
   disclaimer: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '400',
     color: '#9E9E9E',
     textAlign: 'center',
+    marginBottom: 36,
   },
 });

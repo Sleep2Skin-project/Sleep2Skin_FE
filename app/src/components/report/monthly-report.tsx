@@ -287,9 +287,7 @@ export function MonthlyReport({ nickname }: { nickname: string | null }) {
             />
             <ThemedText style={styles.chartTitle}>월간 수면 구간</ThemedText>
           </View>
-          <ThemedText style={styles.chartLegend} numberOfLines={1}>
-            막대 = 주 평균 · 진한 막대 = 최고 주
-          </ThemedText>
+          <ThemedText style={styles.chartLegend}>막대 = 주 평균 · 진한 막대 = 최고 주</ThemedText>
         </View>
         <ThemedText style={styles.chartSubRange}>
           {formatDotDate(data.periodStart)} - {formatDotDate(data.periodEnd)}
@@ -428,12 +426,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#031949',
   },
-  // "막대 = 주 평균 · 진한 막대 = 최고 주" (node 348:1038) — 글자 수가 많아 Figma 원본 크기(10.5)로는
-  // 좁은 화면에서 두 줄로 밀린다. 폰트를 줄여 한 줄로 유지한다.
+  // "막대 = 주 평균 · 진한 막대 = 최고 주" (node 348:1038) — 글자 수가 많아 Figma 원본 크기(10.5)로도
+  // 좁은 화면에서 한 줄에 안 들어가 두 줄로 밀린다. 예전엔 폰트를 9로 줄여 한 줄에 욱여넣었지만,
+  // 이번 폰트 크기 +2pt 요청(9→11)은 원본보다도 커서 한 줄 유지가 불가능하다 — 억지로 한 줄
+  // 유지(numberOfLines=1)하면 오른쪽 끝 글자가 "..."로 잘려나가 정보 손실이 생기므로, 그 대신
+  // numberOfLines 제한을 없애고 두 줄로 자연스럽게 줄바꿈되게 했다(flexShrink:1이 이미 있어
+  // 카드 폭을 넘치지 않고 wrap됨). 카드가 그만큼만 살짝 더 늘어날 뿐 다른 요소와는 안 겹친다
+  // (chartHeaderRow가 고정 높이가 아니라 내용에 맞춰 자동으로 커지기 때문).
   chartLegend: {
     flexShrink: 1,
-    fontSize: 9,
-    lineHeight: 11,
+    fontSize: 11,
+    lineHeight: 13,
     fontWeight: '400',
     color: '#9E9E9E',
     textAlign: 'right',
@@ -541,9 +544,10 @@ const styles = StyleSheet.create({
   factorSection: {
     marginTop: 12,
   },
+  // 폰트 크기 +1.5pt 요청(17→18.5) — lineHeight도 같이 +1.5(21→22.5)해서 클리핑 방지.
   factorSectionTitle: {
-    fontSize: 17,
-    lineHeight: 21,
+    fontSize: 18.5,
+    lineHeight: 22.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -558,24 +562,32 @@ const styles = StyleSheet.create({
   correlationGroup: {
     gap: 10,
   },
+  // 폰트 크기 +1.5pt 요청(13→14.5) — lineHeight도 같이 +1.5(17→18.5).
   correlationGroupTitle: {
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 14.5,
+    lineHeight: 18.5,
     fontWeight: '700',
     color: '#031949',
   },
   factorRow: {
     gap: 6,
   },
+  // 폰트 확대(factorLabel 14→15.5)로 왼쪽 라벨이 길어질 때 오른쪽 상태 텍스트(factorInsufficientText/
+  // factorStrength)와 겹치지 않도록 gap을 추가하고, factorLabel에 flexShrink를 줘서 넘치는 대신
+  // 자연스럽게 줄바꿈되게 했다.
   factorHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   // node Inter/Bold — 14, Cod Gray
+  // 폰트 크기 +1.5pt 요청(14→15.5) — lineHeight도 같이 +1.5(18→19.5). flexShrink:1은 위 factorHeader
+  // 주석 참고(오른쪽 상태 텍스트와의 겹침 방지).
   factorLabel: {
-    fontSize: 14,
-    lineHeight: 18,
+    flexShrink: 1,
+    fontSize: 15.5,
+    lineHeight: 19.5,
     fontWeight: '700',
     color: '#171717',
   },
@@ -584,16 +596,18 @@ const styles = StyleSheet.create({
   factorLabelMuted: {
     color: INSUFFICIENT_SAMPLE_COLOR,
   },
+  // 폰트 크기 +1.5pt 요청(12→13.5) — lineHeight도 같이 +1.5(15→16.5).
   factorInsufficientText: {
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 13.5,
+    lineHeight: 16.5,
     fontWeight: '700',
     color: INSUFFICIENT_SAMPLE_COLOR,
   },
   // node Inter/Bold (108:1572) — 12, 강도별 색은 CORRELATION_STRENGTH_META에서 덮어씀
+  // 폰트 크기 +1.5pt 요청(12→13.5) — lineHeight도 같이 +1.5(15→16.5).
   factorStrength: {
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 13.5,
+    lineHeight: 16.5,
     fontWeight: '700',
   },
   // 트랙 (node EL-e8a8202d, h6, radius3, Pale Sky 8%) + widthPercent만큼 채워지는 막대.

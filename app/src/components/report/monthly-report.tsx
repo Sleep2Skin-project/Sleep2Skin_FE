@@ -390,9 +390,11 @@ const styles = StyleSheet.create({
   },
 
   // "월간 수면 구간" 카드 (node 348:1035, w364 h253, radius24, border #CDCDCD) — insight 하단 대비 16.
+  // 배경색은 HOME 화면(index.tsx)의 "오늘의 피부 예보" 카드(forecastCard)와 동일한
+  // rgba(255,255,255,0.62)로 통일(원래 불투명 #FFFFFF였음).
   chartCard: {
     marginTop: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     borderWidth: 1,
     borderColor: '#CDCDCD',
     borderRadius: 24,

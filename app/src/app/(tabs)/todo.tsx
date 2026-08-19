@@ -677,8 +677,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 102, 255, 0.08)',
     borderColor: '#3366FF',
   },
+  // 배경색은 HOME 화면(index.tsx)의 "오늘의 피부 예보" 카드(forecastCard)와 동일한
+  // rgba(255,255,255,0.62)로 통일했다(원래 불투명 #FFFFFF였음).
   checklistItemUnchecked: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     borderColor: 'rgba(112, 115, 124, 0.22)',
   },
   // PATCH 응답 대기 중인 항목 — 낙관적으로 이미 바뀐 상태를 보여주되, 처리 중임을 옅게 티 낸다.

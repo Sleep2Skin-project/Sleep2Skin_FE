@@ -196,30 +196,33 @@ function AvoidDetailModal({ item, onClose }: { item: TodoAvoidItem | null; onClo
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      {/* 백드롭을 flexbox로 화면 전체를 감싸고 중앙 정렬 — 예전엔 카드를 402x874 캔버스 기준
+          절대좌표(left:26 top:229)로 찍어서 화면 좌측 상단에 치우쳐 보였다. 카드 자체의
+          크기(width/padding 등)는 그대로 두고 배치 방식만 바꿨다. */}
       <Pressable style={styles.avoidModalBackdrop} onPress={onClose}>
-        <View style={{ width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }}>
-          <View style={[styles.avoidModalCanvas, { transform: [{ scale }], transformOrigin: 'top left' }]}>
-            <Pressable style={styles.avoidModalCard} onPress={() => {}}>
-              <View style={styles.avoidModalBadge}>
-                <Text style={styles.avoidModalBadgeText}>오늘은 피하세요</Text>
-              </View>
+        <View style={{ transform: [{ scale }] }}>
+          <Pressable style={styles.avoidModalCard} onPress={() => {}}>
+            <View style={styles.avoidModalBadge}>
+              <Text style={styles.avoidModalBadgeText}>오늘은 피하세요</Text>
+            </View>
 
-              <Text style={[styles.avoidModalTitle, { fontSize: titleFontSize, lineHeight: titleFontSize * 1.2 }]}>
-                {item.title}
-              </Text>
+            <Text style={[styles.avoidModalTitle, { fontSize: titleFontSize, lineHeight: titleFontSize * 1.2 }]}>
+              {item.title}
+            </Text>
 
-              {/* causeLabel(원인 태그) — 예전 rankLabel 자리 */}
-              <Text style={styles.avoidModalRankLabel}>{item.causeLabel}</Text>
+            {/* causeLabel(원인 태그) — 예전 rankLabel 자리 */}
+            <Text style={styles.avoidModalRankLabel}>{item.causeLabel}</Text>
 
-              {/* reason(롱프레스 설명) — 예전 description 자리, 행잉 인덴트 동일 유지 */}
-              <View style={styles.avoidModalDescriptionRow}>
-                <Text style={styles.avoidModalDescriptionDash}>-</Text>
-                <Text style={styles.avoidModalDescriptionText}>{item.reason}</Text>
-              </View>
+            {/* reason(롱프레스 설명) — 예전 description 자리, 행잉 인덴트 동일 유지 */}
+            <View style={styles.avoidModalDescriptionRow}>
+              <Text style={styles.avoidModalDescriptionDash}>-</Text>
+              <Text style={styles.avoidModalDescriptionText}>{item.reason}</Text>
+            </View>
 
-              <Text style={styles.avoidModalFooter}>{AVOID_MODAL_FOOTER}</Text>
-            </Pressable>
+            <Text style={styles.avoidModalFooter}>{AVOID_MODAL_FOOTER}</Text>
 
+            {/* 닫기 버튼 — 카드를 절대좌표 캔버스가 아니라 카드 자신을 기준으로 위치시키도록
+                카드 내부로 옮겼다(카드 위 상대 위치는 이전과 동일하게 유지). */}
             <Pressable onPress={onClose} hitSlop={12} style={styles.avoidModalCloseButton}>
               <Image
                 source={require('@/assets/images/figma-icon-avoid-detail-close.svg')}
@@ -227,7 +230,7 @@ function AvoidDetailModal({ item, onClose }: { item: TodoAvoidItem | null; onClo
                 contentFit="contain"
               />
             </Pressable>
-          </View>
+          </Pressable>
         </View>
       </Pressable>
     </Modal>
@@ -399,8 +402,7 @@ export default function TodoScreen() {
                       {avoidItems.map((item) => (
                         <Pressable
                           key={item.id}
-                          onLongPress={() => setSelectedAvoidItem(item)}
-                          delayLongPress={350}
+                          onPress={() => setSelectedAvoidItem(item)}
                           style={({ pressed }) => [styles.avoidItem, pressed && styles.pressed]}>
                           <ThemedText style={styles.avoidItemTitle}>{item.title}</ThemedText>
                           <ThemedText style={styles.avoidItemCauseText}>{item.causeLabel}</ThemedText>
@@ -742,22 +744,19 @@ const styles = StyleSheet.create({
   },
 
   // ── AvoidDetailModal (node 541:3131) ────────────────────────────────────
-  // 백드롭 (node 541:3130, rgba(255,255,255,0.4))
+  // 백드롭 (node 541:3130, rgba(255,255,255,0.4)) — justifyContent/alignItems로 카드를 화면
+  // 정중앙에 띄운다(예전엔 캔버스 절대좌표라 좌측 상단에 치우쳐 보였다).
   avoidModalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  avoidModalCanvas: {
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
-    overflow: 'hidden',
-  },
-  // 카드 (node 541:3134, x:26 y:229 w:347, radius:30, border 2px #3060EA) — 세로 flex 컬럼으로
-  // 자식을 쌓는다(제목이 몇 줄이 되든 뒤 요소가 항상 그 아래로 자연스럽게 밀려나도록).
+  // 카드 (node 541:3134, w:347, radius:30, border 2px #3060EA) — 세로 flex 컬럼으로 자식을
+  // 쌓는다(제목이 몇 줄이 되든 뒤 요소가 항상 그 아래로 자연스럽게 밀려나도록). 크기/패딩은
+  // 그대로 유지하고, 절대좌표(position:absolute, left:26 top:229) 배치만 제거했다 — 이제
+  // avoidModalBackdrop의 flex 중앙 정렬을 따르는 일반 자식이다.
   avoidModalCard: {
-    position: 'absolute',
-    left: 26,
-    top: 229,
     width: 347,
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
@@ -825,10 +824,13 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   // 닫기 버튼 (node 541:3142, x:322 y:265 w:20 h:19, #407AF7)
+  // 닫기 버튼 (node 541:3142, w:20 h:19, #407AF7) — 이제 avoidModalCard 안쪽으로 옮겨서, 카드
+  // 기준 상대좌표(예전 절대좌표 left:322/top:265에서 카드의 left:26/top:229를 뺀 값)로 잡았다 —
+  // 카드 위에서의 위치는 이전과 완전히 동일하다.
   avoidModalCloseButton: {
     position: 'absolute',
-    left: 322,
-    top: 265,
+    left: 296,
+    top: 36,
   },
   avoidModalCloseIcon: {
     width: 20,

@@ -75,13 +75,15 @@ const CHART_BAR_COLOR_NORMAL = '#D6DAE3';
 const CHART_BAR_COLOR_NO_DATA = '#F0F0F2';
 const CHART_BAR_BORDER_NO_DATA = '#C7C7C7';
 
-// 상관관계 강도(strength) 표시 메타 — 서버가 내려주는 정확한 값 전체 목록이 확정돼 있지 않아
-// (api/report.ts 주석 참고, 현재 "STRONG"만 예시로 확인됨) 알려진 값만 매핑하고, 모르는 값이
-// 와도 화면이 깨지지 않도록 원문 문자열 그대로 보여주는 중립색 fallback을 둔다.
+// 상관관계 강도(strength) 표시 메타 — weekly-report.tsx와 같은 4단계 팔레트를 그대로 쓴다(월간도
+// 주간과 동일한 강도 구간 VERY_STRONG/STRONG/MODERATE/WEAK를 쓴다 — api/report.ts 참고. 이전엔
+// VERY_STRONG이 매핑에서 빠져 있어 원문 영어 라벨 + fallback 회색으로 깨져 보였다). 알려진 값만
+// 매핑하고, 모르는 값이 와도 화면이 깨지지 않도록 원문 문자열 그대로 보여주는 중립색 fallback을 둔다.
 const CORRELATION_STRENGTH_META: Record<string, { label: string; color: string; widthPercent: number }> = {
-  STRONG: { label: '강함', color: '#FF4242', widthPercent: 85 },
-  MODERATE: { label: '보통', color: '#FF9200', widthPercent: 55 },
-  WEAK: { label: '약함', color: 'rgba(55, 56, 60, 0.61)', widthPercent: 25 },
+  VERY_STRONG: { color: '#FF4242', label: '매우 강함', widthPercent: 92 },
+  STRONG: { color: '#FF9200', label: '강함', widthPercent: 68 },
+  MODERATE: { color: '#40A33C', label: '보통', widthPercent: 42 },
+  WEAK: { color: 'rgba(55, 56, 60, 0.61)', label: '약함', widthPercent: 20 },
 };
 const CORRELATION_STRENGTH_FALLBACK_COLOR = '#6B6B6B';
 const CORRELATION_STRENGTH_FALLBACK_WIDTH = 40;
@@ -182,21 +184,16 @@ function CorrelationRow({ item }: { item: MonthlyReportCorrelation }) {
   );
 }
 
-// correlations가 flat 배열에서 skinMetric 기준 3그룹으로 바뀐 뒤의 렌더링 단위 — 그룹 헤더 아래
-// 그 그룹에 속한 CorrelationRow들을 나열한다. 매핑되는 sleepFeature가 없어 그룹이 비어있을 수도
-// 있다는 게 명세로 확정돼 있어(api/report.ts 참고), 그 경우도 화면이 비어 보이지 않게 방어한다.
+// 그룹 헤더 아래 그 그룹의 대표 상관 1개(topCorrelation)를 보여준다(2026-08-19, 서버가 배열
+// (correlations)에서 단일 객체(topCorrelation)로 바꿨다 — api/report.ts 참고). 그룹은 항상
+// 3개 전부 반환되고 topCorrelation도 항상 값이 있어(표본 부족이어도 대표에서 안 빠짐) 빈 상태
+// 방어가 필요 없다.
 function CorrelationGroupSection({ group }: { group: MonthlyReportCorrelationGroup }) {
   const groupLabel = SKIN_METRIC_GROUP_LABELS[group.skinMetric] ?? group.skinMetric;
   return (
     <View style={styles.correlationGroup}>
       <ThemedText style={styles.correlationGroupTitle}>{groupLabel}</ThemedText>
-      {group.correlations.length === 0 ? (
-        <ThemedText style={styles.statusText}>관련 데이터가 아직 없어요</ThemedText>
-      ) : (
-        group.correlations.map((item) => (
-          <CorrelationRow key={`${item.sleepFeature}-${item.skinMetric}`} item={item} />
-        ))
-      )}
+      <CorrelationRow item={group.topCorrelation} />
     </View>
   );
 }

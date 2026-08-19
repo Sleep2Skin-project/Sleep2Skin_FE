@@ -184,21 +184,16 @@ function CorrelationRow({ item }: { item: WeeklyReportCorrelation }) {
   );
 }
 
-// correlations가 flat 배열에서 skinMetric 기준 3그룹으로 바뀐 뒤의 렌더링 단위 — 그룹 헤더 아래
-// 그 그룹에 속한 CorrelationRow들을 나열한다. 매핑되는 sleepFeature가 없어 그룹이 비어있을 수도
-// 있다는 게 명세로 확정돼 있어(api/report.ts 참고), 그 경우도 화면이 비어 보이지 않게 방어한다.
+// 그룹 헤더 아래 그 그룹의 대표 상관 1개(topCorrelation)를 보여준다(2026-08-19, 서버가 배열
+// (correlations)에서 단일 객체(topCorrelation)로 바꿨다 — api/report.ts 참고). 그룹은 항상
+// 3개 전부 반환되고 topCorrelation도 항상 값이 있어(표본 부족이어도 대표에서 안 빠짐) 빈 상태
+// 방어가 필요 없다.
 function CorrelationGroupSection({ group }: { group: WeeklyReportCorrelationGroup }) {
   const groupLabel = SKIN_METRIC_GROUP_LABELS[group.skinMetric] ?? group.skinMetric;
   return (
     <View style={styles.correlationGroup}>
       <ThemedText style={styles.correlationGroupTitle}>{groupLabel}</ThemedText>
-      {group.correlations.length === 0 ? (
-        <ThemedText style={styles.statusText}>관련 데이터가 아직 없어요</ThemedText>
-      ) : (
-        group.correlations.map((item) => (
-          <CorrelationRow key={`${item.sleepFeature}-${item.skinMetric}`} item={item} />
-        ))
-      )}
+      <CorrelationRow item={group.topCorrelation} />
     </View>
   );
 }

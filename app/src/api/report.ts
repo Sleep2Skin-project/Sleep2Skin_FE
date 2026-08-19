@@ -175,13 +175,16 @@ export interface MonthlyReportCorrelation {
 
 /**
  * skinMetric 기준으로 묶은 상관관계 그룹. 서버는 항상 DARK_CIRCLE/COMPLEXION/BARRIER 3그룹
- * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠) — 그룹에 매핑되는
- * sleepFeature가 없으면 correlations가 빈 배열일 수 있으니 그 경우도 방어해서 렌더링할 것.
- * 그룹 내부 정렬(상관계수 절댓값 내림차순, 표본 부족은 맨 뒤)은 서버가 보장하므로 재정렬 불필요.
+ * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠). 그룹마다 대표 상관
+ * 1개(topCorrelation)만 담는다(2026-08-19, 프론트 요청으로 배열 → 단일 객체로 변경 — 계산
+ * 자체는 여전히 7쌍 전부 낸다). 대표는 "상관계수 절댓값 내림차순, 표본 부족은 맨 뒤, 동률이면
+ * sleepFeature 선언 순서" 정렬의 1위다 — 표본 부족(insufficientSample: true)이어도 대표에서
+ * 빠지지 않는다(그 지표에서 가장 유력한 피처가 무엇인지는 표본 부족과 무관하게 의미가 있음).
+ * null이 아니다 — 그룹이 항상 3개 반환되는 것과 마찬가지로 topCorrelation도 항상 값이 있다.
  */
 export interface MonthlyReportCorrelationGroup {
   skinMetric: string;
-  correlations: MonthlyReportCorrelation[];
+  topCorrelation: MonthlyReportCorrelation;
 }
 
 /** 가입 후 28일이 지나 4주치 데이터가 충분한 경우 */
@@ -379,13 +382,16 @@ export interface WeeklyReportCorrelation {
 
 /**
  * skinMetric 기준으로 묶은 상관관계 그룹. 서버는 항상 DARK_CIRCLE/COMPLEXION/BARRIER 3그룹
- * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠) — 그룹에 매핑되는
- * sleepFeature가 없으면 correlations가 빈 배열일 수 있으니 그 경우도 방어해서 렌더링할 것.
- * 그룹 내부 정렬(상관계수 절댓값 내림차순, 표본 부족은 맨 뒤)은 서버가 보장하므로 재정렬 불필요.
+ * 전부를 반환한다(값이 늘어날 수 있어 skinMetric도 string으로 열어둠). 그룹마다 대표 상관
+ * 1개(topCorrelation)만 담는다(2026-08-19, 프론트 요청으로 배열 → 단일 객체로 변경 — 계산
+ * 자체는 여전히 7쌍 전부 낸다). 대표는 "상관계수 절댓값 내림차순, 표본 부족은 맨 뒤, 동률이면
+ * sleepFeature 선언 순서" 정렬의 1위다 — 표본 부족(insufficientSample: true)이어도 대표에서
+ * 빠지지 않는다(그 지표에서 가장 유력한 피처가 무엇인지는 표본 부족과 무관하게 의미가 있음).
+ * null이 아니다 — 그룹이 항상 3개 반환되는 것과 마찬가지로 topCorrelation도 항상 값이 있다.
  */
 export interface WeeklyReportCorrelationGroup {
   skinMetric: string;
-  correlations: WeeklyReportCorrelation[];
+  topCorrelation: WeeklyReportCorrelation;
 }
 
 /** 가입 후 7일이 지나 7일치 데이터가 충분한 경우 — 특정 날짜의 세션 결측은 이 상태에서도 발생할 수 있다(위 주석 참고) */
@@ -456,27 +462,42 @@ export async function getWeeklyReport(
 }
 
 // ===== 종합 리포트 (REP-09~11) =====
-// 최근 3주 수면 점수 추세와 피부 지표 정체 여부로 클리닉 트리아지를 판정하고, 앱이 관리하는
-// 지표 목록(appManaged)과 클리닉이 필요할 수 있는 신호(clinicNeeded)를 함께 내려주는 API.
+// 예보 지표 3종(다크서클/혈색/장벽) 각각의 최근 3주 추세와, 클리닉이 필요할 수 있는 신호를 함께
+// 내려주는 API.
 //
-// 🚨 서버는 문장을 만들지 않는다 — triage는 판정 결과(추세 값·정체 지표 목록·발동 여부)만
-// 담고, "수면은 좋아졌지만 혈색이 정체됐어요" 같은 안내 문구는 프론트가 이 판정값을 보고 직접
-// 구성해야 한다.
+// 🚨 예전엔 "수면 점수 추세가 STABLE/RISING이고 정체 지표가 있을 때만" trends를 노출하는 발동
+// (트리거) 구조였다(triage.triggered). 그 게이팅이 완전히 없어졌다 — status가 FULL이기만
+// 하면 trends는 항상 다크서클·혈색·장벽 세 지표 다 채워진다. triage/triggered 필드 자체가
+// 응답에서 사라졌으니 그 필드로 화면 분기하던 로직은 전부 제거할 것.
 //
-// 🚨 status는 오직 sleepTrend 하나로만 결정된다 — 주간/월간(REP-06/07)처럼 가입일 게이트가
-// 아니다. sleepTrend가 INSUFFICIENT_DATA(최근 3주 유효 표본 5개 미만, 또는 전반부/후반부 중
-// 한쪽이 통째로 결측)일 때만 status도 INSUFFICIENT_DATA다. 그리고 이때도 appManaged/
-// clinicNeeded/clinicLink는 여전히 그대로 계산돼 내려온다(status와 무관) — 주간/월간처럼 다른
-// 필드가 빈 배열/null로 비워지지 않는다.
+// 🚨 서버는 문장을 만들지 않는다 — trends는 판정 결과(추세 값·변동 방향·구간 평균)만 담는다.
+// "혈색이 오르다 다시 내렸어요" 같은 안내 문구는 프론트가 이 판정값을 보고 직접 구성해야 한다.
+//
+// 🚨 status는 가입일 기준이다(REP-06/07과 같은 규칙, 더 이상 표본 수 기준이 아니다) — 가입
+// 당일을 1일차로 세어 21일 미만이면 INSUFFICIENT_DATA이고 이때 trends는 무조건 null이다
+// (darkCircle/barrier/complexion 개별 INSUFFICIENT_SAMPLE 객체가 아니라 trends 필드 자체가
+// null). appManaged/clinicNeeded/clinicLink는 status와 무관하게 항상 그대로 계산돼 내려온다 —
+// clinicNeeded는 가입일 게이트와 무관한 별개 신호(가장 최근 셀피 실측 이력 기준)라 status만
+// 보고 숨기면 안 된다.
 
-export type OverallSleepTrend = "INSUFFICIENT_DATA" | "VOLATILE" | "RISING" | "FALLING" | "STABLE";
+export type OverallReportTrend = "IMPROVED" | "WORSENED" | "MAINTAINED" | "VOLATILE" | "INSUFFICIENT_SAMPLE";
 
-export interface OverallReportTriage {
-  /** sleepTrend가 STABLE/RISING이고 stagnantMetrics가 1개 이상일 때만 true */
-  triggered: boolean;
-  sleepTrend: OverallSleepTrend;
-  /** 표본 부족으로 판정 불가한 지표는 정체 아님으로 취급해 애초에 이 배열에서 빠진다 */
-  stagnantMetrics: string[];
+export type OverallReportVolatileDirection = "RISE_THEN_FALL" | "FALL_THEN_RISE";
+
+export interface OverallReportTrendMetric {
+  trend: OverallReportTrend;
+  /** trend가 VOLATILE일 때만 값이 있다. 그 외에는 항상 null */
+  volatileDirection: OverallReportVolatileDirection | null;
+  /** 21일 전~15일 전 평균(0~100). 그 구간 7일이 전부 결측이면 null(그때 trend는 INSUFFICIENT_SAMPLE) */
+  w1Average: number | null;
+  /** 최근 7일 평균(0~100). 그 구간 7일이 전부 결측이면 null */
+  w3Average: number | null;
+}
+
+export interface OverallReportTrends {
+  darkCircle: OverallReportTrendMetric;
+  complexion: OverallReportTrendMetric;
+  barrier: OverallReportTrendMetric;
 }
 
 /**
@@ -491,11 +512,13 @@ export interface OverallReportClinicNeeded {
   agingDetected: boolean | null;
 }
 
-export interface OverallReportData {
-  status: "FULL" | "INSUFFICIENT_DATA";
+/** 가입 21일 이상 — trends는 항상 다크서클·혈색·장벽 셋 다 채워진다(개별 지표만 INSUFFICIENT_SAMPLE일 수 있음) */
+export interface FullOverallReportData {
+  status: "FULL";
+  message: null;
   periodStart: string;
   periodEnd: string;
-  triage: OverallReportTriage;
+  trends: OverallReportTrends;
   /** 앱이 관리하는 예보 지표 3종의 고정 목록(코드값) — 점수/등급 없이 이름만 */
   appManaged: string[];
   /** 셀피 검증 이력이 전혀 없으면 null(감지되지 않음과 측정한 적이 없음을 구분) */
@@ -503,15 +526,34 @@ export interface OverallReportData {
   clinicLink: string;
 }
 
+/** 가입 당일을 1일차로 세어 21일 미만인 신규 사용자 빈 상태 — 에러 아님, 200으로 내려온다 */
+export interface InsufficientOverallReportData {
+  status: "INSUFFICIENT_DATA";
+  message: string | null;
+  periodStart: string;
+  periodEnd: string;
+  trends: null;
+  appManaged: string[];
+  /** 가입일 게이트와 무관한 별개 신호라 INSUFFICIENT_DATA여도 실측 이력이 있으면 값이 나간다 */
+  clinicNeeded: OverallReportClinicNeeded | null;
+  clinicLink: string;
+}
+
+/**
+ * `status` 필드로만 분기할 것. `trends`의 null 여부로 분기하지 말 것(규칙은 같지만, 이 쪽이
+ * 다른 report 엔드포인트들과 일관된 관례다).
+ */
+export type OverallReportData = FullOverallReportData | InsufficientOverallReportData;
+
 export interface OverallReportResponse {
   success: boolean;
   data: OverallReportData;
 }
 
 /**
- * 종합 리포트(클리닉 트리아지 판정 + 앱 관리 지표 + 클리닉 필요 신호) 조회.
+ * 종합 리포트(예보 지표 3종 3주 추세 + 앱 관리 지표 + 클리닉 필요 신호) 조회.
  * - baseDate: 관찰 기간의 마지막 날(periodEnd)이 되는 기준일 "YYYY-MM-DD". 필수 쿼리 파라미터.
- * - 200: status: INSUFFICIENT_DATA(표본 부족)도 정상 응답이며 여기 포함된다.
+ * - 200: status: INSUFFICIENT_DATA(가입 21일 미만)도 정상 응답이며 여기 포함된다.
  * - 400 INVALID_INPUT / USER_ID_HEADER_INVALID, 404 USER_NOT_FOUND(SkinModelUserNotFoundError로 변환)는
  *   다른 report 엔드포인트와 동일 규칙.
  */

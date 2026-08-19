@@ -5,8 +5,8 @@ import {
   getOverallReport,
   type OverallReportClinicNeeded,
   type OverallReportData,
-  type OverallReportTriage,
-  type OverallSleepTrend,
+  type OverallReportTrendMetric,
+  type OverallReportTrends,
 } from '@/api/report';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/colors';
@@ -16,28 +16,36 @@ import { TEMP_USER_ID } from '@/constants/config';
 // Dev Mode 값 그대로 옮긴 것. 탭 전환/하단 탭바/배경색은 report.tsx/report-ui.tsx/app-tabs.tsx가
 // 소유하는 공용 UI라 이 파일에서는 건드리지 않는다(daily/weekly/monthly-report.tsx와 동일 원칙).
 //
-// GET /api/v1/report/overall로 실연동한다(api/report.ts). 서버는 문장을 만들지 않고 판정값
-// (triage.triggered/sleepTrend/stagnantMetrics)만 내려주므로, 히어로/판단 근거 카드의 문구는
-// 전부 이 화면에서 판정값을 보고 직접 구성한다 — Figma 시안엔 없던 3가지 상태를 기획 확인 후
-// 아래처럼 나눴다:
-// - status: INSUFFICIENT_DATA(최근 3주 유효 수면 표본 부족) → 판단 자체가 불가능하니 기록을
-//   유도하는 안내 배너로 상단을 덮는다(RecordPromptBanner).
-// - FULL이고 triage.triggered: true → 기존처럼 "트리아지 알림" 히어로 + 판단 근거 카드(TriageHero).
-// - FULL이고 triage.triggered: false → 정체 신호가 없다는 긍정 문구로 대체한다(PositiveHero).
-// "Sleep2Skin이 돕는 것"(appManaged)·"클리닉이 필요한 것"(clinicNeeded) 카드와 CTA 버튼은 위 세
-// 상태와 무관하게 항상 렌더링한다 — clinicNeeded는 트리아지 판정과 별개로 최근 셀피 검증에서
-// 실제로 감지된 신호이고, CTA는 기획상 항상 노출하기로 확정됐다.
+// GET /api/v1/report/overall로 실연동한다(api/report.ts). 예전엔 triage.triggered 발동 조건을
+// 만족할 때만("수면 추세 STABLE/RISING + 정체 지표 있음") 판단 근거를 보여줬는데, 그 게이팅이
+// 서버에서 완전히 없어졌다 — 이제 status가 FULL이면 다크서클/혈색/장벽 3개 지표의 3주 추세가
+// 항상 다 나온다. 서버는 문장을 만들지 않고 판정값(trend/volatileDirection/w1·w3 평균)만
+// 내려주므로, 판단 근거 카드의 문구는 전부 이 화면에서 판정값을 보고 직접 구성한다.
+// - status: INSUFFICIENT_DATA(가입 21일 미만) → 판단 자체가 불가능하니 기록을 유도하는 안내
+//   배너로 상단을 덮는다(RecordPromptBanner, 서버 message 우선 사용).
+// - FULL이면 "수면으로는 잡히지 않는 신호가 있어요" 파란 히어로(SleepSignalHero)와 그 아래
+//   3개 지표 추세를 나열하는 판단 근거 카드(ReasonCard)를 항상 함께 띄운다.
+// "Sleep2Skin이 돕는 것"(appManaged)·"클리닉이 필요한 것"(clinicNeeded) 카드와 CTA 버튼은 위
+// 상태와 무관하게 항상 렌더링한다 — clinicNeeded는 trends와 별개로 최근 셀피 검증에서 실제로
+// 감지된 신호이고, CTA는 기획상 항상 노출하기로 확정됐다.
 
 const CTA_LABEL = '엠레드 클리닉 상담 알아보기';
 const DISCLAIMER = '의료 진단이 아닙니다. 기록 패턴에 기반한 참고 신호입니다.';
 
-// appManaged/stagnantMetrics 공통 코드값 라벨 — weekly/monthly-report.tsx의 SKIN_METRIC_GROUP_LABELS와
-// 같은 코드값 집합이다(서버가 늘릴 수 있어 모르는 코드가 와도 원문 그대로 보여주는 fallback을 둔다).
+// appManaged 코드값 라벨 — weekly/monthly-report.tsx의 SKIN_METRIC_GROUP_LABELS와 같은 코드값
+// 집합이다(서버가 늘릴 수 있어 모르는 코드가 와도 원문 그대로 보여주는 fallback을 둔다).
 const SKIN_METRIC_LABELS: Record<string, string> = {
   DARK_CIRCLE: '다크서클',
   COMPLEXION: '혈색',
   BARRIER: '피부장벽',
 };
+
+// trends는 항상 이 3개 키 고정(서버가 늘릴 계획 없음) — SKIN_METRIC_LABELS와 같은 라벨을 쓴다.
+const TREND_METRIC_ORDER: { key: keyof OverallReportTrends; label: string }[] = [
+  { key: 'darkCircle', label: SKIN_METRIC_LABELS.DARK_CIRCLE },
+  { key: 'complexion', label: SKIN_METRIC_LABELS.COMPLEXION },
+  { key: 'barrier', label: SKIN_METRIC_LABELS.BARRIER },
+];
 
 // clinicNeeded 감지 플래그 3종의 라벨 — true인 항목만 골라 보여준다(false/null은 목록에서
 // 그냥 빠진다, "감지 안 됨"과 "측정한 적 없음"을 문구로 따로 구분하지 않아도 되는 이유는 아래
@@ -56,20 +64,35 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
-/** triggered: true일 때만 쓰인다(RISING/STABLE만 트리거 대상) — 나머지는 방어적으로만 채워둔다. */
-function buildTrendDetail(trend: OverallSleepTrend): string {
-  switch (trend) {
-    case 'RISING':
-      return '꾸준히 좋아지고 있어요';
-    case 'STABLE':
-      return '안정적으로 유지되고 있어요';
-    case 'FALLING':
-      return '최근 낮아지고 있어요';
+// 서버는 trend/volatileDirection 판정값만 주고 문장은 만들지 않으므로, 화면에서 직접 구성한다.
+// w1/w3 평균이 둘 다 있으면 참고용 숫자를 괄호로 덧붙인다(둘 중 하나라도 없으면 생략).
+function buildTrendDetail(metric: OverallReportTrendMetric): string {
+  let sentence: string;
+  switch (metric.trend) {
+    case 'IMPROVED':
+      sentence = '3주간 좋아지고 있어요';
+      break;
+    case 'WORSENED':
+      sentence = '3주간 나빠지고 있어요';
+      break;
+    case 'MAINTAINED':
+      sentence = '3주간 비슷하게 유지되고 있어요';
+      break;
     case 'VOLATILE':
-      return '기복이 큰 편이에요';
-    case 'INSUFFICIENT_DATA':
-      return '아직 판단할 데이터가 부족해요';
+      sentence =
+        metric.volatileDirection === 'FALL_THEN_RISE'
+          ? '낮아졌다가 다시 회복됐어요'
+          : '상승했다가 다시 낮아졌어요';
+      break;
+    case 'INSUFFICIENT_SAMPLE':
+      sentence = '아직 판단하기엔 기록이 부족해요';
+      break;
   }
+
+  if (metric.w1Average !== null && metric.w3Average !== null) {
+    return `${sentence} (${metric.w1Average} → ${metric.w3Average})`;
+  }
+  return sentence;
 }
 
 type OverallReportState =
@@ -89,57 +112,51 @@ function ReasonRow({ title, detail, achieved }: { title: string; detail: string;
   );
 }
 
-// triage.triggered: true — "수면은 양호한데 특정 피부 지표만 정체" 판단 근거를 실데이터로 구성.
-// 수면 추세 1줄(항상 achieved) + 정체 지표별 1줄(항상 !achieved)로 나열한다.
-function TriageHero({ triage }: { triage: OverallReportTriage }) {
-  const stagnantLabels = triage.stagnantMetrics.map((code) => SKIN_METRIC_LABELS[code] ?? code);
-
+// "수면으로는 잡히지 않는 신호가 있어요" 파란 히어로 — triage.triggered와 무관하게 status가
+// FULL이면 항상 독립적으로 뜬다(기획 확인 완료). 아래 이어지는 판단 근거 카드(ReasonCard)와
+// 더 이상 세트로 묶여 있지 않다.
+function SleepSignalHero() {
   return (
-    <>
-      <View style={styles.hero}>
-        <View style={styles.pill}>
-          <ThemedText style={styles.pillText}>3주 관찰 결과</ThemedText>
-        </View>
-        <ThemedText style={styles.heroHeading}>수면으로는 잡히지 않는 신호가 있어요</ThemedText>
-        <ThemedText style={styles.heroSubtext}>생활 습관이 아니라 다른 접근이 필요한 영역일 수 있습니다.</ThemedText>
+    <View style={styles.hero}>
+      <View style={styles.pill}>
+        <ThemedText style={styles.pillText}>3주 관찰 결과</ThemedText>
       </View>
-
-      <View style={styles.reasonCard}>
-        <ThemedText style={styles.reasonCardTitle}>이렇게 판단했어요</ThemedText>
-        <ReasonRow title="최근 3주 수면 점수 추세" detail={buildTrendDetail(triage.sleepTrend)} achieved />
-        {stagnantLabels.map((label) => (
-          <ReasonRow key={label} title={`${label} 정체`} detail="3주째 뚜렷한 변화가 없어요" achieved={false} />
-        ))}
-        <ThemedText style={styles.reasonParagraph}>
-          수면 지표는 양호한데 특정 피부 신호만 정체되어 있습니다. 이 조합은 생활 습관 개선만으로는 닿기 어려운
-          영역일 수 있습니다.
-        </ThemedText>
-      </View>
-    </>
-  );
-}
-
-// triage.triggered: false(FULL 상태) — 정체 신호 자체가 없으므로 판단 근거 카드를 만들 수 없다.
-// 긍정 문구로 대체(기획 확인 완료).
-function PositiveHero() {
-  return (
-    <View style={styles.positiveHero}>
-      <ThemedText style={styles.positiveHeroHeading}>지금은 특별한 신호가 없어요</ThemedText>
-      <ThemedText style={styles.positiveHeroSubtext}>
-        수면과 피부 지표가 고르게 관리되고 있어요. 지금처럼 꾸준히 기록해주세요.
-      </ThemedText>
+      <ThemedText style={styles.heroHeading}>수면으로는 잡히지 않는 신호가 있어요</ThemedText>
+      <ThemedText style={styles.heroSubtext}>생활 습관이 아니라 다른 접근이 필요한 영역일 수 있습니다.</ThemedText>
     </View>
   );
 }
 
-// status: INSUFFICIENT_DATA — 최근 3주 유효 수면 표본이 부족해 판단 자체가 불가능한 상태.
-// 가입일 게이트가 아니라 표본 부족이 원인이므로 주간/월간의 "가입 후 N일" 문구를 재사용하지
-// 않고, 기록을 유도하는 전용 문구로 상단을 덮는다(기획 확인 완료).
-function RecordPromptBanner() {
+// status: FULL — 다크서클/혈색/장벽 3개 지표의 3주 추세를 항상 전부 나열한다(더 이상 triage
+// 발동 여부에 따라 갈리지 않는다). achieved(채워진 점)는 IMPROVED일 때만 — 나머지 4개 trend
+// 값(WORSENED/MAINTAINED/VOLATILE/INSUFFICIENT_SAMPLE)은 전부 "좋아지고 있다고 말할 수 없음"으로
+// 묶어 빈 점으로 표시한다.
+function ReasonCard({ trends }: { trends: OverallReportTrends }) {
+  return (
+    <View style={styles.reasonCard}>
+      <ThemedText style={styles.reasonCardTitle}>이렇게 판단했어요</ThemedText>
+      {TREND_METRIC_ORDER.map(({ key, label }) => {
+        const metric = trends[key];
+        return (
+          <ReasonRow
+            key={key}
+            title={`${label} 추세`}
+            detail={buildTrendDetail(metric)}
+            achieved={metric.trend === 'IMPROVED'}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+// status: INSUFFICIENT_DATA — 가입 21일 미만이라 판단 자체가 불가능한 상태. 서버가 내려주는
+// message를 우선 쓰고, 없으면(방어적으로) 기존 안내 문구로 대체한다.
+function RecordPromptBanner({ message }: { message: string | null }) {
   return (
     <View style={styles.recordPrompt}>
       <ThemedText style={styles.recordPromptHeading}>
-        정확한 종합 분석을 위해 수면 기록이 조금 더 필요해요!
+        {message ?? '정확한 종합 분석을 위해 수면 기록이 조금 더 필요해요!'}
       </ThemedText>
       <ThemedText style={styles.recordPromptSubtext}>매일 꾸준히 기록을 남겨주세요.</ThemedText>
     </View>
@@ -161,8 +178,8 @@ function ScopeCard({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-// clinicNeeded는 triage.triggered와 무관하게 항상 독립적으로 보여준다(기획 확인 완료) — 최근
-// 셀피 검증에서 실제로 감지된 신호라 수면 추세 판정과는 별개다. null 3갈래를 전부 방어한다:
+// clinicNeeded는 trends와 무관하게 항상 독립적으로 보여준다(기획 확인 완료) — 최근 셀피 검증에서
+// 실제로 감지된 신호라 수면 추세 판정과는 별개다. null 3갈래를 전부 방어한다:
 // - clinicNeeded 전체가 null(셀피 인증 이력 자체 없음) → 안내 문구
 // - 개별 필드만 null(그 컬럼 도입 이전 실측 행) → 그 항목만 조용히 목록에서 빠짐(true 목록만 추려서
 //   보여주므로 null/false를 구분해서 별도 표시할 필요가 없다)
@@ -237,11 +254,12 @@ export function OverallReport() {
   return (
     <View style={styles.container}>
       {data.status === 'INSUFFICIENT_DATA' ? (
-        <RecordPromptBanner />
-      ) : data.triage.triggered ? (
-        <TriageHero triage={data.triage} />
+        <RecordPromptBanner message={data.message} />
       ) : (
-        <PositiveHero />
+        <>
+          <SleepSignalHero />
+          <ReasonCard trends={data.trends} />
+        </>
       )}
 
       <View style={styles.scopeRow}>
@@ -289,7 +307,7 @@ const styles = StyleSheet.create({
     color: 'rgba(55, 56, 60, 0.61)',
   },
 
-  // "트리아지 알림" (node 306:2953, padding16, gap8, radius14, fill #031949)
+  // "수면으로는 잡히지 않는 신호가 있어요" 히어로 (node 306:2953, padding16, gap8, radius14, fill #031949)
   hero: {
     backgroundColor: Colors.primaryDark,
     borderRadius: 14,
@@ -324,29 +342,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: '400',
     color: 'rgba(255, 255, 255, 0.75)',
-  },
-
-  // triage.triggered: false 전용 — Figma 노드 없음. hero(남색 경고 톤)와 대비되도록 흰 배경 +
-  // success 컬러 테두리로 "괜찮다"는 톤을 준다.
-  positiveHero: {
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 173, 14, 0.35)',
-    borderRadius: 14,
-    padding: 16,
-    gap: 6,
-  },
-  positiveHeroHeading: {
-    fontSize: 18,
-    lineHeight: 25,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  positiveHeroSubtext: {
-    fontSize: 12,
-    lineHeight: 19,
-    fontWeight: '400',
-    color: 'rgba(55, 56, 60, 0.61)',
   },
 
   // status: INSUFFICIENT_DATA 전용 — Figma 노드 없음. 경고도 축하도 아닌 중립 안내라 판단 근거
@@ -424,14 +419,6 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#9E9E9E',
   },
-  // node 306:2975 — Regular 11, lineHeight 1.58em, #6B6B6B(판단 근거 상세보다 더 진한 회색)
-  reasonParagraph: {
-    fontSize: 11,
-    lineHeight: 17,
-    fontWeight: '400',
-    color: '#6B6B6B',
-  },
-
   // "영역 구분" (node 306:2976, gap8)
   scopeRow: {
     flexDirection: 'row',

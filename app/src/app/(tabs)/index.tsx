@@ -49,14 +49,15 @@ const CANVAS_HEIGHT = 874;
 // 실기기에서 버튼·캐릭터 등이 다 작아 보이고 화면 좌우에 빈 여백이 남는 문제가 있었다
 // (docs/아이폰16.jpg).
 //
-// 🚨 아래 모든 요소의 top 값은 Figma 원본보다 일괄 40pt 작다 — 실제 세로 여유 공간
+// 🚨 아래 모든 요소의 top 값은 Figma 원본보다 일괄 55pt 작다 — 실제 세로 여유 공간
 // (아이폰 16, 네이티브 탭바 위 실측 영역)이 원본 디자인 높이보다 좁아서, 맨 위 여백
-// (상태바 아래 순수 디자인 여백 55pt)을 15pt로 줄이고 그만큼 모든 요소를 통째로 위로
-// 당겼다(docs/아이폰16-2.jpg 확인 후 결정, 요소 간 상대 간격은 그대로라 겹침 없음).
-// 상태바 자체 높이(useSafeAreaInsets)는 별도로 SafeAreaView가 처리하므로 안 건드렸다.
-// 콘텐츠가 늘어나 이 값을 넘으면(예: 텍스트가 길어져 요소가 밀리면) 다시 잘릴 수 있으니
-// 하단 요소 좌표가 바뀌면 이 값도 같이 확인한다.
-const SCALE_FIT_HEIGHT = 760;
+// (상태바 아래 순수 디자인 여백 55pt)을 0으로 줄이고 그만큼 모든 요소를 통째로 위로
+// 당겼다(docs/아이폰16-2.jpg 확인 후 결정, 요소 간 상대 간격은 원본 그대로라 겹침 없음
+// — 간격을 줄이는 대신 전체를 위로 미는 쪽을 택했다). 상태바 자체 높이
+// (useSafeAreaInsets)는 별도로 SafeAreaView가 처리하므로 안 건드렸다. 콘텐츠가 늘어나
+// 이 값을 넘으면(예: 텍스트가 길어져 요소가 밀리면) 다시 잘릴 수 있으니 하단 요소
+// 좌표가 바뀌면 이 값도 같이 확인한다.
+const SCALE_FIT_HEIGHT = 745;
 
 // 레벨 트랙 폭(w:95.4) — Figma 원본 px 값을 그대로 사용. 채움 폭은 getLevelExpDisplay의 percent로 계산한다.
 const LEVEL_TRACK_WIDTH = 95.4;
@@ -484,7 +485,7 @@ const styles = StyleSheet.create({
   dateGreetingBlock: {
     position: 'absolute',
     left: 31,
-    top: 15,
+    top: 0,
   },
   dateText: {
     fontSize: 18,
@@ -512,7 +513,7 @@ const styles = StyleSheet.create({
   levelText: {
     position: 'absolute',
     left: 37,
-    top: 94,
+    top: 79,
     fontSize: 15,
     lineHeight: 17,
     fontWeight: '700',
@@ -522,7 +523,7 @@ const styles = StyleSheet.create({
   levelTrack: {
     position: 'absolute',
     left: 107,
-    top: 100,
+    top: 85,
     width: LEVEL_TRACK_WIDTH,
     height: 7,
     borderRadius: 6,
@@ -539,7 +540,7 @@ const styles = StyleSheet.create({
   expText: {
     position: 'absolute',
     left: 38,
-    top: 120,
+    top: 105,
     fontSize: 11,
     lineHeight: 23,
     fontFamily: PRESS_START_2P,
@@ -558,7 +559,7 @@ const styles = StyleSheet.create({
   tooltipCard: {
     position: 'absolute',
     left: 181,
-    top: 118,
+    top: 103,
     width: 199,
     minHeight: 78,
     borderRadius: 25,
@@ -614,7 +615,7 @@ const styles = StyleSheet.create({
   tooltipIcon: {
     position: 'absolute',
     left: 198,
-    top: 146,
+    top: 131,
     width: 27,
     height: 27,
   },
@@ -623,7 +624,7 @@ const styles = StyleSheet.create({
   forecastCard: {
     position: 'absolute',
     left: 22,
-    top: 441,
+    top: 426,
     width: 358,
     height: 186,
     borderRadius: 17,
@@ -699,7 +700,7 @@ const styles = StyleSheet.create({
   verifyButton: {
     position: 'absolute',
     left: 29,
-    top: 646,
+    top: 631,
     width: 345,
     height: 52,
     borderRadius: 10,
@@ -718,7 +719,7 @@ const styles = StyleSheet.create({
   verificationTrigger: {
     position: 'absolute',
     left: 30,
-    top: 710,
+    top: 695,
     width: 345,
     alignItems: 'center',
   },
@@ -733,7 +734,7 @@ const styles = StyleSheet.create({
   chevronIcon: {
     position: 'absolute',
     left: 190,
-    top: 734,
+    top: 719,
     width: 23,
     height: 13,
   },

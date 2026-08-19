@@ -392,24 +392,6 @@ export default function TodoScreen() {
 
             {state.status === 'available' && (
               <>
-                {/* TODO-01 요약 멘트 — 서버가 안 주므로 프론트가 직접 렌더링 */}
-                <ThemedText style={styles.summarySubtitle}>{summaryMessage}</ThemedText>
-
-                {checklistItems.length > 0 && (
-                  <>
-                    {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) — DONE 개수는 서버가
-                        내려주지 않아 checklistItems를 순회하며 프론트가 직접 센다. */}
-                    <ThemedText style={styles.progressLabel}>진행도</ThemedText>
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-                    </View>
-                    <ThemedText style={styles.progressCount}>
-                      {completed}/{total}
-                    </ThemedText>
-                    {toggleError && <ThemedText style={styles.toggleErrorText}>{toggleError}</ThemedText>}
-                  </>
-                )}
-
                 {avoidItems.length > 0 && (
                   <View style={styles.avoidCard}>
                     <ThemedText style={styles.avoidTitle}>오늘은 피하세요</ThemedText>
@@ -436,6 +418,19 @@ export default function TodoScreen() {
                         <ExpGainBadge amount={allDoneBonusAmount} />
                       )}
                     </View>
+
+                    {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) — DONE 개수는 서버가
+                        내려주지 않아 checklistItems를 순회하며 프론트가 직접 센다. "오늘 밤
+                        체크리스트" 제목 바로 아래로 이동(원래는 페이지 상단에 있었음). */}
+                    <ThemedText style={styles.progressLabel}>진행도</ThemedText>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                    </View>
+                    <ThemedText style={styles.progressCount}>
+                      {completed}/{total}
+                    </ThemedText>
+                    {toggleError && <ThemedText style={styles.toggleErrorText}>{toggleError}</ThemedText>}
+
                     <View style={styles.checklistList}>
                       {checklistItems.map((item) => (
                         <ChecklistRow
@@ -535,36 +530,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(55, 56, 60, 0.61)',
   },
-  // TODO-01 요약 멘트("오늘의 피부를 위한 미션") — 서버가 안 주는 문구라 Figma 고정 노드가 없다.
-  // 새 시안(694:2599) 기준 타이틀 하단(y≈96)과 진행도(y:106) 사이는 10px뿐이라 그 사이에 못
-  // 넣는다(억지로 욱여넣었더니 겹쳐 보였다) — 대신 진행도 줄과 "오늘은 피하세요" 카드(top:150)
-  // 사이 빈 공간(y:124~150, 26px)에 놓는다.
-  summarySubtitle: {
-    position: 'absolute',
-    left: 27,
-    top: 130,
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: '500',
-    color: 'rgba(55, 56, 60, 0.61)',
-  },
-
-  // "진행도" (node 694:2623, x:73.04 y:106 w:103.35 h:17.06) — 예전엔 다른(구) 프레임 노드
-  // (176:1229~1232) 좌표를 썼는데 새 시안(694:2599)과 세로로 16px 정도 어긋나 있었다.
+  // "진행도" — "오늘 밤 체크리스트" 섹션(제목+진행도 바+체크리스트 5개, checklistTitleRow
+  // 기준) 전체를 한 그룹으로 위로 18px 당겼다(top:458→440) — 위 "오늘은 피하세요" 카드 3개는
+  // 전혀 안 건드리고, 이 그룹만 통째로 이동. 그룹 내부 상대 간격(제목-진행도-체크리스트
+  // 사이 간격)은 전부 그대로 유지.
   progressLabel: {
     position: 'absolute',
-    left: 73,
-    top: 106,
+    left: 21,
+    top: 440,
     fontSize: 15,
     lineHeight: 18,
     fontWeight: '700',
     color: '#383838',
   },
-  // 진행 트랙 배경 value (node 694:2624, x:122.21 y:112.02 w:95.4 h:6.98, radius:5.82)
+  // 진행 트랙 배경 value — progressLabel과 같이 18px 위로 이동(top 464→446).
   progressTrack: {
     position: 'absolute',
-    left: 122,
-    top: 112,
+    left: 70,
+    top: 446,
     width: 95.4,
     height: 7,
     borderRadius: 6,
@@ -577,33 +560,38 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#1A1A1A',
   },
-  // "1/5" (node 694:2625, x:222.09 y:108 w:17 h:16) — 예전 좌표(176:1231)와 세로로 16px 어긋나
-  // 있었다.
+  // "1/5" — progressLabel과 같이 18px 위로 이동(top 460→442).
   progressCount: {
     position: 'absolute',
-    left: 222,
-    top: 108,
+    left: 170,
+    top: 442,
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '500',
     color: '#000000',
   },
   // PATCH 실패 안내 — Figma 노드 없음, 진행도 줄 아래 여백에 얹는다. 다음 토글 시도에서 지워진다.
+  // progressLabel과 같이 18px 위로 이동(top 492→474).
   toggleErrorText: {
     position: 'absolute',
-    left: 78,
-    top: 140,
+    left: 26,
+    top: 474,
     fontSize: 12,
     lineHeight: 15,
     fontWeight: '600',
     color: '#E52222',
   },
 
-  // "div" 오늘은 피하세요 카드 (node 187:2505, x:9 y:125 w:400 h:216, radius:16)
+  // "div" 오늘은 피하세요 카드 (node 187:2505, x:9 y:125 w:400 h:216, radius:16) — top을
+  // 102→110으로 살짝 더 내렸다. avoidCard의 실제 콘텐츠 높이(padding+title+3개 항목+gap,
+  // ≈285)와 아래 checklistTitleRow(top:431, 고정)를 감안하면:
+  //  - 위쪽 여백(제목→"오늘은 피하세요" 텍스트): 96(pageTitle 바닥) → 110+16(padding)=126 ≈ 30px
+  //  - 아래쪽 여백(세 번째 카드→"오늘 밤 체크리스트"): 431 − (110+285≈395) ≈ 36px
+  // 두 여백이 30/36으로 비슷해지도록 맞췄다(이전엔 22px / 43px로 아래쪽이 훨씬 넓었음).
   avoidCard: {
     position: 'absolute',
     left: 9,
-    top: 150,
+    top: 110,
     width: 400,
     borderRadius: 16,
     padding: 16,
@@ -648,12 +636,14 @@ const styles = StyleSheet.create({
     color: 'rgba(55, 56, 60, 0.61)',
   },
 
-  // "오늘 밤 체크리스트" 줄 (node 432:1157, x:18 y:431 w:363) — 전체 완료 보너스 배지를 제목
-  // 오른쪽에 얹으려고 절대좌표 Text 하나였던 걸 좌우 정렬 row로 바꿨다. 박스 좌표 자체는 그대로.
+  // "오늘 밤 체크리스트" 줄 (node 432:1157, x:18 y:431 w:363) — "오늘 밤 체크리스트" 섹션
+  // 그룹(제목+진행도 바+체크리스트) 전체를 18px 위로 당겨 top:431→413. 위 "오늘은 피하세요"
+  // 카드 3개(avoidCard, top:110)와 그 사이 여백은 전혀 안 건드렸다 — 세 번째 카드 밑과 이
+  // 줄 사이 간격만 좁아진 것.
   checklistTitleRow: {
     position: 'absolute',
     left: 21,
-    top: 431,
+    top: 413,
     width: 363,
     flexDirection: 'row',
     alignItems: 'center',
@@ -665,11 +655,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-  // 항목 리스트 (node 432:1158, x:21 y:465 w:363, gap:10)
+  // 항목 리스트 (node 432:1158, w:363, gap:10) — 그룹 전체 이동과 같이 18px 위로(top 486→468).
   checklistList: {
     position: 'absolute',
     left: 21,
-    top: 465,
+    top: 468,
     width: 363,
     gap: 10,
   },

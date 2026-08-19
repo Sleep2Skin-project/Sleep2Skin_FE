@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import {
   getDailyReport,
@@ -173,15 +173,10 @@ const AROUSAL_MARKER_POSITIONS = [36.3, 64.3];
 // 실값이다 — 수면 점수는 같은 응답의 sleepSummary.summary.sleepScore(위 sleepScoreBadge와 동일
 // 소스), 깊은 수면은 stats.deepSleepMinutes(범례가 이미 쓰는 값과 동일). "잠든 시간"(입면 지연)은
 // 이 6칸에 포함되지 않는 지표라 여기서 완전히 뺐다 — API에도 없고 디자인에도 없다.
-// hrv/restingHeartRate는 Figma 디자인엔 없는 신규 필드라 그리드 뒤에 조건부로 덧붙인다 — 워치
-// 미착용으로 그 밤에 결측(null)이면 카드 자체를 만들지 않는다(0이나 '측정 불가'로 보여주지 않음).
-function buildStatItems(
-  stats: SleepStats,
-  sleepScore: number | null,
-  hrv: number | null,
-  restingHeartRate: number | null
-) {
-  const items = [
+// hrv/restingHeartRate는 더 이상 이 그리드에 안 넣는다 — buildHeartRateItems(아래)로 분리해
+// "지난밤 수면 구간" 카드 바로 아래에 하트 아이콘 한 줄로 따로 렌더링한다.
+function buildStatItems(stats: SleepStats, sleepScore: number | null) {
+  return [
     { key: 'total', label: '총 수면', value: formatDuration(stats.totalSleepMinutes) },
     { key: 'deep', label: '깊은 수면', value: formatDuration(stats.deepSleepMinutes) },
     { key: 'wakeCount', label: '야간 각성', value: `${stats.awakeCount}회` },
@@ -189,8 +184,16 @@ function buildStatItems(
     { key: 'core', label: '얕은 수면', value: formatDuration(stats.coreSleepMinutes) },
     { key: 'wakeMinutes', label: '각성 시간', value: formatDuration(stats.awakeMinutes) },
   ];
+}
+
+// 심박변이도/안정시 심박 — Figma 디자인엔 없는 신규 필드라 원래 통계 카드 그리드 뒤에 박스로
+// 덧붙였었는데, 최신 시안은 이 둘을 박스가 아니라 하트 아이콘 + 라벨 + 값 형태로 "지난밤 수면
+// 구간" 카드 바로 아래 한 줄에 나란히 보여준다. 워치 미착용으로 그 밤에 결측(null)이면 항목
+// 자체를 만들지 않는다(0이나 '측정 불가'로 보여주지 않음, 기존 규칙 유지).
+function buildHeartRateItems(hrv: number | null, restingHeartRate: number | null) {
+  const items: { key: string; label: string; value: string }[] = [];
   if (hrv !== null) {
-    items.push({ key: 'hrv', label: '심박변이도', value: `${hrv}ms` });
+    items.push({ key: 'hrv', label: '심박 변이도', value: `${hrv}ms` });
   }
   if (restingHeartRate !== null) {
     items.push({ key: 'restingHeartRate', label: '안정시 심박', value: `${restingHeartRate}bpm` });
@@ -378,6 +381,10 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
   const sleepWindow = sleepWindowState.status === 'available' ? sleepWindowState : null;
   const hybridSleepStats =
     sleepSummaryState.status === 'available' ? toHybridSleepStats(sleepSummaryState.summary, sleepWindow) : null;
+  const heartRateItems =
+    sleepSummaryState.status === 'available'
+      ? buildHeartRateItems(sleepSummaryState.summary.hrv, sleepSummaryState.summary.restingHeartRate)
+      : [];
 
   // 오늘 리포트를 열었을 때만 보여준다 — sleepDate가 오늘과 다르면(이론상 방어) 안 띄운다.
   const sleepScoreExpResult = useSleepScoreExpResult();
@@ -461,14 +468,23 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
         )}
       </View>
 
+      {/* 심박변이도/안정시 심박 — 박스가 아니라 하트 아이콘 + 라벨 + 값 한 줄. "지난밤 수면 구간"
+          카드 바로 아래(범례/각성 표시 다음)에 온다. 둘 다 결측이면 줄 자체를 안 그린다. */}
+      {heartRateItems.length > 0 && (
+        <View style={styles.heartRateRow}>
+          {heartRateItems.map((item) => (
+            <ThemedText key={item.key}>
+              {'❤️ '}
+              <Text style={styles.statLabel}>{item.label} </Text>
+              <Text style={styles.statValue}>{item.value}</Text>
+            </ThemedText>
+          ))}
+        </View>
+      )}
+
       {sleepSummaryState.status === 'available' && hybridSleepStats && (
         <View style={styles.statGrid}>
-          {buildStatItems(
-            hybridSleepStats,
-            sleepSummaryState.summary.sleepScore,
-            sleepSummaryState.summary.hrv,
-            sleepSummaryState.summary.restingHeartRate
-          ).map((item) => (
+          {buildStatItems(hybridSleepStats, sleepSummaryState.summary.sleepScore).map((item) => (
             <View key={item.key} style={styles.statCard}>
               <ThemedText style={styles.statLabel}>{item.label}</ThemedText>
               <ThemedText style={styles.statValue}>{item.value}</ThemedText>
@@ -519,7 +535,7 @@ const styles = StyleSheet.create({
   // "test1님의 어제" (node 350:788, y128 — dateRange 하단(y97+20=117) 대비 11) — Figma가 준
   // lineHeight(20)는 fontSize(24)보다 작아 그대로 쓰면 글자가 잘려서, 잘리지 않는 값으로만 보정했다.
   heading: {
-    marginTop: 11,
+    marginTop: 6,
     fontSize: 24,
     lineHeight: 28,
     fontWeight: '700',
@@ -530,14 +546,14 @@ const styles = StyleSheet.create({
   // heading 하단(y128+20=148) 대비 21). 배경색은 HOME 화면(index.tsx)의 "오늘의 피부 예보"
   // 카드(forecastCard)와 동일한 rgba(255,255,255,0.62)로 통일(원래 불투명 #FFFFFF였음).
   sleepCard: {
-    marginTop: 21,
+    marginTop: 13,
     backgroundColor: 'rgba(255, 255, 255, 0.62)',
     borderWidth: 1,
     borderColor: 'rgba(112, 115, 124, 0.22)',
     borderRadius: 16,
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
   },
   sleepCardTitleRow: {
     flexDirection: 'row',
@@ -587,7 +603,7 @@ const styles = StyleSheet.create({
   },
   // "stages" 바 (node 350:705, h38, radius6.44, bg #F4F4F4)
   timelineBarWrap: {
-    marginTop: 26,
+    marginTop: 20,
     position: 'relative',
   },
   timelineBar: {
@@ -615,8 +631,8 @@ const styles = StyleSheet.create({
   },
 
   legendList: {
-    marginTop: 14,
-    gap: 10,
+    marginTop: 10,
+    gap: 8,
   },
   legendRow: {
     flexDirection: 'row',
@@ -651,14 +667,29 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
+  // 심박변이도/안정시 심박 한 줄 — "지난밤 수면 구간" 카드(범례) 바로 아래, 통계 카드 그리드
+  // 앞. 하트 이모지를 아이콘처럼 텍스트 안에 그대로 넣었다(별도 아이콘 애셋 불필요).
+  // 아래 통계 카드들과 항목명/값 텍스트 스타일을 통일하기 위해 별도 스타일 없이
+  // statLabel/statValue를 그대로 재사용한다(JSX 참고) — 라벨은 statLabel(굵기 600, 회색),
+  // 값은 statValue(굵기 700, 진한 색)로 카드와 동일하게 보인다.
+  heartRateRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 18,
+    rowGap: 4,
+  },
+
   // 지표 카드 6개 (node 350:737~814) — 3열, 배경 투명(fill alpha 0) + 테두리만 있는 카드.
-  // sleepCard 하단(y169+187=356) 대비 15, 카드 행간(y457-371=86, 카드 자체 높이≈70) 대비 16.
+  // 화면 높이 압축(2026-08) — 심박변이도/안정시 심박을 그리드에서 빼서(heartRateRow로 이동)
+  // 3행→2행이 되었고, 그 위 여백도 15→10로 살짝 줄여 "오늘의 피부 예보"까지 스크롤 없이
+  // 한 화면에 들어오게 했다.
   statGrid: {
-    marginTop: 15,
+    marginTop: 10,
     flexDirection: 'row',
     flexWrap: 'wrap',
     columnGap: 10,
-    rowGap: 16,
+    rowGap: 12,
   },
   statCard: {
     flexBasis: '31%',
@@ -687,7 +718,7 @@ const styles = StyleSheet.create({
   // "오늘의 피부 예보" (node 350:742/743, title fontSize20) — statGrid 하단(y457+카드높이≈529)
   // 대비 24.
   forecastSection: {
-    marginTop: 24,
+    marginTop: 14,
   },
   forecastTitle: {
     fontSize: 20,
@@ -697,8 +728,8 @@ const styles = StyleSheet.create({
   },
   // node 350:744 자체 paddingTop(5.78) — 제목 하단 여백(2) 포함해 8.
   metricList: {
-    marginTop: 8,
-    gap: 14,
+    marginTop: 6,
+    gap: 10,
   },
   metricRow: {
     gap: 6,

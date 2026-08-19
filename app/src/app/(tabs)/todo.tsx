@@ -509,12 +509,14 @@ const styles = StyleSheet.create({
   },
 
   // ghost2-transparent 1 (node 187:2526, x:309 y:55 w:89 h:89)
+  // 🚨 1.2배(89→107) 키웠다 — 가운데(원래 중심 x=353.5, y=84.5)는 그대로 유지하도록
+  // left/top도 같이 다시 계산했다.
   ghostImage: {
     position: 'absolute',
-    left: 309,
-    top: 40,
-    width: 89,
-    height: 89,
+    left: 291,
+    top: 31,
+    width: 107,
+    height: 107,
   },
 
   // 로딩/에러 상태 텍스트 — Figma 노드 없음, 타이틀 아래 여백에 얹는다.
@@ -592,17 +594,18 @@ const styles = StyleSheet.create({
     color: '#E52222',
   },
 
-  // "div" 오늘은 피하세요 카드 (node 187:2505, x:9 y:125 w:400 h:216, radius:16) — top을
-  // 102→110으로 살짝 더 내렸다. avoidCard의 실제 콘텐츠 높이(padding+title+3개 항목+gap,
-  // ≈285)와 아래 checklistTitleRow(top:431, 고정)를 감안하면:
-  //  - 위쪽 여백(제목→"오늘은 피하세요" 텍스트): 96(pageTitle 바닥) → 110+16(padding)=126 ≈ 30px
-  //  - 아래쪽 여백(세 번째 카드→"오늘 밤 체크리스트"): 431 − (110+285≈395) ≈ 36px
-  // 두 여백이 30/36으로 비슷해지도록 맞췄다(이전엔 22px / 43px로 아래쪽이 훨씬 넓었음).
+  // "div" 오늘은 피하세요 카드 (node 187:2505, x:9 y:125 w:400 h:216, radius:16)
+  // 🚨 left/width가 원본(9/400)과 다르다 — 원본 그대로면 오른쪽 끝이 9+400=409로 캔버스 폭
+  // (402)을 7pt 넘어가 있었다. 반면 체크리스트 쪽(checklistList, left:21 width:363, 오른쪽
+  // 끝 384)은 안쪽에 여유 있게 들어와 있어서 두 섹션의 좌우 여백이 서로 달라 보였다. avoidItem
+  // (width:363, 카드 padding 16 안쪽에 꽉 참)이 checklistItem과 정확히 같은 화면 좌표
+  // (x:21~384)에 오도록 카드 자체를 left:9→5, width:400→395로 다시 잡았다(콘텐츠 폭 363 +
+  // 양쪽 패딩 16씩 = 395, 오른쪽 끝 400으로 캔버스 안쪽에 정확히 들어옴).
   avoidCard: {
     position: 'absolute',
-    left: 9,
+    left: 5,
     top: 95,
-    width: 400,
+    width: 395,
     borderRadius: 16,
     padding: 16,
     gap: 10,

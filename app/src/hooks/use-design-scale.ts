@@ -1,11 +1,17 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowDimensions } from 'react-native';
 
-// 시연 녹화에 아이폰 16(393pt 폭) 한 기기만 쓰기로 해서, 가로는 더 이상 실행 중인 창 크기를
-// 읽지 않고 이 기기 폭을 고정값으로 쓴다 — 예전엔 실제 창 크기를 읽어 "모든 아이폰 규격"에
-// 맞추려 했는데, 시뮬레이터 창 크기·웹 프리뷰처럼 디자인 캔버스(402x874, 아이폰 16 Pro 비율)와
-// 가로세로 비율이 크게 다른 환경에서 캔버스가 한쪽 구석에 작게 배치되고 남는 공간에 배경색만
-// 넓게 칠해져 어색해 보였다. 이제 기기 하나로 고정했으니 그 경우가 없다.
-const TARGET_DEVICE_WIDTH = 393;
+// 시연 녹화에 아이폰 16(393x852pt, 상단 다이나믹 아일랜드 세이프에어리어 59pt, 하단 홈
+// 인디케이터 34pt) 한 기기만 쓰기로 해서, 이 값들을 고정 상수로 쓴다 — 개발 중 실제 테스트
+// 기기(예: 아이폰13, 390x844, 노치 세이프에어리어 ~47pt)가 아이폰16과 다를 수 있는데, 특히
+// 아이폰16은 전체 화면은 더 커도(852>844) 다이나믹 아일랜드 때문에 상단 세이프에어리어가
+// 더 커서(59>47), 실제 쓸 수 있는 세로 공간은 아이폰16이 오히려 더 좁을 수 있다. 그래서
+// "지금 테스트 중인 기기에서 실측한 값"을 그대로 쓰면 안 되고, 아래처럼 아이폰16 값으로
+// 환산해야 한다.
+const IPHONE16_WIDTH = 393;
+const IPHONE16_HEIGHT = 852;
+const IPHONE16_TOP_INSET = 59;
+const IPHONE16_BOTTOM_INSET = 34;
 // measuredContainerHeight를 아직 안 넘기는 화면들(대부분 이 파일 아래 목록)이 쓰는 대략치 —
 // 정확하진 않지만(네이티브 탭바 높이를 모른다, 아래 안내 참고) 이 훅을 쓰는 모든 화면을
 // onLayout 실측으로 옮기기 전까지는 기존 동작을 그대로 유지하기 위한 값이다.
@@ -27,11 +33,18 @@ const FALLBACK_DEVICE_HEIGHT = 852;
  * 캔버스를 필요 이상으로 키우고, 그 결과 하단 콘텐츠(버튼 아래 안내 문구·화살표 등)가
  * 탭바 뒤로 밀려 들어가 잘려 보였다(docs/아이폰16-2.jpg). onLayout 실측값은 탭바가
  * 차지하는 영역을 이미 제외한 실제 화면 프레임 높이라 이 문제가 없다.
+ *
+ * 🚨 실측값을 "이 기기의 남은 공간"이 아니라 "탭바 자체 높이"를 구하는 데만 쓴다 — 탭바
+ * 높이(약 49pt)는 기기가 달라져도 거의 일정하지만, 세이프에어리어(특히 상단)는 기기마다
+ * 꽤 다르다(아이폰13 ~47pt vs 아이폰16 ~59pt). 그래서 "전체 창 높이 - 실측 렌더 높이"로
+ * 탭바 높이만 역산하고, 나머지는 전부 아이폰16 고정값으로 계산해서 "다른 기기로 테스트해도
+ * 아이폰16 기준 결과가 나오게" 만든다.
  */
 export function useDesignScale(designWidth: number, designHeight?: number, measuredContainerHeight?: number) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
-  const availableWidth = TARGET_DEVICE_WIDTH - insets.left - insets.right;
+  const availableWidth = IPHONE16_WIDTH - insets.left - insets.right;
   const widthScale = availableWidth / designWidth;
   if (!designHeight) return widthScale;
 
@@ -39,7 +52,12 @@ export function useDesignScale(designWidth: number, designHeight?: number, measu
   // (탭바 높이를 무시하는 부정확한 값이지만, 그 화면들을 개별 검토하기 전까지는 최소한
   // 이전 동작을 그대로 유지해야 한다 — 여기서 fallback을 잘못 바꿨다가 손 안 댄 화면들이
   // 전부 같이 밀리는 회귀가 난 적이 있다).
-  const containerHeight = measuredContainerHeight ?? FALLBACK_DEVICE_HEIGHT;
-  const availableHeight = containerHeight - insets.top - insets.bottom;
+  if (!measuredContainerHeight) {
+    const availableHeight = FALLBACK_DEVICE_HEIGHT - insets.top - insets.bottom;
+    return Math.min(widthScale, availableHeight / designHeight);
+  }
+
+  const tabBarHeight = windowHeight - measuredContainerHeight;
+  const availableHeight = IPHONE16_HEIGHT - IPHONE16_TOP_INSET - IPHONE16_BOTTOM_INSET - tabBarHeight;
   return Math.min(widthScale, availableHeight / designHeight);
 }

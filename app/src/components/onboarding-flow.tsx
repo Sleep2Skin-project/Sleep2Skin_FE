@@ -80,7 +80,7 @@ const SLEEP_METRICS = [
 const HEALTH_DATA_ITEMS = [
   {
     title: '깊은 수면 · REM · 코어',
-    subtitle: '장벽 재생과 콜라겐 합성 지표',
+    subtitle: '피부 장벽 재생과 콜라겐 합성 지표',
     icon: require('@/assets/images/figma-icon-onboarding-health-bed.png'),
   },
   {

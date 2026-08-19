@@ -224,7 +224,13 @@ export default function HomeScreen() {
   // 하단 네이티브 탭바가 실제로 차지하는 높이는 useSafeAreaInsets()로 알 수 없어(하단
   // 안내 참고), SafeAreaView 자신의 렌더링 높이를 onLayout으로 직접 재서 넘긴다.
   const [screenHeight, setScreenHeight] = useState<number>();
-  const scale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT, screenHeight);
+  const rawScale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT, screenHeight);
+  // 🚨 SCALE_FIT_HEIGHT로 세로 제약을 유도하려던 계산이 실제로는 항상 가로 기준(widthScale)에
+  // 져서 반영되지 않았다 — 값을 745→775로 바꿔도 실기기에서 크기 변화가 전혀 없었다(다른
+  // 개발자 확인 완료). 그 간접적인 방식 대신 최종 배율에 직접 곱해서 확실히 줄인다. 셰브론이
+  // 절반 잘리는 상태(위 관찰) 기준으로 여유 있게 8% 줄였다 — 부족하면 이 값만 더 낮추면 된다.
+  const HOME_EXTRA_SHRINK = 0.92;
+  const scale = rawScale * HOME_EXTRA_SHRINK;
   const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
   const [selfieFlowVisible, setSelfieFlowVisible] = useState(false);

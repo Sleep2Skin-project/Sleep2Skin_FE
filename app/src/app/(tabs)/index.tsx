@@ -497,14 +497,15 @@ const styles = StyleSheet.create({
   },
 
   // "8월 6일 목요일 좋은 아침이에요" (node 187:2710, x:31 y:55 w:195 h:68) — 혼합 스타일 텍스트 런
-  // 🚨 top이 다른 요소들처럼 일괄 -55가 아니라 -20이다 — 상태바 바로 아래에 혼자 너무 붙어
-  // 보이고 LEVEL.3와의 사이 공백이 커 보여서(docs/아이폰 16-6.jpg) 20pt 내렸고, 그 뒤
-  // 캐릭터 위쪽 덩어리 전체(이 블록~tooltipIcon)를 캐릭터 쪽으로 15pt 더 내렸다
-  // (docs/아이폰 16-7.jpg, 캐릭터는 고정 기준점이라 안 건드림).
+  // 🚨 top이 -20이다 — 상태바 바로 아래에 혼자 너무 붙어 보이고 LEVEL.3와의 사이 공백이 커
+  // 보여서(docs/아이폰 16-6.jpg) 20pt 내렸다. 한때 나머지 위쪽 덩어리(레벨/말풍선)와 같이
+  // 15pt 더 내린 적(35)이 있었는데, 이 블록만 다시 20으로 되돌렸다 — 대신 캐릭터를 내려서
+  // 캐릭터-말풍선 간 거리를 좁혔다(docs/아이폰 16-7.jpg 후속 피드백, LEVEL_CHARACTER_HOME_BOX
+  // 주석 참고).
   dateGreetingBlock: {
     position: 'absolute',
     left: 31,
-    top: 35,
+    top: 20,
   },
   dateText: {
     fontSize: 18,
@@ -529,10 +530,12 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   // "LEVEL. 3" (node 187:2703, x:37 y:134 w:103.35 h:17.06)
+  // 🚨 top이 원래 자리(79)로 돌아왔다 — 한때 캐릭터 쪽으로 15pt 더 내린 적(94)이 있었는데
+  // 되돌렸다(dateGreetingBlock/LEVEL_CHARACTER_HOME_BOX 주석 참고, 캐릭터만 대신 내려감).
   levelText: {
     position: 'absolute',
     left: 37,
-    top: 94,
+    top: 79,
     fontSize: 15,
     lineHeight: 17,
     fontWeight: '700',
@@ -542,7 +545,7 @@ const styles = StyleSheet.create({
   levelTrack: {
     position: 'absolute',
     left: 107,
-    top: 100,
+    top: 85,
     width: LEVEL_TRACK_WIDTH,
     height: 7,
     borderRadius: 6,
@@ -559,7 +562,7 @@ const styles = StyleSheet.create({
   expText: {
     position: 'absolute',
     left: 38,
-    top: 120,
+    top: 105,
     fontSize: 11,
     lineHeight: 23,
     fontFamily: PRESS_START_2P,

@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import type { AttendanceExpInfo } from '@/api/game';
 import {
   getSkinModel,
   getVerificationSummary,
@@ -31,7 +32,6 @@ import {
   type VerificationSummary,
   type VerificationVerdict,
 } from '@/api/skin';
-import { ExpGainPopup } from '@/components/exp-gain-popup';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/colors';
@@ -46,6 +46,7 @@ import {
 } from '@/constants/tabs';
 import { Spacing } from '@/constants/theme';
 import { useDesignScale } from '@/hooks/use-design-scale';
+import { signalTodoChanged } from '@/hooks/use-todo-changed-signal';
 import { showAlert } from '@/utils/platform-alert';
 
 // HOME-05~14 셀피 검증 플로우 — 1) 촬영 → 2) 분석 중 → 3) 검증 리포트.
@@ -202,6 +203,8 @@ const STREAK_MODAL_DAY_PENDING_BORDER = '#949597';
 const STREAK_MODAL_DAY_FAILED_BORDER = '#F91D33';
 const STREAK_MODAL_MARKER = '#008DFF';
 const STREAK_MODAL_PRIMARY_BTN_BG = '#008DFF';
+// "+ N exp" 문구 색 — 홈/리포트의 다른 exp 뱃지와 같은 파랑(CARD_EXP_COLOR, Colors.accentBlue와 동일).
+const STREAK_MODAL_EXP_COLOR = '#3366FF';
 // 목표 일수(카드 안 "5일" 라벨과 동일한 값) — 진행 중 4칸의 라벨 문구에도 그대로 쓴다.
 const STREAK_CHALLENGE_GOAL_DAYS = 5;
 
@@ -211,9 +214,13 @@ const STREAK_CHALLENGE_GOAL_DAYS = 5;
 // Pretendard 폰트 파일을 이 모달에만 재사용한다.
 const PRETENDARD_REGULAR = 'Pretendard-Regular';
 const PRETENDARD_SEMIBOLD = 'Pretendard-SemiBold';
+// 홈/리포트의 다른 exp 뱃지(index.tsx, sleep-score-gamification-modal.tsx)와 같은 픽셀 폰트 —
+// 이 모달 안에 exp 획득 문구를 합치면서(아래 STREAK_MODAL_EXP 주석 참고) 같이 로드한다.
+const PRESS_START_2P = 'PressStart2P-Regular';
 const STREAK_MODAL_FONTS = {
   [PRETENDARD_REGULAR]: require('@/assets/fonts/Pretendard-Regular.otf'),
   [PRETENDARD_SEMIBOLD]: require('@/assets/fonts/Pretendard-SemiBold.otf'),
+  [PRESS_START_2P]: require('@/assets/fonts/PressStart2P-Regular.ttf'),
 };
 
 
@@ -1014,17 +1021,31 @@ function ReportTabBar({ onNavigate }: { onNavigate: (item: TabItem) => void }) {
 
 // node 618:1938("셀피 리포트 팝업" 리디자인, 위 STREAK_MODAL 상수 주석 참고) — 셀피 로딩
 // 화면(AnalyzingStep)에서 검증 리포트(ReportStep)로 넘어가는 순간, 리포트 화면(적중률 링은 그대로
-// 유지) 위에 겹쳐 뜨는 "5일 챌린지" 안내 모달. 좌표는 카드(332x346, radius 35.8) 원점 기준
+// 유지) 위에 겹쳐 뜨는 "5일 챌린지" 안내 모달. 좌표는 카드(332x374, radius 35.8) 원점 기준
 // 상대값 — Figma가 배경에 blur(5.11px) 프로스티드 글라스 효과를 쓰지만 RN 기본만으로는 재현이
 // 번거로워 불투명 흰 배경 + 그림자로 근사했다(예전 시안과 동일한 근사 방식).
 // GET /api/v1/skin/verification/summary(streakCount)만으로 완전히 연동된다 — 검증 직후 이 모달을
 // 매번 띄우고(리포트 화면의 AccuracyCard가 이미 보여주는 것과 같은 정보를 팝업으로 한 번 더
-// 강조), 5일 단위로 순환하는 "사이클 내 며칠째"(dayInCycle)에 맞춰 타이틀 문구와 완료 배지
-// 개수를 동적으로 그린다:
-// - dayInCycle === 1: "다시 1일부터 도전해요!" (최초 시작과 스트릭이 끊긴 뒤 재시작을 서버가
+// 강조), 5일 단위로 순환하는 "사이클 내 며칠째"(dayInCycle)에 맞춰 완료 배지 개수만 그리고,
+// 타이틀 문구는 streakCount(누적치) 그대로 써서 리포트 화면과 숫자가 일치하게 한다:
+// - streakCount === 1: "다시 1일부터 도전해요!" (최초 시작과 스트릭이 끊긴 뒤 재시작을 서버가
 //   구분해서 내려주지 않아 문구는 동일하게 취급한다)
-// - dayInCycle 2~5: "{dayInCycle}일 연속 검증에 성공했어요!"
-function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number; onDismiss: () => void }) {
+// - streakCount >= 2: "{streakCount}일 연속 검증에 성공했어요!"
+//
+// 🚨 exp 획득 문구를 이 모달 안에 합쳤다(원래는 이 모달이 닫힌 뒤 ExpGainPopup이 따로 한 번 더
+// 떴었다) — Figma 시안(node 840:1663 계열 "아차! 연속검증 다시 도전해봐요")에서 이 exp 문구가
+// 부제목과 배지 패널 사이에 들어가 있는 걸 그대로 옮겼다. 팝업 두 개가 연달아 뜨던 걸 하나로
+// 줄여서, "1일차부터 다시 시작" 문구와 "+N exp" 보상을 한 화면에서 같이 보여준다. exp.gained가
+// 0이면(이론상 스트릭 보상이 없는 경우) 문구 자체를 렌더하지 않는다.
+function StreakChallengeModal({
+  streakCount,
+  exp,
+  onDismiss,
+}: {
+  streakCount: number;
+  exp: AttendanceExpInfo;
+  onDismiss: () => void;
+}) {
   const [fontsLoaded] = useFonts(STREAK_MODAL_FONTS);
 
   // node 694:2080/2081("셀피 리포트 팝업", Figma 파일 9c7nKnuMLNcGYC33lmX8Im) — 이 팝업이 뜬 동안
@@ -1048,9 +1069,16 @@ function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number;
 
   // 1~STREAK_CHALLENGE_GOAL_DAYS(5) 사이를 순환하는 "이번 사이클의 며칠째"로 환산한다
   // (streakCount=6이면 새 사이클의 1일차, 9면 4일차 — 5일마다 보너스를 받고 다시 도는 구조).
+  // 배지 행(몇 칸이 채워졌는지)에만 쓰고, 타이틀 문구에는 안 쓴다 — 바로 아래 주석 참고.
   const dayInCycle = ((Math.max(streakCount, 1) - 1) % STREAK_CHALLENGE_GOAL_DAYS) + 1;
   const pendingCount = STREAK_CHALLENGE_GOAL_DAYS - dayInCycle;
-  const title = dayInCycle === 1 ? '다시 1일부터 도전해요!' : `${dayInCycle}일 연속 검증에 성공했어요!`;
+  // 🚨 타이틀은 dayInCycle이 아니라 streakCount(실제 누적치) 그대로 쓴다 — 예전엔 dayInCycle을
+  // 써서(streakCount=9 → "4일 연속") 팝업을 닫자마자 보이는 리포트 화면(AccuracyCard, 같은
+  // streakCount를 누적치 그대로 "9일 연속 검증 완료!"로 표시)과 숫자가 달라 보여 혼란스러웠다.
+  // streakCount === 1일 때만 "다시 1일부터 도전해요!"로 재도전 느낌을 남긴다(streakCount=6,
+  // 11처럼 5일 주기가 막 넘어간 시점은 스트릭이 끊긴 게 아니므로 더 이상 "다시 시작"으로
+  // 잘못 표현하지 않는다 — dayInCycle 기준이었을 땐 이 경우도 "다시 1일부터"로 잘못 나왔었다).
+  const title = streakCount === 1 ? '다시 1일부터 도전해요!' : `${streakCount}일 연속 검증에 성공했어요!`;
 
   return (
     <Pressable style={styles.streakModalBackdrop} onPress={onDismiss}>
@@ -1073,6 +1101,15 @@ function StreakChallengeModal({ streakCount, onDismiss }: { streakCount: number;
         <Text style={styles.streakModalSubtitle}>
           {STREAK_CHALLENGE_GOAL_DAYS}일을 채우면 보너스 exp를 받아요
         </Text>
+
+        {/* "+ N exp" (node 840:1360/1694류, Figma 파일 9c7nKnuMLNcGYC33lmX8Im) — 원래 이 모달이
+            닫힌 뒤 따로 뜨던 ExpGainPopup의 역할을 이 한 줄이 대신한다. 레벨업 신호(exp.levelUp)는
+            별도 팝업 없이도 놓치지 않도록 같은 줄에 이어 붙인다. */}
+        {exp.gained !== 0 && (
+          <Text style={styles.streakModalExpText}>
+            + {exp.gained} exp{exp.levelUp ? ' · 레벨업!' : ''}
+          </Text>
+        )}
 
         <View style={styles.streakModalPanel} />
 
@@ -1301,11 +1338,6 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   // streakCount가 실려 오므로(GET /skin/verification/summary와 같은 계산) 예전처럼 그 API를
   // 따로 또 호출하지 않는다 — 검증 성공 직후 verifyState.data.streakCount를 그대로 읽는다.
   const [streakModalDismissed, setStreakModalDismissed] = useState(false);
-  // 연속 검증 보상(exp.reasons: VERIFICATION_STREAK) — 서버가 실제로 적립해주는데도 이 화면이
-  // 지금까지 한 번도 보여준 적이 없었다(MY 탭에 들어가야 뒤늦게 레벨이 올라있는 걸 발견하는 식).
-  // 다른 게이미케이션 API들과 같은 ExpGainPopup을 재사용해서, 5일 챌린지 팝업이 끝난 뒤(둘 다
-  // 전체화면급 오버레이라 겹치면 한쪽이 가려짐) 이어서 보여준다.
-  const [expPopupDismissed, setExpPopupDismissed] = useState(false);
   const scale = useDesignScale(CANVAS_WIDTH, CANVAS_HEIGHT);
   const canvasWrapperStyle = { width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   const canvasScaleStyle = { transform: [{ scale }], transformOrigin: 'top left' as const };
@@ -1346,6 +1378,10 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
       .then(({ data }) => {
         if (cancelled) return;
         setVerifyState({ status: 'success', data });
+        // 검증 성공으로 exp/레벨이 바뀌었을 수 있는데, HOME·MY는 마운트 시 한 번만 조회하고
+        // 탭 네비게이터가 화면을 언마운트하지 않아 저절로 다시 조회하지 않는다(todo.tsx의
+        // 체크리스트 토글과 같은 문제) — 같은 신호로 두 화면 모두 프로필을 다시 조회하게 한다.
+        signalTodoChanged();
         // 배지가 전부 "완료"로 바뀐 걸 잠깐 보여준 다음 리포트로 넘어간다.
         setTimeout(() => {
           if (!cancelled) setStep(3);
@@ -1434,11 +1470,10 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
   // step 3은 verifyState.status === 'success'일 때만 진입한다(위 useEffect가 성공 시에만 setStep(3)).
   if (verifyState.status !== 'success') return null;
 
-  // 5일 챌린지 팝업이 끝난 뒤에만 exp 팝업을 띄운다 — 둘 다 전체화면급 오버레이라 동시에 겹치면
-  // 한쪽이 가려진다. streakCount는 검증에 성공하면 항상 최소 1이므로(api/skin.ts의
-  // SelfieVerificationData 문서 참고) showStreakModal은 사실상 매번 참이다.
+  // streakCount는 검증에 성공하면 항상 최소 1이므로(api/skin.ts의 SelfieVerificationData 문서
+  // 참고) showStreakModal은 사실상 매번 참이다. exp 획득 문구는 이제 이 모달 안에서 같이
+  // 보여주므로(위 STREAK_MODAL_EXP 주석 참고) 더 이상 별도의 ExpGainPopup을 이어서 띄우지 않는다.
   const showStreakModal = verifyState.data.streakCount > 0 && !streakModalDismissed;
-  const showExpPopup = verifyState.data.exp.gained !== 0 && !showStreakModal && !expPopupDismissed;
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: REPORT_BG }]}>
@@ -1448,11 +1483,9 @@ function SelfieFlowSteps({ onClose, onFinish }: SelfieFlowStepsProps) {
           {showStreakModal && (
             <StreakChallengeModal
               streakCount={verifyState.data.streakCount}
+              exp={verifyState.data.exp}
               onDismiss={() => setStreakModalDismissed(true)}
             />
-          )}
-          {showExpPopup && (
-            <ExpGainPopup exp={verifyState.data.exp} onClose={() => setExpPopupDismissed(true)} />
           )}
         </ThemedView>
       </View>
@@ -2087,12 +2120,15 @@ const styles = StyleSheet.create({
   // 글라스 효과를 쓰지만 RN 기본만으로는 재현이 번거로워 불투명 흰 배경 + 그림자로 근사했다
   // (예전 시안(487:543)과 동일한 근사 방식). 가로는 (402-332)/2=35로 가운데 정렬, 세로는 예전
   // 시안과 같은 top:204를 유지했다(이 새 카드는 느슨한 캔버스 그룹이라 절대 좌표가 없음).
+  // 🚨 height가 346이 아니라 374다 — exp 문구를 한 줄 끼워 넣으면서(위 STREAK_MODAL_EXP 주석
+  // 참고) 그 아래 배지 패널·행·버튼을 전부 28pt씩 밀어야 해서 카드 자체도 그만큼 늘렸다
+  // (Figma의 "아차!" 시안도 같은 이유로 332x377로 원본(346)보다 더 크다).
   streakModalCard: {
     position: 'absolute',
     left: 35,
     top: 204,
     width: 332,
-    height: 346,
+    height: 374,
     backgroundColor: Colors.white,
     borderRadius: 35.8,
     shadowColor: '#000000',
@@ -2121,11 +2157,22 @@ const styles = StyleSheet.create({
     fontFamily: PRETENDARD_REGULAR,
     color: STREAK_MODAL_SUBTITLE,
   },
+  // "+ N exp" (node 840:1360류) — 부제목 바로 아래, 배지 패널 위. 원래 이 자리엔 아무것도 없었고
+  // 패널이 top:107에서 시작했는데, 이 문구를 끼워 넣으면서 패널 이하 전부(top 참고)를 28pt 밀었다.
+  streakModalExpText: {
+    position: 'absolute',
+    left: 28.5,
+    top: 100,
+    fontSize: 16,
+    fontFamily: PRESS_START_2P,
+    color: STREAK_MODAL_EXP_COLOR,
+  },
   // 연한 블루 배경 패널 (node 618:1942, x:8.5 y:107 w:317 h:139, radius:9) — 배지 행의 배경
+  // 🚨 top이 107이 아니라 135다(+28) — 위 exp 문구 자리를 만들려고 밀었다.
   streakModalPanel: {
     position: 'absolute',
     left: 8.5,
-    top: 107,
+    top: 135,
     width: 317,
     height: 139,
     backgroundColor: STREAK_MODAL_PANEL_BG,
@@ -2135,11 +2182,11 @@ const styles = StyleSheet.create({
   // 완료 칸 수가 동적이라(streakCount에 따라 마지막 완료 배지 위치가 바뀜) 마커(618:1965)를 행
   // 전체 기준 절대좌표 하나로 고정하지 않고, 각 항목 위에 마커 자리(streakModalMarkerSlot)를
   // 두어 "마지막 완료 배지" 항목에서만 채운다 — 그만큼 원래 marker top(113)보다 위로 올려
-  // 자리를 확보한다.
+  // 자리를 확보한다. 🚨 top이 120이 아니라 148이다(+28, 위 패널과 같은 이유).
   streakModalDayRow: {
     position: 'absolute',
     left: 15.84,
-    top: 120,
+    top: 148,
     width: 301,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2220,10 +2267,11 @@ const styles = StyleSheet.create({
     color: STREAK_MODAL_DAY_FAILED_BORDER,
   },
   // "피부 예보 확인하기" 버튼 (node 618:1943/1944, x:21 y:261 w:283 h:55, radius:26)
+  // 🚨 top이 261이 아니라 289다(+28, 위 streakModalPanel/streakModalDayRow와 같은 이유).
   streakModalPrimaryButton: {
     position: 'absolute',
     left: 21,
-    top: 261,
+    top: 289,
     width: 283,
     height: 55,
     borderRadius: 26,

@@ -227,9 +227,11 @@ export default function HomeScreen() {
   const rawScale = useDesignScale(CANVAS_WIDTH, SCALE_FIT_HEIGHT, screenHeight);
   // 🚨 SCALE_FIT_HEIGHT로 세로 제약을 유도하려던 계산이 실제로는 항상 가로 기준(widthScale)에
   // 져서 반영되지 않았다 — 값을 745→775로 바꿔도 실기기에서 크기 변화가 전혀 없었다(다른
-  // 개발자 확인 완료). 그 간접적인 방식 대신 최종 배율에 직접 곱해서 확실히 줄인다. 셰브론이
-  // 절반 잘리는 상태(위 관찰) 기준으로 여유 있게 8% 줄였다 — 부족하면 이 값만 더 낮추면 된다.
-  const HOME_EXTRA_SHRINK = 0.92;
+  // 개발자 확인 완료). 그 간접적인 방식 대신 최종 배율에 직접 곱해서 확실히 줄인다.
+  // 처음엔 셰브론이 절반 잘리는 상태 기준으로 8%(0.92)를 줬는데, 그 결과(docs/아이폰
+  // 16-5.jpg)를 보니 셰브론 아래로 탭바까지 약 52pt나 남아 과하게 줄었었다 — 원래 필요했던
+  // 여유는 5pt 안팎이었다. 버튼 크기를 다시 키우려고 4%(0.96)로 낮췄다(약 23pt 여유 예상).
+  const HOME_EXTRA_SHRINK = 0.96;
   const scale = rawScale * HOME_EXTRA_SHRINK;
   const [expFontLoaded] = useFonts(EXP_TEXT_FONTS);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);

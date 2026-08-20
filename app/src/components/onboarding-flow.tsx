@@ -15,6 +15,7 @@ import {
   getHrvData,
   getRestingHeartRateData,
   uploadSleepSession,
+  applySleepSessionUploadResult,
 } from '@/hooks/useHealthData';
 
 // ONB-01~05 온보딩(공통) 흐름 — 탭 밖 진입 플로우이므로 이 컴포넌트는 src/app/_layout.tsx에서
@@ -426,7 +427,14 @@ export function OnboardingFlow({
     }
 
     // uploadSleepSession은 내부에서 모든 에러를 처리하므로 실패해도 다음 단계는 항상 진행된다.
-    await uploadSleepSession(TEMP_USER_ID);
+    // 응답은 반드시 applySleepSessionUploadResult로 넘긴다 — 온보딩 직후엔 _layout.tsx도 같은
+    // 데이터로 이 API를 한 번 더 호출하는데, 둘 중 실제로 processed:true를 받는 쪽이 매번
+    // 달라지므로(useHealthData.ts의 applySleepSessionUploadResult 주석 참고) 이 호출의 결과를
+    // 버리면 온보딩 직후엔 exp 팝업이 구조적으로 뜰 수 없었다.
+    const sleepSessionData = await uploadSleepSession(TEMP_USER_ID);
+    // TEMP DEBUG — 팝업이 안 뜨는 원인 추적용. 확인 끝나면 제거.
+    console.log('[SLEEP_EXP_DEBUG][onboarding] response=', JSON.stringify(sleepSessionData));
+    applySleepSessionUploadResult(sleepSessionData);
 
     await finishAccountSetup();
 

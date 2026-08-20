@@ -11,6 +11,8 @@ import {
   type SleepStage,
   type UploadSleepSessionData,
 } from "@/api/sleep";
+import { setAppStartForecast } from "@/hooks/use-app-start-forecast";
+import { setSleepScoreExpResult } from "@/hooks/use-sleep-score-exp";
 
 const SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis";
 const HRV_TYPE = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN";
@@ -215,7 +217,8 @@ function getMostRecentQuantity(samples: any[]): number | undefined {
 // POST /api/v1/sleep/sessions로 업로드한다(api/sleep.ts의 타입 있는 클라이언트를 그대로 쓴다 —
 // URL/헤더/에러 파싱을 이 파일에 다시 구현하지 않는다). 앱이 시작될 때마다 호출하는 것이 원칙이라
 // (새 데이터가 없어도 그냥 호출 — 서버가 해시로 재처리 여부를 판단), 실패해도 예외를 밖으로
-// 던지지 않고 null을 반환한다: 호출부가 "이번 실행에서 보여줄 exp 팝업이 없다"로만 취급하면 된다.
+// 던지지 않고 null을 반환한다. 호출부는 응답을 직접 해석하지 말고 반드시 아래
+// applySleepSessionUploadResult에 넘길 것 — 그 이유는 그 함수 주석 참고.
 export async function uploadSleepSession(
   userId: number,
 ): Promise<UploadSleepSessionData | null> {
@@ -248,4 +251,39 @@ export async function uploadSleepSession(
     console.log("❌ 수면 세션 업로드 실패:", error);
     return null;
   }
+}
+
+// uploadSleepSession은 두 곳에서 각각 독립적으로 호출된다 — 온보딩(onboarding-flow.tsx,
+// ONB-03 "건강 앱 연동하기")이 최초 1회, 그리고 앱이 켜질 때마다(_layout.tsx) 매번. 신규
+// 유저가 막 온보딩을 마치면 이 두 호출이 거의 동시에 일어난다: 온보딩의 호출이 먼저 서버에
+// 도달해 processed:true로 정상 처리되고, 그 직후 온보딩 완료로 pastOnboarding이 true가 되며
+// 발동하는 _layout.tsx의 호출은 "방금 그 데이터"라 서버가 processed:false·exp:[]로 되돌려준다
+// (반대 순서로 도착해도 결과만 바뀔 뿐 원리는 같다) — 즉 둘 중 정확히 어느 쪽이 진짜 처리된
+// 응답을 받을지는 매번 다르다. 예전엔 _layout.tsx만 이 응답으로 exp 팝업 store를 채웠는데,
+// 그러면 온보딩 직후엔 항상 두 번째(중복) 호출만 보게 되어 팝업이 구조적으로 뜰 수 없었다.
+// 그래서 양쪽 호출부 모두 자기 응답을 직접 해석하지 않고 이 함수에 그대로 넘기게 해서, 실제로
+// processed:true를 받은 쪽이 어디든 그쪽에서 팝업/예보 캐시가 채워지도록 한다(반대쪽은 exp가
+// 비어 있어 자연히 아무 일도 안 한다 — 중복 호출 자체를 막을 필요는 없다, 서버가 이미 멱등하게
+// 설계돼 있다).
+export function applySleepSessionUploadResult(data: UploadSleepSessionData | null) {
+  if (!data) return;
+
+  // 예보는 processed 여부·sleepScore null 여부와 무관하게 항상 실려 온다 — 홈 화면(index.tsx)이
+  // 같은 걸 GET /skin/forecast로 또 조회하지 않도록 캐시해둔다(use-app-start-forecast.ts 참고).
+  setAppStartForecast(data.sleepDate, data.forecast);
+
+  if (data.sleep.sleepScore === null) return;
+
+  // 이 API가 지급하는 reason은 SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH 둘뿐이지만, 다른 reason이
+  // 섞여 와도 이 팝업은 "수면 점수" 사유분만 더해서 보여준다.
+  const sleepScoreExpGained = data.exp.reasons
+    .filter((reason) => reason.reason.startsWith('SLEEP_SCORE'))
+    .reduce((sum, reason) => sum + reason.amount, 0);
+  if (sleepScoreExpGained <= 0) return;
+
+  setSleepScoreExpResult({
+    sleepDate: data.sleepDate,
+    score: data.sleep.sleepScore,
+    expGained: sleepScoreExpGained,
+  });
 }

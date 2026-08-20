@@ -16,9 +16,8 @@ import { AttendanceFlow } from '@/components/attendance-flow';
 import { OnboardingFlow } from '@/components/onboarding-flow';
 import { TEMP_USER_ID } from '@/constants/config';
 import { useAccountDeletedSignal } from '@/hooks/use-account-reset-signal';
-import { setAppStartForecast } from '@/hooks/use-app-start-forecast';
-import { resetSleepScoreExpResult, setSleepScoreExpResult } from '@/hooks/use-sleep-score-exp';
-import { uploadSleepSession } from '@/hooks/useHealthData';
+import { resetSleepScoreExpResult } from '@/hooks/use-sleep-score-exp';
+import { applySleepSessionUploadResult, uploadSleepSession } from '@/hooks/useHealthData';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -127,45 +126,20 @@ export default function TabLayout() {
   }, [pastOnboarding]);
 
   // POST /api/v1/sleep/sessions — 앱이 시작될 때마다 호출한다(새 수면 데이터가 없어도 그냥 호출 —
-  // 서버가 정규화 해시로 재처리 여부를 판단). 이 호출 자체는 스펙상 여기서 매번 일어나야 하지만,
-  // "수면 점수가 전날보다 올랐음/오늘 90점 이상" 팝업(SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH)은
-  // 원래 시안대로 일간 리포트 화면을 처음 열었을 때 뜨는 게 맞아서, 여기서는 결과를
-  // use-sleep-score-exp.ts store에 채워두기만 하고 팝업은 daily-report.tsx가 띄운다.
+  // 서버가 정규화 해시로 재처리 여부를 판단). 온보딩 직후엔 onboarding-flow.tsx도 같은 데이터로
+  // 이 API를 한 번 더 호출하므로, 응답 해석은 여기서 직접 하지 않고 반드시
+  // applySleepSessionUploadResult(useHealthData.ts)에 위임한다 — 그 이유는 그 함수 주석 참고.
   useEffect(() => {
     if (!pastOnboarding) return;
     uploadSleepSession(TEMP_USER_ID)
       .then((data) => {
         // TEMP DEBUG — 팝업이 안 뜨는 원인 추적용. 확인 끝나면 제거.
-        console.log('[SLEEP_EXP_DEBUG] today(local)=', getTodayDateString(), 'response=', JSON.stringify(data));
-        if (!data) return;
-        // 예보는 processed 여부·sleepScore null 여부와 무관하게 항상 실려 온다 — 홈 화면
-        // (index.tsx)이 같은 걸 GET /skin/forecast로 또 조회하지 않도록 여기서 캐시해둔다
-        // (use-app-start-forecast.ts 참고, "앱 시작 직후엔 그 API가 필요 없다"는 스펙 규칙).
-        setAppStartForecast(data.sleepDate, data.forecast);
-
-        if (data.sleep.sleepScore === null) {
-          console.log('[SLEEP_EXP_DEBUG] sleepScore가 null이라 팝업 스킵');
-          return;
-        }
-        // 이 API가 지급하는 reason은 SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH 둘뿐이지만, 다른
-        // reason이 섞여 와도 이 팝업은 "수면 점수" 사유분만 더해서 보여준다.
-        const sleepScoreExpGained = data.exp.reasons
-          .filter((reason) => reason.reason.startsWith('SLEEP_SCORE'))
-          .reduce((sum, reason) => sum + reason.amount, 0);
-        if (sleepScoreExpGained <= 0) {
-          console.log('[SLEEP_EXP_DEBUG] sleepScoreExpGained <= 0 이라 팝업 스킵. exp.reasons=', JSON.stringify(data.exp.reasons));
-          return;
-        }
-        console.log('[SLEEP_EXP_DEBUG] store에 결과 저장 →', data.sleepDate, sleepScoreExpGained);
-        setSleepScoreExpResult({
-          sleepDate: data.sleepDate,
-          score: data.sleep.sleepScore,
-          expGained: sleepScoreExpGained,
-        });
+        console.log('[SLEEP_EXP_DEBUG][layout] today(local)=', getTodayDateString(), 'response=', JSON.stringify(data));
+        applySleepSessionUploadResult(data);
       })
       .catch((error) => {
         // TEMP DEBUG
-        console.log('[SLEEP_EXP_DEBUG] uploadSleepSession catch:', error);
+        console.log('[SLEEP_EXP_DEBUG][layout] uploadSleepSession catch:', error);
         // 실패해도 별도 상태를 남기지 않는다 — store가 비어 있으면 daily-report.tsx가 그냥
         // 팝업을 안 띄운다(HOME-04와 동일하게 "오늘 이미 봤는지"를 캐싱할 필요가 없는 것과 같은
         // 이유로, "이번 실행에서 보여줄 게 없다"를 별도 상태로 구분하지 않는다).

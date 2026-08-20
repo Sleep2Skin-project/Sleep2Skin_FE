@@ -500,16 +500,19 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
         )
       : [];
 
-  // sleepDate === 오늘 날짜(디바이스 로컬) 방어를 뺐다 — 이 store는 앱이 켜질 때마다 딱 그 순간의
-  // POST /sleep/sessions 응답으로만 채워지고(_layout.tsx), sleepDate는 서버가 정하는 "기상 시각의
-  // 날짜"라 서버/기기 타임존 계산이 미묘하게 어긋나면(예: 자정 근처) 이 비교가 조용히 실패해
-  // exp.reasons에 SLEEP_SCORE_IMPROVED/HIGH가 실제로 와도 팝업이 안 뜰 수 있었다. 이 값을 채우는
-  // 조건 자체가 이미 "수면 점수가 어제보다 올랐거나 90점 이상"이므로(_layout.tsx의
-  // sleepScoreExpGained > 0 체크), store에 소비되지 않은 결과가 있으면 그 자체로 오늘 이 화면에서
-  // 보여줘도 되는 신호로 충분하다 — 날짜 재검증은 불필요한 이중 방어였다.
+  // 오늘 리포트를 열었을 때만 보여준다 — sleepDate가 오늘과 다르면(이론상 방어) 안 띄운다.
+  // (한때 이 가드를 "날짜 계산이 어긋나 팝업이 조용히 안 뜬다"는 추정으로 제거했었는데, 실제
+  // 원인은 별개였다 — uploadSleepSession이 온보딩(onboarding-flow.tsx)과 앱 시작(_layout.tsx)
+  // 두 곳에서 거의 동시에 호출돼, 항상 나중 호출만 보던 이 store가 매번 "이미 처리됨" 응답을
+  // 받았던 것이 진짜 원인이었다(useHealthData.ts의 applySleepSessionUploadResult 참고, 지금은
+  // 양쪽 호출부 모두 그 함수를 거쳐 실제로 처리된 쪽이 store를 채운다). 원인이 해결됐으니 이
+  // 가드는 다시 살려둔다 — 없으면 그날 리포트를 안 보고 넘어갔을 때 다음 날 열었을 때도 어제
+  // 결과가 "오늘 기준"으로 뜨는 오래된 데이터 표시 문제가 생긴다.
   const sleepScoreExpResult = useSleepScoreExpResult();
 
-  const showSleepScoreModal = sleepScoreExpResult !== null;
+  const showSleepScoreModal =
+    sleepScoreExpResult !== null &&
+    sleepScoreExpResult.sleepDate === getTodayDateString();
   // TEMP DEBUG — 팝업이 안 뜨는 원인 추적용. 확인 끝나면 제거.
   console.log(
     "[SLEEP_EXP_DEBUG] daily-report render: storeResult=",

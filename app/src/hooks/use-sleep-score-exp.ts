@@ -12,7 +12,9 @@ import { useSyncExternalStore } from 'react';
 // 도착했든 상관없이(리포트 화면이 먼저 마운트돼도 나중에 값이 채워지면 그때 뜬다), "처음 한
 // 번만" 보여준 뒤 consumeSleepScoreExpResult로 소비 처리해 재방문 시 다시 뜨지 않게 한다.
 export interface SleepScoreExpResult {
-  /** "YYYY-MM-DD" — 이 예보/점수가 어느 기상일 것인지. daily-report.tsx가 오늘 리포트일 때만 보여준다 */
+  /** "YYYY-MM-DD" — 이 예보/점수가 어느 기상일 것인지(팝업의 dateLabel 표시용). 팝업을 띄울지
+   * 여부 자체는 이 값으로 게이팅하지 않는다(daily-report.tsx 참고 — 서버/기기 날짜 계산이
+   * 어긋나면 조용히 안 뜨는 문제가 있어 뺐다). */
   sleepDate: string;
   score: number;
   expGained: number;

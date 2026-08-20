@@ -154,10 +154,15 @@ export default function TabLayout() {
           expGained: sleepScoreExpGained,
         });
       })
-      .catch(() => {
+      .catch((error) => {
         // 실패해도 별도 상태를 남기지 않는다 — store가 비어 있으면 daily-report.tsx가 그냥
         // 팝업을 안 띄운다(HOME-04와 동일하게 "오늘 이미 봤는지"를 캐싱할 필요가 없는 것과 같은
         // 이유로, "이번 실행에서 보여줄 게 없다"를 별도 상태로 구분하지 않는다).
+        // 다만 원인 진단을 위해 로그는 남긴다 — 네트워크 실패뿐 아니라 위 .then() 콜백 안에서
+        // (예: 응답 필드명이 기대와 달라 data.exp.reasons 접근이 실패하는 등) 예외가 나도 이
+        // catch가 그대로 삼켜서, 로그가 없으면 "수면 세션 업로드는 성공했는데 팝업 조건 처리
+        // 코드가 조용히 실패한 경우"를 구분할 방법이 없었다.
+        console.error('❌ 수면 점수 exp 처리 실패:', error);
       });
   }, [pastOnboarding]);
 

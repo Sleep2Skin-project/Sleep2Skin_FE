@@ -273,15 +273,24 @@ function buildSkinReportRows(state: Extract<SkinForecastState, { status: 'availa
   }));
 }
 
+// 상승(▲) 전용 색 — Malachite.
+const METRIC_DELTA_UP_COLOR = '#0BDA51';
+// 하락(▼) 전용 색 — Coral Red.
+const METRIC_DELTA_DOWN_COLOR = '#FF4040';
+
 /**
  * diffFromYesterday 폴백 규칙: null("비교 불가")과 0("어제와 동일")은 서로 다른 상태이니 같은
  * 문구로 뭉개지 않는다. 지표별로 값이 클수록 좋은지 나쁜지가 다 달라 임의로 좋다/나쁘다 색을
- * 매기지 않고, 방향(▲/▼)만 중립색으로 보여준다.
+ * 매기지 않고, 방향(▲/▼)에 따라 상승/하락 고정색만 보여준다(점수 자체 색상은 metricValue가
+ * 따로 담당하며 여기 색과 무관하다).
  */
 function formatDiffFromYesterday(diff: number | null): { text: string; color: string } {
   if (diff === null) return { text: '전날 비교 불가', color: UNAVAILABLE_METRIC_COLOR };
   if (diff === 0) return { text: '어제와 동일', color: UNAVAILABLE_METRIC_COLOR };
-  return { text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)}`, color: '#1A1A1A' };
+  return {
+    text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)}`,
+    color: diff > 0 ? METRIC_DELTA_UP_COLOR : METRIC_DELTA_DOWN_COLOR,
+  };
 }
 
 function SleepTimelineBar({ segments }: { segments: SleepTimelineSegment[] }) {

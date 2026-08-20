@@ -94,7 +94,7 @@ const INSUFFICIENT_SAMPLE_COLOR = '#9E9E9E';
 const SKIN_METRIC_GROUP_LABELS: Record<string, string> = {
   DARK_CIRCLE: '다크서클',
   COMPLEXION: '혈색',
-  BARRIER: '피부장벽',
+  BARRIER: '피부 장벽',
 };
 
 type MonthlyReportState =

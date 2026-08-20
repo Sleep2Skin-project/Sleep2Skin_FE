@@ -409,6 +409,15 @@ export function DailyReport({ nickname }: { nickname: string | null }) {
   // 오늘 리포트를 열었을 때만 보여준다 — sleepDate가 오늘과 다르면(이론상 방어) 안 띄운다.
   const sleepScoreExpResult = useSleepScoreExpResult();
   const showSleepScoreModal = sleepScoreExpResult !== null && sleepScoreExpResult.sleepDate === getTodayDateString();
+  // TEMP DEBUG — 팝업이 안 뜨는 원인 추적용. 확인 끝나면 제거.
+  console.log(
+    '[SLEEP_EXP_DEBUG] daily-report render: storeResult=',
+    JSON.stringify(sleepScoreExpResult),
+    'today(local)=',
+    getTodayDateString(),
+    'show=',
+    showSleepScoreModal
+  );
 
   return (
     <View style={styles.container}>

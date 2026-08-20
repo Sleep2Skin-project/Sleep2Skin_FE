@@ -135,26 +135,37 @@ export default function TabLayout() {
     if (!pastOnboarding) return;
     uploadSleepSession(TEMP_USER_ID)
       .then((data) => {
+        // TEMP DEBUG — 팝업이 안 뜨는 원인 추적용. 확인 끝나면 제거.
+        console.log('[SLEEP_EXP_DEBUG] today(local)=', getTodayDateString(), 'response=', JSON.stringify(data));
         if (!data) return;
         // 예보는 processed 여부·sleepScore null 여부와 무관하게 항상 실려 온다 — 홈 화면
         // (index.tsx)이 같은 걸 GET /skin/forecast로 또 조회하지 않도록 여기서 캐시해둔다
         // (use-app-start-forecast.ts 참고, "앱 시작 직후엔 그 API가 필요 없다"는 스펙 규칙).
         setAppStartForecast(data.sleepDate, data.forecast);
 
-        if (data.sleep.sleepScore === null) return;
+        if (data.sleep.sleepScore === null) {
+          console.log('[SLEEP_EXP_DEBUG] sleepScore가 null이라 팝업 스킵');
+          return;
+        }
         // 이 API가 지급하는 reason은 SLEEP_SCORE_IMPROVED/SLEEP_SCORE_HIGH 둘뿐이지만, 다른
         // reason이 섞여 와도 이 팝업은 "수면 점수" 사유분만 더해서 보여준다.
         const sleepScoreExpGained = data.exp.reasons
           .filter((reason) => reason.reason.startsWith('SLEEP_SCORE'))
           .reduce((sum, reason) => sum + reason.amount, 0);
-        if (sleepScoreExpGained <= 0) return;
+        if (sleepScoreExpGained <= 0) {
+          console.log('[SLEEP_EXP_DEBUG] sleepScoreExpGained <= 0 이라 팝업 스킵. exp.reasons=', JSON.stringify(data.exp.reasons));
+          return;
+        }
+        console.log('[SLEEP_EXP_DEBUG] store에 결과 저장 →', data.sleepDate, sleepScoreExpGained);
         setSleepScoreExpResult({
           sleepDate: data.sleepDate,
           score: data.sleep.sleepScore,
           expGained: sleepScoreExpGained,
         });
       })
-      .catch(() => {
+      .catch((error) => {
+        // TEMP DEBUG
+        console.log('[SLEEP_EXP_DEBUG] uploadSleepSession catch:', error);
         // 실패해도 별도 상태를 남기지 않는다 — store가 비어 있으면 daily-report.tsx가 그냥
         // 팝업을 안 띄운다(HOME-04와 동일하게 "오늘 이미 봤는지"를 캐싱할 필요가 없는 것과 같은
         // 이유로, "이번 실행에서 보여줄 게 없다"를 별도 상태로 구분하지 않는다).

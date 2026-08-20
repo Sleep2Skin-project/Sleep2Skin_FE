@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -105,7 +105,11 @@ function buildTodoSummaryMessage(state: TodoScreenState): string | null {
 // 해제 시 그 항목 것만 지운다) — "-N exp"는 따로 보여주지 않는다. 마운트될 때 한 번 스프링으로
 // 튀어 오르듯 나타난 뒤 그대로 유지되고, 언마운트(=체크 해제)되면 사라지는 것 자체가 곧 애니메이션
 // 종료라 별도 페이드아웃/onDone 콜백은 필요 없다.
-function ExpGainBadge({ amount }: { amount: number }) {
+// style은 선택적 오버라이드다(기본은 styles.expBadgeText 그대로) — "오늘 밤 체크리스트" 전체
+// 완료 보너스("+30 exp")가 항목별 배지("+5 exp")와 크기/위치만 다르게 필요해져서, 그 배지 하나만
+// 쓰는 별도 스타일(allDoneBonusBadgeText)을 여기 얹어 오버라이드할 수 있게 했다 — 항목별 호출부
+// (style 생략)는 전과 완전히 동일하게 동작한다.
+function ExpGainBadge({ amount, style }: { amount: number; style?: StyleProp<TextStyle> }) {
   const [scale] = useState(() => new Animated.Value(0.4));
   const [translateY] = useState(() => new Animated.Value(6));
   const [opacity] = useState(() => new Animated.Value(0));
@@ -124,7 +128,7 @@ function ExpGainBadge({ amount }: { amount: number }) {
 
   return (
     <Animated.Text
-      style={[styles.expBadgeText, { opacity, transform: [{ scale }, { translateY }] }]}
+      style={[styles.expBadgeText, style, { opacity, transform: [{ scale }, { translateY }] }]}
       numberOfLines={1}>
       +{amount} exp
     </Animated.Text>
@@ -424,9 +428,6 @@ export default function TodoScreen() {
                   <>
                     <View style={styles.checklistTitleRow}>
                       <ThemedText style={styles.checklistTitle}>오늘 밤 체크리스트</ThemedText>
-                      {allChecklistDone && allDoneBonusAmount !== null && pixelFontLoaded && (
-                        <ExpGainBadge amount={allDoneBonusAmount} />
-                      )}
                     </View>
 
                     {/* "진행도" + 진행 바 + "n/total" (node 176:1229~1232) — DONE 개수는 서버가
@@ -436,6 +437,13 @@ export default function TodoScreen() {
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
                     </View>
+                    {/* 전체 완료 보너스 "+30 exp" — 예전엔 checklistTitleRow 안에서 제목과 같은
+                        줄(flex space-between)에 떴는데, "진행도" 바와 같은 줄로, 그리고 "exp"
+                        부분의 x좌표가 항목별 "+5 exp"의 "exp"와 정확히 맞도록 별도 절대좌표로
+                        뺐다(아래 allDoneBonusBadgeText 주석 참고). */}
+                    {allChecklistDone && allDoneBonusAmount !== null && pixelFontLoaded && (
+                      <ExpGainBadge amount={allDoneBonusAmount} style={styles.allDoneBonusBadgeText} />
+                    )}
                     <ThemedText style={styles.progressCount}>
                       {completed}/{total}
                     </ThemedText>
@@ -837,6 +845,27 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontFamily: PRESS_START_2P,
     color: Colors.accentBlue,
+  },
+  // 전체 완료 보너스 "+30 exp" 전용 오버라이드(ExpGainBadge의 style prop으로 expBadgeText 위에
+  // 얹힘 — fontFamily/color는 expBadgeText에서 그대로 물려받고 여기선 크기/위치만 다시 잡는다).
+  // - fontSize +3pt 요청(14.5→17.5).
+  // - "진행도" 바(progressTrack, top:396 height:7 → 세로 중심 399.5)와 같은 줄에 오도록
+  //   top을 잡았다(세로 중심이 그 399.5에 오도록 lineHeight 절반을 뺀 값).
+  // - "exp" 부분의 x좌표를 항목별 "+5 exp"와 맞추는 요청 — checklistItem이 지금 카드 왼쪽 정렬
+  //   작업으로 정확히 x:3~402(캔버스 폭과 동일)까지 넓어져 있어서, 항목별 "+5 exp" 배지의
+  //   오른쪽 끝은 항상 카드 안쪽 padding(15)만큼 안쪽인 x:387(=402-15)에 고정된다(제목이
+  //   flex:1이라 배지가 항상 그 줄 맨 오른쪽에 붙기 때문). 처음엔 같은 오른쪽 끝(right:15)에
+  //   맞춰 "+5 exp"와 "exp" x좌표를 정확히 일치시켰었다.
+  //   추가 조정 — 그 상태에서 1mm(6pt) 더 오른쪽으로 옮기는 요청이라 right를 15→9로 줄였다
+  //   (right가 작을수록 캔버스 오른쪽 끝에 더 가까워짐, x:387→393).
+  //   추가 조정 — 0.3mm(1.8pt) 다시 왼쪽으로, right를 9→10.8로 늘렸다(x:393→391.2). "+5 exp"와의
+  //   "exp" x좌표 정렬은 의도적으로 어긋난 상태(누적 4.2pt 차이)다.
+  allDoneBonusBadgeText: {
+    position: 'absolute',
+    top: 389,
+    right: 10.8,
+    fontSize: 17.5,
+    lineHeight: 21,
   },
 
   // ── AvoidDetailModal (node 541:3131) ────────────────────────────────────
